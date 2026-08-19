@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IRCTC Tatkal</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header class="header">
+    <div class="header-top">
+      <h1>IRCTC Tatkal Bot</h1>
+      <button type="button" id="toggleMinimizeBtn" class="icon-btn" title="Minimize" aria-label="Minimize popup">−</button>
+    </div>
+    <p id="statusBadge" class="badge">Idle</p>
+  </header>
+
+  <div id="popupBody" class="popup-body">
+  <nav class="tabs">
+    <button class="tab active" data-tab="credentials">Login</button>
+    <button class="tab" data-tab="journey">Journey</button>
+    <button class="tab" data-tab="passengers">Passengers</button>
+    <button class="tab" data-tab="schedule">Timer</button>
+  </nav>
+
+  <main>
+    <section id="credentials" class="panel active">
+      <label>Username <input type="text" id="username" autocomplete="username"></label>
+      <label>Password <input type="password" id="password" autocomplete="current-password"></label>
+    </section>
+
+    <section id="journey" class="panel">
+      <label>From Station <input type="text" id="fromStation" placeholder="e.g. MALDA TOWN"></label>
+      <label>To Station <input type="text" id="toStation" placeholder="e.g. HOWRAH JN"></label>
+      <label>Journey Date <input type="date" id="journeyDate"></label>
+      <label>Train Number (optional) <input type="text" id="trainNo" placeholder="e.g. 12345"></label>
+      <label>Class
+        <select id="travelClass">
+          <option value="SL">SL - Sleeper</option>
+          <option value="3A">3A - AC 3 Tier</option>
+          <option value="2A">2A - AC 2 Tier</option>
+          <option value="1A">1A - AC First</option>
+          <option value="CC">CC - AC Chair</option>
+          <option value="2S">2S - Second Sitting</option>
+          <option value="3E">3E - AC 3 Economy</option>
+          <option value="EC">EC - Exec. Chair Car</option>
+          <option value="EV">EV - Vistadome AC</option>
+        </select>
+      </label>
+      <label>Quota
+        <select id="quota">
+          <option value="TATKAL">TATKAL</option>
+          <option value="GENERAL">GENERAL</option>
+          <option value="LADIES">LADIES</option>
+        </select>
+      </label>
+    </section>
+
+    <section id="passengers" class="panel">
+      <div id="passengerList"></div>
+      <button type="button" id="addPassenger" class="btn-secondary">+ Add Passenger</button>
+    </section>
+
+    <section id="schedule" class="panel">
+      <label class="checkbox-row">
+        <input type="checkbox" id="scheduleEnabled"> Enable Tatkal scheduler
+      </label>
+      <label>Tatkal Window
+        <select id="scheduleType">
+          <option value="ac">AC Tatkal — 10:00 AM IST</option>
+          <option value="non-ac">Non-AC Tatkal — 11:00 AM IST</option>
+        </select>
+      </label>
+    </section>
+  </main>
+
+  <footer class="actions">
+    <button type="button" id="saveBtn" class="btn-primary">Save Details</button>
+    <button type="button" id="startBtn" class="btn-accent">Start Auto-Booking</button>
+    <button type="button" id="clearBtn" class="btn-danger">Clear All Data</button>
+    <p id="message" class="message"></p>
+  </footer>
+  </div>
+
+  <script src="lib/storage.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>
