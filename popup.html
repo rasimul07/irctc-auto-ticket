@@ -83,6 +83,10 @@
         </select>
       </label>
 
+      <label class="checkbox-row">
+        <input type="checkbox" id="autoPayEnabled"> Enable auto pay
+      </label>
+
       <div id="cardsPaymentFields" class="payment-subpanel payment-subpanel--hidden">
         <label>Payment Provider
           <select id="cardsProvider">
@@ -91,6 +95,21 @@
             <option value="PhonePe" selected>PhonePe</option>
           </select>
         </label>
+
+        <div id="autoPayOptions" class="payment-subpanel payment-subpanel--hidden">
+          <fieldset class="payment-subsection">
+            <h4>Auto pay type</h4>
+            <label class="checkbox-row">
+              <input type="radio" name="autoPayType" value="debit" checked> Debit card
+            </label>
+            <label class="checkbox-row">
+              <input type="radio" name="autoPayType" value="credit"> Credit card
+            </label>
+            <label class="checkbox-row">
+              <input type="radio" name="autoPayType" value="qr"> QR (UPI)
+            </label>
+          </fieldset>
+        </div>
 
         <fieldset id="debitCardFields" class="payment-subsection">
           <h4>Debit Card</h4>
@@ -113,7 +132,7 @@
         <label>UPI Provider
           <select id="upiProvider">
             <option value="IRCTC iPay" selected>IRCTC iPay</option>
-            <option value="PhonePe">PhonePe</option>
+            <option value="PhonePe">PhonePe (recommended)</option>
             <option value="Razorpay">Razorpay</option>
             <option value="PayU">PayU</option>
             <option value="Amazon Pay">Amazon Pay</option>

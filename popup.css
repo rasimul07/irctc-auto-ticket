@@ -190,3 +190,11 @@ button {
 .payment-subsection label:last-child {
   margin-bottom: 0;
 }
+
+.payment-subsection--active {
+  border-color: #2f6fed;
+}
+
+.payment-subsection--muted {
+  opacity: 0.55;
+}

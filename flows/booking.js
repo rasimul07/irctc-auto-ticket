@@ -47,7 +47,6 @@ IRCTCExt.BookingFlow = {
   async showPaymentReview(overlay) {
     await IRCTCExt.PaymentReviewOverlay.show();
     overlay.setStep('Payment');
-    overlay.setStatus('Review booking details and complete payment on IRCTC.');
     overlay.showPause('Complete payment manually on IRCTC.');
     await IRCTCExt.Storage.updateState({ status: 'done', running: false, currentStep: 'done' });
     return true;

@@ -15,6 +15,7 @@ const CONTENT_SCRIPT_FILES = [
   'lib/trainList.js',
   'lib/passengers.js',
   'lib/psgnPreferences.js',
+  'lib/bkgPayment.js',
   'overlay/overlay.js',
   'overlay/paymentReview.js',
   'flows/login.js',

@@ -18,6 +18,10 @@ const els = {
   upiPaymentFields: document.getElementById('upiPaymentFields'),
   cardsProvider: document.getElementById('cardsProvider'),
   upiProvider: document.getElementById('upiProvider'),
+  autoPayEnabled: document.getElementById('autoPayEnabled'),
+  autoPayOptions: document.getElementById('autoPayOptions'),
+  debitCardFields: document.getElementById('debitCardFields'),
+  creditCardFields: document.getElementById('creditCardFields'),
   debitCardName: document.getElementById('debitCardName'),
   debitCardNumber: document.getElementById('debitCardNumber'),
   debitCardExpiry: document.getElementById('debitCardExpiry'),
@@ -64,10 +68,33 @@ function switchTab(tabId) {
   els.panels.forEach((p) => p.classList.toggle('active', p.id === tabId));
 }
 
+function getSelectedAutoPayType() {
+  return document.querySelector('input[name="autoPayType"]:checked')?.value || 'debit';
+}
+
+function toggleAutoPayFields() {
+  const isCards = els.paymentMethod.value === 'cards';
+  const autoPayOn = els.autoPayEnabled.checked;
+  const cardsAutoPayOn = isCards && autoPayOn;
+
+  els.autoPayOptions.classList.toggle('payment-subpanel--hidden', !cardsAutoPayOn);
+
+  const type = getSelectedAutoPayType();
+  const debitActive = cardsAutoPayOn && type === 'debit';
+  const creditActive = cardsAutoPayOn && type === 'credit';
+  const qrSelected = cardsAutoPayOn && type === 'qr';
+
+  els.debitCardFields.classList.toggle('payment-subsection--active', debitActive);
+  els.creditCardFields.classList.toggle('payment-subsection--active', creditActive);
+  els.debitCardFields.classList.toggle('payment-subsection--muted', qrSelected || (cardsAutoPayOn && type === 'credit'));
+  els.creditCardFields.classList.toggle('payment-subsection--muted', qrSelected || (cardsAutoPayOn && type === 'debit'));
+}
+
 function togglePaymentFields() {
   const isCards = els.paymentMethod.value === 'cards';
   els.cardsPaymentFields.classList.toggle('payment-subpanel--hidden', !isCards);
   els.upiPaymentFields.classList.toggle('payment-subpanel--hidden', isCards);
+  toggleAutoPayFields();
 }
 
 function readCardDetails(prefix) {
@@ -181,6 +208,8 @@ function readForm() {
       paymentMethod: els.paymentMethod.value,
       cardsProvider: els.cardsProvider.value,
       upiProvider: els.upiProvider.value,
+      autoPayEnabled: els.autoPayEnabled.checked,
+      autoPayType: getSelectedAutoPayType(),
       debitCard: readCardDetails('debit'),
       creditCard: readCardDetails('credit')
     },
@@ -215,6 +244,10 @@ function fillForm(config) {
   els.paymentMethod.value = config.preferences?.paymentMethod || 'cards';
   els.cardsProvider.value = config.preferences?.cardsProvider || 'PhonePe';
   els.upiProvider.value = config.preferences?.upiProvider || 'IRCTC iPay';
+  els.autoPayEnabled.checked = !!config.preferences?.autoPayEnabled;
+  const autoPayType = config.preferences?.autoPayType || 'debit';
+  const autoPayRadio = document.querySelector(`input[name="autoPayType"][value="${autoPayType}"]`);
+  if (autoPayRadio) autoPayRadio.checked = true;
   fillCardDetails('debit', config.preferences?.debitCard);
   fillCardDetails('credit', config.preferences?.creditCard);
   togglePaymentFields();
@@ -268,7 +301,14 @@ async function startBooking() {
     return;
   }
 
-  await Storage.updateState({ running: true, paused: false, currentStep: 'init', status: 'running' });
+  await Storage.updateState({
+    running: true,
+    paused: false,
+    currentStep: 'init',
+    status: 'running',
+    passengersDone: false,
+    paymentDone: false
+  });
   updateStatusBadge('running');
   chrome.runtime.sendMessage({ type: 'START_FROM_POPUP' });
   showMessage('Opening IRCTC and starting automation...');
@@ -294,6 +334,10 @@ els.addPassenger.addEventListener('click', () => {
 });
 
 els.paymentMethod.addEventListener('change', togglePaymentFields);
+els.autoPayEnabled.addEventListener('change', toggleAutoPayFields);
+document.querySelectorAll('input[name="autoPayType"]').forEach((radio) => {
+  radio.addEventListener('change', toggleAutoPayFields);
+});
 
 ['debitCardExpiry', 'creditCardExpiry'].forEach((id) => {
   document.getElementById(id)?.addEventListener('blur', (e) => {
