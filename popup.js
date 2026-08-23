@@ -10,8 +10,22 @@ const els = {
   toStation: document.getElementById('toStation'),
   journeyDate: document.getElementById('journeyDate'),
   trainNo: document.getElementById('trainNo'),
+  trainName: document.getElementById('trainName'),
   travelClass: document.getElementById('travelClass'),
   quota: document.getElementById('quota'),
+  paymentMethod: document.getElementById('paymentMethod'),
+  cardsPaymentFields: document.getElementById('cardsPaymentFields'),
+  upiPaymentFields: document.getElementById('upiPaymentFields'),
+  cardsProvider: document.getElementById('cardsProvider'),
+  upiProvider: document.getElementById('upiProvider'),
+  debitCardName: document.getElementById('debitCardName'),
+  debitCardNumber: document.getElementById('debitCardNumber'),
+  debitCardExpiry: document.getElementById('debitCardExpiry'),
+  debitCardCvv: document.getElementById('debitCardCvv'),
+  creditCardName: document.getElementById('creditCardName'),
+  creditCardNumber: document.getElementById('creditCardNumber'),
+  creditCardExpiry: document.getElementById('creditCardExpiry'),
+  creditCardCvv: document.getElementById('creditCardCvv'),
   passengerList: document.getElementById('passengerList'),
   addPassenger: document.getElementById('addPassenger'),
   scheduleEnabled: document.getElementById('scheduleEnabled'),
@@ -48,6 +62,33 @@ function showMessage(text, isError = false) {
 function switchTab(tabId) {
   els.tabs.forEach((t) => t.classList.toggle('active', t.dataset.tab === tabId));
   els.panels.forEach((p) => p.classList.toggle('active', p.id === tabId));
+}
+
+function togglePaymentFields() {
+  const isCards = els.paymentMethod.value === 'cards';
+  els.cardsPaymentFields.classList.toggle('payment-subpanel--hidden', !isCards);
+  els.upiPaymentFields.classList.toggle('payment-subpanel--hidden', isCards);
+}
+
+function readCardDetails(prefix) {
+  const name = document.getElementById(`${prefix}CardName`).value.trim();
+  const number = document.getElementById(`${prefix}CardNumber`).value.replace(/\s+/g, '');
+  const expiry = document.getElementById(`${prefix}CardExpiry`).value.trim();
+  const cvv = document.getElementById(`${prefix}CardCvv`).value.trim();
+  return { name, number, expiry, cvv };
+}
+
+function formatCardExpiry(value) {
+  const digits = String(value || '').replace(/\D/g, '').slice(0, 4);
+  if (digits.length <= 2) return digits;
+  return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+}
+
+function fillCardDetails(prefix, card = {}) {
+  document.getElementById(`${prefix}CardName`).value = card.name || '';
+  document.getElementById(`${prefix}CardNumber`).value = card.number || '';
+  document.getElementById(`${prefix}CardExpiry`).value = card.expiry || '';
+  document.getElementById(`${prefix}CardCvv`).value = card.cvv || '';
 }
 
 function createPassengerRow(passenger = {}, index = 0) {
@@ -131,10 +172,18 @@ function readForm() {
       to: els.toStation.value.trim(),
       date: els.journeyDate.value,
       trainNo: els.trainNo.value.trim(),
+      trainName: els.trainName.value.trim(),
       travelClass: els.travelClass.value,
       quota: els.quota.value
     },
     passengers: readPassengers(),
+    preferences: {
+      paymentMethod: els.paymentMethod.value,
+      cardsProvider: els.cardsProvider.value,
+      upiProvider: els.upiProvider.value,
+      debitCard: readCardDetails('debit'),
+      creditCard: readCardDetails('credit')
+    },
     schedule: {
       enabled: els.scheduleEnabled.checked,
       type: els.scheduleType.value
@@ -160,8 +209,15 @@ function fillForm(config) {
   els.toStation.value = config.journey?.to || '';
   els.journeyDate.value = toInputDate(config.journey?.date || '');
   els.trainNo.value = config.journey?.trainNo || '';
+  els.trainName.value = config.journey?.trainName || '';
   els.travelClass.value = config.journey?.travelClass || 'SL';
   els.quota.value = config.journey?.quota || 'TATKAL';
+  els.paymentMethod.value = config.preferences?.paymentMethod || 'cards';
+  els.cardsProvider.value = config.preferences?.cardsProvider || 'PhonePe';
+  els.upiProvider.value = config.preferences?.upiProvider || 'IRCTC iPay';
+  fillCardDetails('debit', config.preferences?.debitCard);
+  fillCardDetails('credit', config.preferences?.creditCard);
+  togglePaymentFields();
   els.scheduleEnabled.checked = !!config.schedule?.enabled;
   els.scheduleType.value = config.schedule?.type || 'non-ac';
   renderPassengers(config.passengers);
@@ -190,7 +246,8 @@ async function save() {
     ...form,
     journey: { ...current.journey, ...form.journey },
     credentials: { ...current.credentials, ...form.credentials },
-    schedule: { ...current.schedule, ...form.schedule }
+    schedule: { ...current.schedule, ...form.schedule },
+    preferences: { ...current.preferences, ...form.preferences }
   };
   await Storage.set(next);
   chrome.runtime.sendMessage({ type: 'RESCHEDULE_ALARMS', schedule: next.schedule });
@@ -234,6 +291,14 @@ els.addPassenger.addEventListener('click', () => {
     return;
   }
   els.passengerList.appendChild(createPassengerRow({}, count));
+});
+
+els.paymentMethod.addEventListener('change', togglePaymentFields);
+
+['debitCardExpiry', 'creditCardExpiry'].forEach((id) => {
+  document.getElementById(id)?.addEventListener('blur', (e) => {
+    e.target.value = formatCardExpiry(e.target.value);
+  });
 });
 
 els.saveBtn.addEventListener('click', save);

@@ -72,11 +72,11 @@ body.popup-minimized .popup-body {
 
 .tab {
   flex: 1;
-  padding: 10px 6px;
+  padding: 10px 4px;
   border: none;
   background: transparent;
   cursor: pointer;
-  font-size: 12px;
+  font-size: 11px;
   color: #213d77;
 }
 
@@ -164,3 +164,29 @@ button {
 }
 
 .message.error { color: #c0392b; }
+
+.payment-subpanel {
+  margin-top: 4px;
+}
+
+.payment-subpanel--hidden {
+  display: none;
+}
+
+.payment-subsection {
+  margin: 0 0 12px;
+  padding: 10px;
+  border: 1px solid #dde3ef;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.payment-subsection h4 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: #213d77;
+}
+
+.payment-subsection label:last-child {
+  margin-bottom: 0;
+}

@@ -19,6 +19,9 @@ IRCTCExt.Overlay = {
 
     if (document.getElementById('irctc-ext-overlay')) {
       IRCTCExt.Overlay.el = document.getElementById('irctc-ext-overlay');
+      IRCTCExt.Overlay.ensureMinimizeButton();
+      IRCTCExt.Overlay.ensureRestartButton();
+      IRCTCExt.Overlay.bindEvents();
       return IRCTCExt.Overlay;
     }
 
@@ -28,13 +31,17 @@ IRCTCExt.Overlay = {
     root.innerHTML = `
       <div class="irctc-ext-overlay__header">
         <span>IRCTC Tatkal Bot</span>
-        <span id="irctc-ext-step">Idle</span>
+        <div class="irctc-ext-overlay__header-right">
+          <span id="irctc-ext-step">Idle</span>
+          <button type="button" class="irctc-ext-overlay__icon-btn" id="irctc-ext-minimize" title="Minimize" aria-label="Minimize overlay">−</button>
+        </div>
       </div>
       <div class="irctc-ext-overlay__body">
         <div class="irctc-ext-overlay__status" id="irctc-ext-status">Ready</div>
         <div class="irctc-ext-overlay__timer" id="irctc-ext-timer">Elapsed: 0s</div>
         <div class="irctc-ext-overlay__actions">
           <button class="irctc-ext-overlay__btn" id="irctc-ext-pause" type="button">Pause</button>
+          <button class="irctc-ext-overlay__btn irctc-ext-overlay__btn--accent" id="irctc-ext-restart" type="button">Restart</button>
           <button class="irctc-ext-overlay__btn irctc-ext-overlay__btn--danger" id="irctc-ext-stop" type="button">Stop</button>
         </div>
         <div class="irctc-ext-overlay__pause-panel" id="irctc-ext-pause-panel" style="display:none;">
@@ -47,17 +54,88 @@ IRCTCExt.Overlay = {
     document.body.appendChild(root);
     IRCTCExt.Overlay.el = root;
 
-    if (!IRCTCExt.Overlay._bound) {
-      document.getElementById('irctc-ext-pause').addEventListener('click', () => IRCTCExt.Overlay.togglePause());
-      document.getElementById('irctc-ext-stop').addEventListener('click', () => IRCTCExt.Overlay.stop());
-      document.getElementById('irctc-ext-continue').addEventListener('click', () => {
-        document.getElementById('irctc-ext-pause-panel').style.display = 'none';
-        if (typeof IRCTCExt.Overlay.onContinue === 'function') IRCTCExt.Overlay.onContinue();
-      });
-      IRCTCExt.Overlay._bound = true;
-    }
+    IRCTCExt.Overlay.bindEvents();
 
     return IRCTCExt.Overlay;
+  },
+
+  ensureMinimizeButton() {
+    const header = this.el?.querySelector('.irctc-ext-overlay__header');
+    if (!header || document.getElementById('irctc-ext-minimize')) return;
+
+    let right = header.querySelector('.irctc-ext-overlay__header-right');
+    if (!right) {
+      right = document.createElement('div');
+      right.className = 'irctc-ext-overlay__header-right';
+      const step = document.getElementById('irctc-ext-step');
+      if (step) right.appendChild(step);
+      header.appendChild(right);
+    }
+
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.id = 'irctc-ext-minimize';
+    btn.className = 'irctc-ext-overlay__icon-btn';
+    btn.title = 'Minimize';
+    btn.setAttribute('aria-label', 'Minimize overlay');
+    btn.textContent = '−';
+    right.appendChild(btn);
+  },
+
+  ensureRestartButton() {
+    const actions = this.el?.querySelector('.irctc-ext-overlay__actions');
+    if (!actions || document.getElementById('irctc-ext-restart')) return;
+
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.id = 'irctc-ext-restart';
+    btn.className = 'irctc-ext-overlay__btn irctc-ext-overlay__btn--accent';
+    btn.textContent = 'Restart';
+    const stopBtn = document.getElementById('irctc-ext-stop');
+    if (stopBtn) {
+      actions.insertBefore(btn, stopBtn);
+    } else {
+      actions.appendChild(btn);
+    }
+  },
+
+  bindEvents() {
+    const minimizeBtn = document.getElementById('irctc-ext-minimize');
+    if (minimizeBtn && minimizeBtn.dataset.bound !== '1') {
+      minimizeBtn.dataset.bound = '1';
+      minimizeBtn.addEventListener('click', () => IRCTCExt.Overlay.toggleMinimize());
+    }
+
+    const restartBtn = document.getElementById('irctc-ext-restart');
+    if (restartBtn && restartBtn.dataset.bound !== '1') {
+      restartBtn.dataset.bound = '1';
+      restartBtn.addEventListener('click', () => IRCTCExt.Overlay.restart());
+    }
+
+    if (this._bound) return;
+
+    document.getElementById('irctc-ext-pause')?.addEventListener('click', () => IRCTCExt.Overlay.togglePause());
+    document.getElementById('irctc-ext-stop')?.addEventListener('click', () => IRCTCExt.Overlay.stop());
+    document.getElementById('irctc-ext-continue')?.addEventListener('click', () => {
+      document.getElementById('irctc-ext-pause-panel').style.display = 'none';
+      if (typeof IRCTCExt.Overlay.onContinue === 'function') IRCTCExt.Overlay.onContinue();
+    });
+    this._bound = true;
+  },
+
+  setMinimized(minimized) {
+    if (!this.el) return;
+    this.el.classList.toggle('irctc-ext-overlay--minimized', minimized);
+    const btn = document.getElementById('irctc-ext-minimize');
+    if (btn) {
+      btn.textContent = minimized ? '+' : '−';
+      btn.title = minimized ? 'Expand' : 'Minimize';
+      btn.setAttribute('aria-label', minimized ? 'Expand overlay' : 'Minimize overlay');
+    }
+  },
+
+  toggleMinimize() {
+    this.setMinimized(!this.el?.classList.contains('irctc-ext-overlay--minimized'));
   },
 
   async show() {
@@ -118,6 +196,12 @@ IRCTCExt.Overlay = {
     const paused = !config.state.paused;
     await IRCTCExt.Storage.updateState({ paused });
     this.setStatus(paused ? 'Paused' : 'Resumed');
+  },
+
+  async restart() {
+    if (window.IRCTCExt?.Bot) {
+      await IRCTCExt.Bot.restart();
+    }
   },
 
   async stop() {

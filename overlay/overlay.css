@@ -17,9 +17,43 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 8px;
   padding: 10px 12px;
   background: #fb792b;
   font-weight: bold;
+}
+
+.irctc-ext-overlay__header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.irctc-ext-overlay__icon-btn {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.irctc-ext-overlay__icon-btn:hover {
+  background: rgba(255, 255, 255, 0.28);
+}
+
+.irctc-ext-overlay--minimized {
+  width: auto;
+}
+
+.irctc-ext-overlay--minimized .irctc-ext-overlay__body {
+  display: none;
 }
 
 .irctc-ext-overlay__body {
@@ -46,14 +80,20 @@
 
 .irctc-ext-overlay__btn {
   flex: 1;
-  min-width: 80px;
-  padding: 8px 10px;
+  min-width: 70px;
+  padding: 8px 6px;
   border: none;
   border-radius: 6px;
   cursor: pointer;
   font-weight: 600;
+  font-size: 12px;
   background: #fff;
   color: #213d77;
+}
+
+.irctc-ext-overlay__btn--accent {
+  background: #fb792b;
+  color: #fff;
 }
 
 .irctc-ext-overlay__btn--primary {

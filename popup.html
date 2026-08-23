@@ -21,6 +21,7 @@
     <button class="tab" data-tab="journey">Journey</button>
     <button class="tab" data-tab="passengers">Passengers</button>
     <button class="tab" data-tab="schedule">Timer</button>
+    <button class="tab" data-tab="payment">Payment</button>
   </nav>
 
   <main>
@@ -30,10 +31,11 @@
     </section>
 
     <section id="journey" class="panel">
-      <label>From Station <input type="text" id="fromStation" placeholder="e.g. MALDA TOWN"></label>
-      <label>To Station <input type="text" id="toStation" placeholder="e.g. HOWRAH JN"></label>
+      <label>From station code or station name <input type="text" id="fromStation" placeholder="e.g. MLDT or MALDA TOWN"></label>
+      <label>To station code or station name <input type="text" id="toStation" placeholder="e.g. SDAH or SEALDAH"></label>
       <label>Journey Date <input type="date" id="journeyDate"></label>
-      <label>Train Number (optional) <input type="text" id="trainNo" placeholder="e.g. 12345"></label>
+      <label>Train Number (preferred) <input type="text" id="trainNo" placeholder="e.g. 12345"></label>
+      <label>Train Name (optional) <input type="text" id="trainName" placeholder="e.g. GOURDAMODAR EXP"></label>
       <label>Class
         <select id="travelClass">
           <option value="SL">SL - Sleeper</option>
@@ -71,6 +73,53 @@
           <option value="non-ac">Non-AC Tatkal — 11:00 AM IST</option>
         </select>
       </label>
+    </section>
+
+    <section id="payment" class="panel">
+      <label>Payment Method
+        <select id="paymentMethod">
+          <option value="cards">Cards / Net Banking / Wallets / EMI / UPI_CC / Others</option>
+          <option value="upi">BHIM / UPI</option>
+        </select>
+      </label>
+
+      <div id="cardsPaymentFields" class="payment-subpanel payment-subpanel--hidden">
+        <label>Payment Provider
+          <select id="cardsProvider">
+            <option value="IRCTC iPay">IRCTC iPay</option>
+            <option value="IRCTC E-Wallet">IRCTC E-Wallet</option>
+            <option value="PhonePe" selected>PhonePe</option>
+          </select>
+        </label>
+
+        <fieldset id="debitCardFields" class="payment-subsection">
+          <h4>Debit Card</h4>
+          <label>Card Name <input type="text" id="debitCardName" autocomplete="cc-name"></label>
+          <label>Card Number <input type="text" id="debitCardNumber" inputmode="numeric" maxlength="19" autocomplete="cc-number"></label>
+          <label>Expiry <input type="text" id="debitCardExpiry" placeholder="MM/YY" maxlength="5" autocomplete="cc-exp"></label>
+          <label>CVV <input type="password" id="debitCardCvv" maxlength="4" autocomplete="cc-csc"></label>
+        </fieldset>
+
+        <fieldset id="creditCardFields" class="payment-subsection">
+          <h4>Credit Card</h4>
+          <label>Card Name <input type="text" id="creditCardName" autocomplete="cc-name"></label>
+          <label>Card Number <input type="text" id="creditCardNumber" inputmode="numeric" maxlength="19" autocomplete="cc-number"></label>
+          <label>Expiry <input type="text" id="creditCardExpiry" placeholder="MM/YY" maxlength="5" autocomplete="cc-exp"></label>
+          <label>CVV <input type="password" id="creditCardCvv" maxlength="4" autocomplete="cc-csc"></label>
+        </fieldset>
+      </div>
+
+      <div id="upiPaymentFields" class="payment-subpanel payment-subpanel--hidden">
+        <label>UPI Provider
+          <select id="upiProvider">
+            <option value="IRCTC iPay" selected>IRCTC iPay</option>
+            <option value="PhonePe">PhonePe</option>
+            <option value="Razorpay">Razorpay</option>
+            <option value="PayU">PayU</option>
+            <option value="Amazon Pay">Amazon Pay</option>
+          </select>
+        </label>
+      </div>
     </section>
   </main>
 

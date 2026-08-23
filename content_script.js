@@ -35,21 +35,53 @@ IRCTCExt.Bot = {
     }
 
     if (step === 'train-list') {
+      if (path.includes('psgninput')) {
+        await IRCTCExt.Storage.updateState({ currentStep: 'passengers' });
+        return 'continue';
+      }
       if (!path.includes('train-list')) {
         overlay.setStatus('Waiting for train list page...');
         return 'wait';
       }
       await IRCTCExt.TrainList.bookTrain(config, overlay);
-      await IRCTCExt.Wait.poll(
-        () => !location.pathname.includes('train-list'),
-        { timeout: 25000, interval: 300 }
-      );
       await IRCTCExt.Storage.updateState({ currentStep: 'passengers' });
       return 'continue';
     }
 
-    if (step === 'passengers' || step === 'review' || step === 'payment') {
-      await IRCTCExt.BookingFlow.run(config, overlay);
+    if (step === 'passengers') {
+      if (!path.includes('psgninput')) {
+        overlay.setStatus('Waiting for passenger input page...');
+        return 'wait';
+      }
+      await IRCTCExt.BookingFlow.fillPassengers(config, overlay);
+      await IRCTCExt.Storage.updateState({ currentStep: 'review' });
+      return 'continue';
+    }
+
+    if (step === 'review') {
+      if (path.includes('reviewBooking')) {
+        await IRCTCExt.BookingFlow.clickContinueToPayment(overlay);
+        await IRCTCExt.Storage.updateState({ currentStep: 'payment' });
+        return 'wait';
+      }
+      if (path.includes('psgninput')) {
+        await IRCTCExt.BookingFlow.configurePsgninputOptions(config, overlay);
+        if (!location.pathname.includes('reviewBooking')) {
+          overlay.setStatus('Waiting for review booking page...');
+          return 'wait';
+        }
+        return 'continue';
+      }
+      overlay.setStatus('Waiting for review page...');
+      return 'wait';
+    }
+
+    if (step === 'payment') {
+      if (!path.includes('bkgPaymentOptions')) {
+        overlay.setStatus('Waiting for payment page...');
+        return 'wait';
+      }
+      await IRCTCExt.BookingFlow.showPaymentReview(overlay);
       return 'done';
     }
 
@@ -125,8 +157,44 @@ IRCTCExt.Bot = {
     }
   },
 
+  async restart() {
+    const TRAIN_SEARCH_URL = 'https://www.irctc.co.in/eticket/train-search';
+    const TRAIN_SEARCH_PATH = '/eticket/train-search';
+
+    this.running = false;
+
+    const overlay = await IRCTCExt.Overlay.show();
+    const pausePanel = document.getElementById('irctc-ext-pause-panel');
+    if (pausePanel) pausePanel.style.display = 'none';
+    overlay.setError('');
+    overlay.setStatus('Restarting from train search...');
+    overlay.setStep('Restart');
+    overlay.startTimer();
+
+    await IRCTCExt.Storage.updateState({
+      currentStep: 'init',
+      running: true,
+      paused: false,
+      status: 'running'
+    });
+
+    if (location.pathname.includes(TRAIN_SEARCH_PATH)) {
+      this.running = false;
+      await this.start();
+    } else {
+      location.assign(TRAIN_SEARCH_URL);
+    }
+  },
+
   init() {
+    if (IRCTCExt.Bot._initialized) return;
+    IRCTCExt.Bot._initialized = true;
+
+    IRCTCExt.Modals.init();
     IRCTCExt.Overlay.init().catch((err) => console.warn('[IRCTC-Bot] Overlay init:', err));
+    IRCTCExt.PaymentReviewOverlay.init().then(() => {
+      IRCTCExt.PaymentReviewOverlay.watch();
+    }).catch((err) => console.warn('[IRCTC-Bot] Payment review overlay init:', err));
 
     this.unwatchPath = IRCTCExt.Wait.watchPath(async (path) => {
       const config = await IRCTCExt.Storage.get();
@@ -136,15 +204,17 @@ IRCTCExt.Bot = {
     });
 
     chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+      if (msg.type === 'PING') {
+        sendResponse({ ok: true });
+        return true;
+      }
       if (msg.type === 'START_BOOKING') {
-        if (IRCTCExt.Bot.running) {
-          sendResponse({ ok: true });
-        } else {
-          IRCTCExt.Storage.updateState({ currentStep: 'init', running: true, paused: false, status: 'running' }).then(() => {
-            IRCTCExt.Bot.start().catch((err) => console.error('[IRCTC-Bot] Start failed:', err));
-          });
-          sendResponse({ ok: true });
-        }
+        IRCTCExt.Storage.updateState({ currentStep: 'init', running: true, paused: false, status: 'running' }).then(() => {
+          IRCTCExt.Bot.running = false;
+          IRCTCExt.Bot.start().catch((err) => console.error('[IRCTC-Bot] Start failed:', err));
+        });
+        sendResponse({ ok: true });
+        return true;
       }
       if (msg.type === 'GET_STATUS') {
         IRCTCExt.Storage.get().then((c) => sendResponse({ state: c.state }));
