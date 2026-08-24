@@ -85,7 +85,8 @@ IRCTCExt.Bot = {
       await IRCTCExt.BkgPayment.handleUpiPayment(config, overlay);
       overlay.setStatus('Payment provider selected. Complete payment on IRCTC.');
     } else if (method === 'cards') {
-      await IRCTCExt.BkgPayment.handleCardsPayment(config, overlay);
+      const result = await IRCTCExt.BkgPayment.handleCardsPayment(config, overlay);
+      if (result?.awaitingGateway) return 'wait';
       overlay.setStatus('Cards payment flow started. Complete payment on gateway.');
     } else {
       throw new Error(`Unsupported payment method: ${method}`);
@@ -137,6 +138,7 @@ IRCTCExt.Bot = {
     }
 
     if (path.includes('train-list')) {
+      overlay.setStatus('Train list loaded — starting booking...');
       await IRCTCExt.TrainList.bookTrain(config, overlay);
       return 'continue';
     }
@@ -174,7 +176,10 @@ IRCTCExt.Bot = {
       status: 'running',
       lastRun: new Date().toISOString(),
       passengersDone: false,
-      paymentDone: false
+      paymentDone: false,
+      paymentPhase: null,
+      paymentGateway: null,
+      awaitingGateway: false
     });
 
     try {
@@ -249,7 +254,10 @@ IRCTCExt.Bot = {
       paused: false,
       status: 'running',
       passengersDone: false,
-      paymentDone: false
+      paymentDone: false,
+      paymentPhase: null,
+      paymentGateway: null,
+      awaitingGateway: false
     });
 
     if (location.pathname.includes(TRAIN_SEARCH_PATH)) {
@@ -295,7 +303,10 @@ IRCTCExt.Bot = {
           status: 'running',
           passengersDone: false,
           paymentDone: false,
-          autoRestartCount: 0
+          autoRestartCount: 0,
+          paymentPhase: null,
+          paymentGateway: null,
+          awaitingGateway: false
         }).then(() => {
           IRCTCExt.Bot.running = false;
           IRCTCExt.Bot.start().catch((err) => console.error('[IRCTC-Bot] Start failed:', err));

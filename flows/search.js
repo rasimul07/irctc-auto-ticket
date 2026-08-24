@@ -6,8 +6,11 @@ IRCTCExt.SearchFlow = {
     overlay.setStatus('Filling journey details...');
     await IRCTCExt.Storage.updateState({ currentStep: 'search' });
 
-    const fromBox = await IRCTCExt.Wait.waitFor(IRCTCExt.SELECTORS.searchFrom, { timeout: 20000 });
-    const toBox = await IRCTCExt.Wait.waitFor(IRCTCExt.SELECTORS.searchTo, { timeout: 15000 });
+    IRCTCExt.Modals.dismissSessionRestore?.();
+    await IRCTCExt.Wait.delay(300);
+
+    const fromBox = await IRCTCExt.Wait.waitFor(IRCTCExt.SELECTORS.searchFrom, { timeout: 20000, visible: true });
+    const toBox = await IRCTCExt.Wait.waitFor(IRCTCExt.SELECTORS.searchTo, { timeout: 15000, visible: true });
     if (!fromBox || !toBox) throw new Error('Search form not found');
 
     const fromText = config.journey.from || config.journey.fromCode;
@@ -33,18 +36,18 @@ IRCTCExt.SearchFlow = {
       await IRCTCExt.Events.setCalendarDate(dateBox, dateStr);
     }
 
-    if (config.journey.quota) {
-      overlay.setStatus('Selecting quota...');
-      const quotaBox = await IRCTCExt.Wait.waitFor(IRCTCExt.SELECTORS.searchQuota, { timeout: 5000 });
-      if (quotaBox?.classList?.contains('field-box')) {
-        IRCTCExt.Events.openFieldBox(quotaBox);
-        await IRCTCExt.Wait.delay(300);
-        const quotaText = IRCTCExt.Stations.quotaOptionText(config.journey.quota);
-        await IRCTCExt.Events.pickCustomOption(IRCTCExt.SELECTORS.customQuotaOptions, quotaText);
-      } else {
-        await IRCTCExt.Events.selectDropdown(IRCTCExt.SELECTORS.searchQuota, config.journey.quota);
-      }
-    }
+    const quota = config.journey?.quota || 'TATKAL';
+    overlay.setStatus('Selecting quota...');
+    const quotaBox = await IRCTCExt.Wait.waitFor(IRCTCExt.SELECTORS.searchQuota, { timeout: 5000 });
+    if (!quotaBox) throw new Error('Quota field not found on search form');
+
+    const quotaOk = quotaBox.classList?.contains('field-box')
+      ? await IRCTCExt.Events.selectQuotaField(quotaBox, quota)
+      : await IRCTCExt.Events.selectDropdown(
+          IRCTCExt.SELECTORS.searchQuota,
+          IRCTCExt.Stations.quotaOptionText(quota)
+        );
+    if (!quotaOk) throw new Error(`Could not select quota: ${quota}`);
 
     overlay.setStatus('Submitting search...');
     const searchBtn = await IRCTCExt.Wait.waitFor(IRCTCExt.SELECTORS.searchButton, { timeout: 5000 });

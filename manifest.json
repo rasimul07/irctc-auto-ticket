@@ -1,10 +1,13 @@
 {
   "manifest_version": 3,
   "name": "IRCTC Tatkal Auto Booking",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "description": "Auto Tatkal ticket booking assistant for IRCTC with saved journey and passenger details.",
   "permissions": ["storage", "alarms", "tabs", "scripting"],
-  "host_permissions": ["https://www.irctc.co.in/*"],
+  "host_permissions": [
+    "https://www.irctc.co.in/*",
+    "https://www.irctcipay.com/*"
+  ],
   "background": {
     "service_worker": "background.js"
   },
@@ -19,9 +22,7 @@
       "run_at": "document_start"
     },
     {
-      "matches": [
-        "https://www.irctc.co.in/eticket/*"
-      ],
+      "matches": ["https://www.irctc.co.in/eticket/*"],
       "js": [
         "lib/selectors.js",
         "lib/wait.js",
@@ -40,6 +41,22 @@
         "content_script.js"
       ],
       "css": ["overlay/overlay.css", "overlay/paymentReview.css"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://www.irctcipay.com/*"],
+      "js": [
+        "lib/selectors.js",
+        "lib/wait.js",
+        "lib/events.js",
+        "lib/storage.js",
+        "lib/bkgPayment.js",
+        "lib/gateways/irctcIpay.js",
+        "lib/gateways/index.js",
+        "overlay/overlay.js",
+        "gateway_script.js"
+      ],
+      "css": ["overlay/overlay.css"],
       "run_at": "document_idle"
     }
   ]

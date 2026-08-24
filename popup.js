@@ -307,7 +307,10 @@ async function startBooking() {
     currentStep: 'init',
     status: 'running',
     passengersDone: false,
-    paymentDone: false
+    paymentDone: false,
+    paymentPhase: null,
+    paymentGateway: null,
+    awaitingGateway: false
   });
   updateStatusBadge('running');
   chrome.runtime.sendMessage({ type: 'START_FROM_POPUP' });

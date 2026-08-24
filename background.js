@@ -26,6 +26,20 @@ const CONTENT_SCRIPT_FILES = [
 
 const CONTENT_CSS_FILES = ['overlay/overlay.css', 'overlay/paymentReview.css'];
 
+const GATEWAY_URL_PATTERN = 'https://www.irctcipay.com/*';
+const GATEWAY_SCRIPT_FILES = [
+  'lib/selectors.js',
+  'lib/wait.js',
+  'lib/events.js',
+  'lib/storage.js',
+  'lib/bkgPayment.js',
+  'lib/gateways/irctcIpay.js',
+  'lib/gateways/index.js',
+  'overlay/overlay.js',
+  'gateway_script.js'
+];
+const GATEWAY_CSS_FILES = ['overlay/overlay.css'];
+
 function getNextIstTime(hour, minute = 0, second = 0) {
   const now = new Date();
   const utc = now.getTime() + now.getTimezoneOffset() * 60000;
@@ -71,7 +85,7 @@ async function findTrainSearchTab() {
   return eticketTabs[0] || null;
 }
 
-async function ensureContentScripts(tabId) {
+async function ensureContentScripts(tabId, scriptFiles = CONTENT_SCRIPT_FILES, cssFiles = CONTENT_CSS_FILES) {
   try {
     const res = await chrome.tabs.sendMessage(tabId, { type: 'PING' });
     if (res?.ok) return true;
@@ -81,15 +95,30 @@ async function ensureContentScripts(tabId) {
 
   await chrome.scripting.executeScript({
     target: { tabId },
-    files: CONTENT_SCRIPT_FILES
+    files: scriptFiles
   });
-  await chrome.scripting.insertCSS({
-    target: { tabId },
-    files: CONTENT_CSS_FILES
-  });
+  if (cssFiles?.length) {
+    await chrome.scripting.insertCSS({
+      target: { tabId },
+      files: cssFiles
+    });
+  }
 
   await new Promise((r) => setTimeout(r, 300));
   return true;
+}
+
+async function resumeGatewayOnTab(tabId) {
+  const data = await chrome.storage.local.get('irctcConfig');
+  const config = data.irctcConfig;
+  if (!config?.state?.running || !config?.state?.awaitingGateway) return;
+
+  await ensureContentScripts(tabId, GATEWAY_SCRIPT_FILES, GATEWAY_CSS_FILES);
+  try {
+    await chrome.tabs.sendMessage(tabId, { type: 'RESUME_GATEWAY' });
+  } catch (err) {
+    console.warn('[IRCTC-Bot] Gateway resume message failed:', err);
+  }
 }
 
 async function sendStartBooking(tabId, attempt = 0) {
@@ -192,4 +221,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     scheduleAlarms(msg.schedule).then(() => sendResponse({ ok: true }));
     return true;
   }
+});
+
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (changeInfo.status !== 'complete') return;
+  if (!tab.url?.includes('irctcipay.com')) return;
+  resumeGatewayOnTab(tabId).catch((err) => console.warn('[IRCTC-Bot] Gateway inject failed:', err));
 });
