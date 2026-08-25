@@ -17,7 +17,8 @@
 
   <div id="popupBody" class="popup-body">
   <nav class="tabs">
-    <button class="tab active" data-tab="credentials">Login</button>
+    <button class="tab active" data-tab="access">Access</button>
+    <button class="tab" data-tab="credentials">Login</button>
     <button class="tab" data-tab="journey">Journey</button>
     <button class="tab" data-tab="passengers">Passengers</button>
     <button class="tab" data-tab="schedule">Timer</button>
@@ -25,7 +26,20 @@
   </nav>
 
   <main>
-    <section id="credentials" class="panel active">
+    <section id="access" class="panel active">
+      <p id="accessStatusText" class="access-status">Checking access...</p>
+      <label>Buy Me a Coffee email
+        <input type="email" id="accessEmail" placeholder="email used on Buy Me a Coffee" autocomplete="email">
+      </label>
+      <button type="button" id="linkAccessEmailBtn" class="btn-secondary">Link email &amp; refresh</button>
+      <p class="access-note">
+        Free trial is limited. After paying on
+        <a id="bmcLink" href="https://buymeacoffee.com/" target="_blank" rel="noopener noreferrer">Buy Me a Coffee</a>,
+        link the same email here to unlock full access on extension and future Android app.
+      </p>
+    </section>
+
+    <section id="credentials" class="panel">
       <label>Username <input type="text" id="username" autocomplete="username"></label>
       <label>Password <input type="password" id="password" autocomplete="current-password"></label>
     </section>
@@ -151,6 +165,8 @@
   </div>
 
   <script src="lib/storage.js"></script>
+  <script src="lib/accessConfig.js"></script>
+  <script src="lib/api.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

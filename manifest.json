@@ -6,7 +6,9 @@
   "permissions": ["storage", "alarms", "tabs", "scripting"],
   "host_permissions": [
     "https://www.irctc.co.in/*",
-    "https://www.irctcipay.com/*"
+    "https://www.irctcipay.com/*",
+    "http://localhost:3000/*",
+    "https://api.yourdomain.com/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -28,6 +30,8 @@
         "lib/wait.js",
         "lib/events.js",
         "lib/storage.js",
+        "lib/accessConfig.js",
+        "lib/api.js",
         "lib/stations.js",
         "lib/trainList.js",
         "lib/passengers.js",

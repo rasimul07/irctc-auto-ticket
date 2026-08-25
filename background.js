@@ -1,3 +1,5 @@
+importScripts('lib/storage.js', 'lib/accessConfig.js', 'lib/api.js');
+
 const IRCTC_URL = 'https://www.irctc.co.in/eticket/train-search';
 const TRAIN_SEARCH_PATH = '/eticket/train-search';
 const ETICKET_URL_PATTERN = 'https://www.irctc.co.in/eticket/*';
@@ -11,6 +13,8 @@ const CONTENT_SCRIPT_FILES = [
   'lib/modals.js',
   'lib/events.js',
   'lib/storage.js',
+  'lib/accessConfig.js',
+  'lib/api.js',
   'lib/stations.js',
   'lib/trainList.js',
   'lib/passengers.js',
@@ -160,7 +164,23 @@ async function waitForTabReady(tabId) {
   await new Promise((r) => setTimeout(r, 800));
 }
 
+async function ensureBookingAccess() {
+  try {
+    const status = await IRCTCExt.AccessApi.ensureAccess({ forceRefresh: true });
+    return IRCTCExt.AccessApi.isStatusAllowed(status);
+  } catch (err) {
+    console.warn('[IRCTC-Bot] Access check failed:', err);
+    return false;
+  }
+}
+
 async function openIrctcAndStart() {
+  const allowed = await ensureBookingAccess();
+  if (!allowed) {
+    console.warn('[IRCTC-Bot] Booking blocked — access not allowed.');
+    return false;
+  }
+
   const existingTab = await findTrainSearchTab();
   let tabId;
 
@@ -214,7 +234,13 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type === 'START_FROM_POPUP') {
-    openIrctcAndStart().then(() => sendResponse({ ok: true }));
+    openIrctcAndStart().then((ok) => sendResponse({ ok: !!ok }));
+    return true;
+  }
+  if (msg.type === 'CHECK_ACCESS') {
+    IRCTCExt.AccessApi.ensureAccess({ forceRefresh: !!msg.forceRefresh })
+      .then((status) => sendResponse({ ok: true, ...status, allowed: IRCTCExt.AccessApi.isStatusAllowed(status) }))
+      .catch((err) => sendResponse({ ok: false, allowed: false, message: err.message }));
     return true;
   }
   if (msg.type === 'RESCHEDULE_ALARMS') {

@@ -1,9 +1,14 @@
 const DEFAULT_CONFIG = window.IRCTC_DEFAULT_CONFIG;
 const Storage = window.IRCTCStorage;
+const AccessApi = window.IRCTCExt?.AccessApi;
 
 const els = {
   tabs: document.querySelectorAll('.tab'),
   panels: document.querySelectorAll('.panel'),
+  accessStatusText: document.getElementById('accessStatusText'),
+  accessEmail: document.getElementById('accessEmail'),
+  linkAccessEmailBtn: document.getElementById('linkAccessEmailBtn'),
+  bmcLink: document.getElementById('bmcLink'),
   username: document.getElementById('username'),
   password: document.getElementById('password'),
   fromStation: document.getElementById('fromStation'),
@@ -61,6 +66,64 @@ async function loadMinimizedState() {
 function showMessage(text, isError = false) {
   els.message.textContent = text;
   els.message.classList.toggle('error', isError);
+}
+
+function updateAccessUi(status, errorMessage = '') {
+  if (!els.accessStatusText) return;
+
+  els.accessStatusText.classList.remove('access-status--ok', 'access-status--warn', 'access-status--error');
+
+  if (errorMessage) {
+    els.accessStatusText.textContent = errorMessage;
+    els.accessStatusText.classList.add('access-status--error');
+    return;
+  }
+
+  if (!status) {
+    els.accessStatusText.textContent = 'Access status unavailable.';
+    els.accessStatusText.classList.add('access-status--warn');
+    return;
+  }
+
+  els.accessStatusText.textContent = AccessApi?.formatStatusMessage(status) || 'Access checked.';
+  if (status.allowed) {
+    els.accessStatusText.classList.add(status.tier === 'paid' ? 'access-status--ok' : 'access-status--warn');
+  } else {
+    els.accessStatusText.classList.add('access-status--error');
+  }
+}
+
+async function refreshAccess() {
+  if (!AccessApi) {
+    updateAccessUi(null, 'Access API not loaded.');
+    return null;
+  }
+
+  try {
+    const status = await AccessApi.ensureAccess({ forceRefresh: true });
+    updateAccessUi(status);
+    return status;
+  } catch (err) {
+    updateAccessUi(null, err.message || 'Could not reach access API. Start backend on localhost:3000.');
+    return null;
+  }
+}
+
+async function linkAccessEmail() {
+  const email = els.accessEmail.value.trim();
+  if (!email) {
+    showMessage('Enter your Buy Me a Coffee email.', true);
+    switchTab('access');
+    return;
+  }
+
+  try {
+    const status = await AccessApi.linkEmail(email);
+    updateAccessUi(status);
+    showMessage(status.allowed ? 'Access linked successfully.' : 'Email linked, but no active paid license found yet.');
+  } catch (err) {
+    showMessage(err.message || 'Could not link email.', true);
+  }
 }
 
 function switchTab(tabId) {
@@ -216,6 +279,9 @@ function readForm() {
     schedule: {
       enabled: els.scheduleEnabled.checked,
       type: els.scheduleType.value
+    },
+    access: {
+      email: els.accessEmail.value.trim()
     }
   };
 }
@@ -253,8 +319,11 @@ function fillForm(config) {
   togglePaymentFields();
   els.scheduleEnabled.checked = !!config.schedule?.enabled;
   els.scheduleType.value = config.schedule?.type || 'non-ac';
+  els.accessEmail.value = config.access?.email || '';
+  if (AccessApi && els.bmcLink) els.bmcLink.href = AccessApi.BMC_URL;
   renderPassengers(config.passengers);
   updateStatusBadge(config.state?.status || 'idle');
+  updateAccessUi(config.access?.status || null);
 }
 
 function updateStatusBadge(status) {
@@ -265,6 +334,7 @@ async function load() {
   await loadMinimizedState();
   const config = await Storage.get();
   fillForm(config);
+  await refreshAccess();
   setInterval(async () => {
     const latest = await Storage.get();
     updateStatusBadge(latest.state?.status || 'idle');
@@ -280,7 +350,8 @@ async function save() {
     journey: { ...current.journey, ...form.journey },
     credentials: { ...current.credentials, ...form.credentials },
     schedule: { ...current.schedule, ...form.schedule },
-    preferences: { ...current.preferences, ...form.preferences }
+    preferences: { ...current.preferences, ...form.preferences },
+    access: { ...current.access, ...form.access }
   };
   await Storage.set(next);
   chrome.runtime.sendMessage({ type: 'RESCHEDULE_ALARMS', schedule: next.schedule });
@@ -290,6 +361,12 @@ async function save() {
 async function startBooking() {
   await save();
   const config = await Storage.get();
+  const accessStatus = await refreshAccess();
+  if (!accessStatus?.allowed) {
+    showMessage('Access expired. Pay via Buy Me a Coffee and link your email on the Access tab.', true);
+    switchTab('access');
+    return;
+  }
   if (!config.credentials.username || !config.credentials.password) {
     showMessage('Please enter IRCTC username and password.', true);
     switchTab('credentials');
@@ -313,8 +390,22 @@ async function startBooking() {
     awaitingGateway: false
   });
   updateStatusBadge('running');
-  chrome.runtime.sendMessage({ type: 'START_FROM_POPUP' });
-  showMessage('Opening IRCTC and starting automation...');
+  chrome.runtime.sendMessage({ type: 'START_FROM_POPUP' }, async (response) => {
+    if (chrome.runtime.lastError) {
+      await Storage.updateState({ running: false, status: 'idle', currentStep: 'init' });
+      updateStatusBadge('idle');
+      showMessage(chrome.runtime.lastError.message || 'Could not start booking.', true);
+      return;
+    }
+    if (!response?.ok) {
+      await Storage.updateState({ running: false, status: 'idle', currentStep: 'init' });
+      updateStatusBadge('idle');
+      showMessage('Access expired or API unavailable. Check the Access tab.', true);
+      switchTab('access');
+      return;
+    }
+    showMessage('Opening IRCTC and starting automation...');
+  });
 }
 
 async function clearAll() {
@@ -351,6 +442,7 @@ document.querySelectorAll('input[name="autoPayType"]').forEach((radio) => {
 els.saveBtn.addEventListener('click', save);
 els.startBtn.addEventListener('click', startBooking);
 els.clearBtn.addEventListener('click', clearAll);
+els.linkAccessEmailBtn?.addEventListener('click', linkAccessEmail);
 els.toggleMinimizeBtn.addEventListener('click', () => {
   setMinimized(!document.body.classList.contains('popup-minimized'));
 });

@@ -157,6 +157,17 @@ IRCTCExt.Bot = {
 
   async start() {
     if (this.running) return;
+
+    const access = await chrome.runtime.sendMessage({ type: 'CHECK_ACCESS', forceRefresh: true }).catch(() => null);
+    if (!access?.allowed) {
+      const overlay = await IRCTCExt.Overlay.show().catch(() => null);
+      overlay?.setError(access?.message || 'Access expired. Link your Buy Me a Coffee email in the extension popup.');
+      overlay?.setStatus('Booking blocked — trial expired or license not linked.');
+      overlay?.setStep('Access');
+      await IRCTCExt.Storage.updateState({ running: false, status: 'idle', currentStep: 'access' });
+      return;
+    }
+
     this.running = true;
 
     const overlay = await IRCTCExt.Overlay.show();

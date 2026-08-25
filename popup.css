@@ -198,3 +198,35 @@ button {
 .payment-subsection--muted {
   opacity: 0.55;
 }
+
+.access-status {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.access-status--ok {
+  background: rgba(46, 125, 50, 0.2);
+}
+
+.access-status--warn {
+  background: rgba(245, 124, 0, 0.18);
+}
+
+.access-status--error {
+  background: rgba(198, 40, 40, 0.18);
+}
+
+.access-note {
+  margin-top: 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  opacity: 0.9;
+}
+
+.access-note a {
+  color: #ffb74d;
+}
