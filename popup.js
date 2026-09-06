@@ -6,6 +6,9 @@ const els = {
   tabs: document.querySelectorAll('.tab'),
   panels: document.querySelectorAll('.panel'),
   accessStatusText: document.getElementById('accessStatusText'),
+  accessTier: document.getElementById('accessTier'),
+  accessValidUntil: document.getElementById('accessValidUntil'),
+  accessActive: document.getElementById('accessActive'),
   accessEmail: document.getElementById('accessEmail'),
   linkAccessEmailBtn: document.getElementById('linkAccessEmailBtn'),
   bmcLink: document.getElementById('bmcLink'),
@@ -68,20 +71,34 @@ function showMessage(text, isError = false) {
   els.message.classList.toggle('error', isError);
 }
 
-function updateAccessUi(status, errorMessage = '') {
+function setAccessDetailValues(tier, validUntil, active) {
+  if (els.accessTier) els.accessTier.textContent = tier;
+  if (els.accessValidUntil) els.accessValidUntil.textContent = validUntil;
+  if (els.accessActive) els.accessActive.textContent = active;
+}
+
+function updateAccessUi(status, errorMessage = '', options = {}) {
   if (!els.accessStatusText) return;
 
   els.accessStatusText.classList.remove('access-status--ok', 'access-status--warn', 'access-status--error');
 
+  if (options.loading) {
+    els.accessStatusText.textContent = 'Checking access...';
+    setAccessDetailValues('—', '—', '—');
+    return;
+  }
+
   if (errorMessage) {
     els.accessStatusText.textContent = errorMessage;
     els.accessStatusText.classList.add('access-status--error');
+    setAccessDetailValues('—', '—', '—');
     return;
   }
 
   if (!status) {
     els.accessStatusText.textContent = 'Access status unavailable.';
     els.accessStatusText.classList.add('access-status--warn');
+    setAccessDetailValues('—', '—', '—');
     return;
   }
 
@@ -91,6 +108,12 @@ function updateAccessUi(status, errorMessage = '') {
   } else {
     els.accessStatusText.classList.add('access-status--error');
   }
+
+  setAccessDetailValues(
+    AccessApi?.formatTier(status) || '—',
+    AccessApi?.formatValidUntil(status) || '—',
+    AccessApi?.formatActive(status) || '—'
+  );
 }
 
 async function refreshAccess() {
@@ -99,6 +122,9 @@ async function refreshAccess() {
     return null;
   }
 
+  updateAccessUi(null, '', { loading: true });
+  if (els.linkAccessEmailBtn) els.linkAccessEmailBtn.disabled = true;
+
   try {
     const status = await AccessApi.ensureAccess({ forceRefresh: true });
     updateAccessUi(status);
@@ -106,6 +132,8 @@ async function refreshAccess() {
   } catch (err) {
     updateAccessUi(null, err.message || 'Could not reach access API. Start backend on localhost:3000.');
     return null;
+  } finally {
+    if (els.linkAccessEmailBtn) els.linkAccessEmailBtn.disabled = false;
   }
 }
 
@@ -117,12 +145,17 @@ async function linkAccessEmail() {
     return;
   }
 
+  if (els.linkAccessEmailBtn) els.linkAccessEmailBtn.disabled = true;
+
   try {
+    await AccessApi.ensureAccess();
     const status = await AccessApi.linkEmail(email);
     updateAccessUi(status);
     showMessage(status.allowed ? 'Access linked successfully.' : 'Email linked, but no active paid license found yet.');
   } catch (err) {
     showMessage(err.message || 'Could not link email.', true);
+  } finally {
+    if (els.linkAccessEmailBtn) els.linkAccessEmailBtn.disabled = false;
   }
 }
 
@@ -323,7 +356,6 @@ function fillForm(config) {
   if (AccessApi && els.bmcLink) els.bmcLink.href = AccessApi.BMC_URL;
   renderPassengers(config.passengers);
   updateStatusBadge(config.state?.status || 'idle');
-  updateAccessUi(config.access?.status || null);
 }
 
 function updateStatusBadge(status) {

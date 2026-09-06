@@ -28,13 +28,27 @@
   <main>
     <section id="access" class="panel active">
       <p id="accessStatusText" class="access-status">Checking access...</p>
+      <dl class="access-details">
+        <div class="access-detail-row">
+          <dt>Subscription</dt>
+          <dd id="accessTier">—</dd>
+        </div>
+        <div class="access-detail-row">
+          <dt>Valid until</dt>
+          <dd id="accessValidUntil">—</dd>
+        </div>
+        <div class="access-detail-row">
+          <dt>Status</dt>
+          <dd id="accessActive">—</dd>
+        </div>
+      </dl>
       <label>Buy Me a Coffee email
         <input type="email" id="accessEmail" placeholder="email used on Buy Me a Coffee" autocomplete="email">
       </label>
       <button type="button" id="linkAccessEmailBtn" class="btn-secondary">Link email &amp; refresh</button>
       <p class="access-note">
         Free trial is limited. After paying on
-        <a id="bmcLink" href="https://buymeacoffee.com/" target="_blank" rel="noopener noreferrer">Buy Me a Coffee</a>,
+        <a id="bmcLink" href="https://buymeacoffee.com/mritools" target="_blank" rel="noopener noreferrer">Buy Me a Coffee</a>,
         link the same email here to unlock full access on extension and future Android app.
       </p>
     </section>

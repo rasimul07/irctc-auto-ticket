@@ -220,6 +220,37 @@ button {
   background: rgba(198, 40, 40, 0.18);
 }
 
+.access-details {
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.access-detail-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.access-detail-row + .access-detail-row {
+  margin-top: 6px;
+}
+
+.access-detail-row dt {
+  margin: 0;
+  font-weight: 500;
+  opacity: 0.75;
+}
+
+.access-detail-row dd {
+  margin: 0;
+  text-align: right;
+}
+
 .access-note {
   margin-top: 12px;
   font-size: 12px;

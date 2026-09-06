@@ -1,7 +1,7 @@
 const router = require('express').Router();
-const clientContext = require('../middleware/clientContext');
-const { sendSuccess, sendError, asyncHandler } = require('../utils/http');
-const accessService = require('../services/accessService');
+const clientContext = require('../../middleware/clientContext');
+const { sendSuccess, sendError, asyncHandler } = require('../../utils/http');
+const accessService = require('../../services/accessService');
 
 router.use(clientContext);
 
