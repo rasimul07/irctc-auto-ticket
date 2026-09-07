@@ -26,9 +26,6 @@ fi
 echo "[deploy] building and starting Docker container"
 docker compose -f docker-compose.prod.yml up -d --build
 
-echo "[deploy] running database migrations"
-docker compose -f docker-compose.prod.yml run --rm api node src/db/migrate.js
-
 echo "[deploy] waiting for health check"
 sleep 3
 curl -sf http://localhost:3000/health | grep -q '"db".*"connected"' || {
