@@ -1,9 +1,7 @@
 const { Pool } = require('pg');
-const config = require('../config');
+const { buildPoolConfig } = require('./databaseConfig');
 
-const pool = new Pool({
-  connectionString: config.databaseUrl
-});
+const pool = new Pool(buildPoolConfig());
 
 pool.on('error', (err) => {
   console.error('[db] Unexpected pool error', err);
