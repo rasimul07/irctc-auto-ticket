@@ -1,6 +1,6 @@
 # Rail Ticket API
 
-Shared backend for the **IRCTC Tatkal Chrome extension** and future **Ionic Android app**.
+Shared backend for the **IRCTC Tatkal Chrome extension** and future **Ionic Android / iOS apps**.
 
 ## Stack
 
@@ -39,10 +39,14 @@ curl http://localhost:3000/health
 | `DB_NAME` | Database name (Supabase default: `postgres`) |
 | `DB_PORT` | Database port (default `5432`) |
 | `DB_SSL` | Set `true` for Supabase (auto-enabled for `*.supabase.co`) |
-| `FREE_TRIAL_DAYS` | Trial length per client+device (default `7`) |
+| `FREE_TRIAL_DAYS` | Trial length after BMC `recurring_donation.started` (default `7`) |
+| `COFFEE_TOKENS_PER_MONTH` | Tokens granted per `donation.created` (default `10`) |
+| `COFFEE_TOKEN_PERIOD_DAYS` | Coffee token validity window (default `30`) |
+| `BMC_PLAN_BASIC` | BMC membership level name for Basic (default `Basic`) |
+| `BMC_PLAN_PRO` | BMC membership level name for Pro (default `Pro`) |
 | `BMC_WEBHOOK_SECRET` | Buy Me a Coffee webhook HMAC secret |
 | `CORS_ORIGIN` | `*` for dev or comma-separated origins |
-| `ALLOWED_CLIENT_TYPES` | `chrome_extension,ionic_android` |
+| `ALLOWED_CLIENT_TYPES` | `chrome_extension,ionic_android,ionic_ios` |
 
 Copy [`/.env.example`](.env.example) to `.env` and edit values.
 
@@ -60,10 +64,16 @@ X-Client-Type: chrome_extension
 Content-Type: application/json
 ```
 
-Ionic app later uses the same endpoints with:
+Mobile apps use the same endpoints with:
 
 ```http
 X-Client-Type: ionic_android
+```
+
+or
+
+```http
+X-Client-Type: ionic_ios
 ```
 
 ### Response format
@@ -77,7 +87,7 @@ Success:
 Error:
 
 ```json
-{ "ok": false, "error": { "code": "TRIAL_EXPIRED", "message": "..." } }
+{ "ok": false, "error": { "code": "NO_TOKENS", "message": "..." } }
 ```
 
 ### Endpoints
@@ -85,10 +95,11 @@ Error:
 | Method | Path | Purpose |
 |--------|------|---------|
 | GET | `/health` | API + DB health |
-| POST | `/api/v1/access/register` | Start trial for `{ deviceId }` |
+| POST | `/api/v1/access/register` | Register `{ deviceId }` (no auto-trial) |
 | GET | `/api/v1/access/status?deviceId=` | Check access before booking |
-| POST | `/api/v1/access/link` | Link `{ deviceId, email }` after BMC payment |
-| POST | `/webhooks/buy-me-a-coffee` | BMC webhook (creates/extends license) |
+| POST | `/api/v1/access/link` | Link `{ deviceId, email }` after BMC purchase |
+| POST | `/api/v1/access/consume-token` | Deduct 1 token at payment page `{ deviceId, usageKey }` |
+| POST | `/webhooks/bmc` | BMC webhook (licenses & tokens) |
 
 ### Register example
 
@@ -98,6 +109,8 @@ curl -X POST http://localhost:3000/api/v1/access/register \
   -H "X-Client-Type: chrome_extension" \
   -d "{\"deviceId\":\"test-device-123\"}"
 ```
+
+Returns `tier: "none"`, `allowed: false` until the user links a BMC email with an active license.
 
 ### Status example
 
@@ -115,21 +128,42 @@ curl -X POST http://localhost:3000/api/v1/access/link \
   -d "{\"deviceId\":\"test-device-123\",\"email\":\"user@example.com\"}"
 ```
 
+### Consume token example
+
+```bash
+curl -X POST http://localhost:3000/api/v1/access/consume-token \
+  -H "Content-Type: application/json" \
+  -H "X-Client-Type: chrome_extension" \
+  -d "{\"deviceId\":\"test-device-123\",\"usageKey\":\"booking-session-uuid\"}"
+```
+
 ## Access model
 
-1. **Trial** — first register per `(client_type, device_id)` gets `FREE_TRIAL_DAYS`
-2. **Paid** — BMC webhook upserts `licenses` by email; client links email to device
-3. **Expired** — trial ended and no active license
+| Plan | BMC event | Chrome extension | Mobile apps | Usage |
+|------|-----------|------------------|-------------|-------|
+| `none` | — | blocked | blocked | Register only; link email after BMC |
+| `trial` | `recurring_donation.started` | unlimited | blocked | `FREE_TRIAL_DAYS` from webhook |
+| `coffee` | `donation.created` | token-based | blocked | `COFFEE_TOKENS_PER_MONTH` per period |
+| `basic` | `membership.*` level **Basic** | unlimited | blocked | unlimited |
+| `pro` | `membership.*` level **Pro** | unlimited | allowed | unlimited |
 
-Paid licenses are **shared across clients** (extension + Ionic) when the same email is linked.
+Plan priority (same email): `pro` > `basic` > `coffee` > `trial`. Lower-tier webhooks do not downgrade an active higher tier.
+
+1 token is consumed when the client reaches the IRCTC payment page (`bkgPaymentOptions`). Unlimited plans skip deduction. The same `usageKey` per booking session is idempotent.
 
 ## Buy Me a Coffee webhook
 
-1. In BMC dashboard, set webhook URL to:
-   - Local (via ngrok): `https://YOUR-NGROK/webhooks/buy-me-a-coffee`
-   - Production: `https://api.yourdomain.com/webhooks/buy-me-a-coffee`
-2. Set `BMC_WEBHOOK_SECRET` in `.env` to match BMC
-3. Webhook stores event in `bmc_events` (idempotent) and upserts `licenses`
+1. In BMC dashboard → Integrations → Webhooks, set URL to:
+   - Local (via ngrok): `https://YOUR-NGROK/webhooks/bmc`
+   - Production: `https://api.yourdomain.com/webhooks/bmc`
+2. Set `BMC_WEBHOOK_SECRET` in `.env` to match BMC (signing secret on webhook detail page)
+3. Subscribe to events:
+   - `recurring_donation.started`, `recurring_donation.cancelled`
+   - `donation.created`, `donation.refunded`
+   - `membership.started`, `membership.updated`, `membership.cancelled`, `membership.paused`
+4. Verify signature via `x-signature-sha256` header (HMAC-SHA256 of raw body)
+
+Webhook stores event in `bmc_events` (idempotent) and upserts `licenses`.
 
 ## AWS RDS later
 
@@ -179,10 +213,14 @@ DB_NAME=postgres
 DB_PORT=5432
 DB_SSL=true
 FREE_TRIAL_DAYS=7
+COFFEE_TOKENS_PER_MONTH=10
+COFFEE_TOKEN_PERIOD_DAYS=30
+BMC_PLAN_BASIC=Basic
+BMC_PLAN_PRO=Pro
 JWT_SECRET=long-random-secret
 BMC_WEBHOOK_SECRET=your-bmc-secret
 CORS_ORIGIN=*
-ALLOWED_CLIENT_TYPES=chrome_extension,ionic_android
+ALLOWED_CLIENT_TYPES=chrome_extension,ionic_android,ionic_ios
 ```
 
 4. Open security group: HTTP/HTTPS for Nginx, port 3000 for the API container
@@ -223,7 +261,7 @@ The deploy script stops any PM2 processes to avoid port 3000 conflicts, rebuilds
 
 ## Ionic reuse (future)
 
-Use the same endpoints from Angular/Ionic with `X-Client-Type: ionic_android`. No backend changes required.
+Use the same endpoints from Angular/Ionic with `X-Client-Type: ionic_android` or `ionic_ios`. Pro plan required for mobile client access.
 
 ## Scripts
 

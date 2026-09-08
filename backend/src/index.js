@@ -28,7 +28,7 @@ app.use(
 
 app.use('/health', healthRouter);
 app.use(`${config.apiBasePath}/access`, accessRouter);
-app.use('/webhooks/buy-me-a-coffee', bmcRouter);
+app.use('/webhooks/bmc', bmcRouter);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

@@ -24,7 +24,10 @@ router.post(
   '/',
   asyncHandler(async (req, res) => {
     const rawBody = req.rawBody || JSON.stringify(req.body || {});
-    const signature = req.header('x-bmc-signature') || req.header('x-webhook-signature');
+    const signature =
+      req.header('x-signature-sha256') ||
+      req.header('x-bmc-signature') ||
+      req.header('x-webhook-signature');
 
     if (!verifyBmcSignature(rawBody, signature)) {
       return sendError(res, 'INVALID_SIGNATURE', 'Webhook signature verification failed', 401);

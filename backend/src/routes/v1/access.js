@@ -48,4 +48,21 @@ router.post(
   })
 );
 
+router.post(
+  '/consume-token',
+  asyncHandler(async (req, res) => {
+    const deviceId = String(req.body?.deviceId || '').trim();
+    const usageKey = String(req.body?.usageKey || '').trim();
+    if (!deviceId) {
+      return sendError(res, 'INVALID_DEVICE_ID', 'deviceId is required', 400);
+    }
+    if (!usageKey) {
+      return sendError(res, 'INVALID_USAGE_KEY', 'usageKey is required', 400);
+    }
+
+    const status = await accessService.consumeToken(req.clientType, deviceId, usageKey);
+    return sendSuccess(res, status);
+  })
+);
+
 module.exports = router;

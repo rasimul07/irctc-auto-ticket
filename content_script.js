@@ -67,6 +67,32 @@ IRCTCExt.Bot = {
     }
   },
 
+  async ensureTokenForPayment(overlay, config) {
+    if (config.state?.tokenConsumed) return true;
+
+    const usageKey = config.state?.bookingSessionId || crypto.randomUUID();
+    if (!config.state?.bookingSessionId) {
+      await IRCTCExt.Storage.updateState({ bookingSessionId: usageKey });
+      config.state.bookingSessionId = usageKey;
+    }
+
+    const result = await chrome.runtime
+      .sendMessage({ type: 'CONSUME_TOKEN', usageKey })
+      .catch(() => null);
+
+    if (!result?.ok) {
+      overlay?.setError(result?.message || 'No booking tokens remaining. Buy a coffee on Buy Me a Coffee and link your email.');
+      overlay?.setStatus('Booking blocked — no tokens left for payment step.');
+      overlay?.setStep('Access');
+      await IRCTCExt.Storage.updateState({ running: false, status: 'idle', currentStep: 'access' });
+      return false;
+    }
+
+    await IRCTCExt.Storage.updateState({ tokenConsumed: true });
+    config.state.tokenConsumed = true;
+    return true;
+  },
+
   async handlePaymentPage(overlay, config) {
     if (config.state.paymentDone) return 'done';
 
@@ -112,6 +138,8 @@ IRCTCExt.Bot = {
     overlay.setStep(step);
 
     if (path.includes('bkgPaymentOptions')) {
+      const canPay = await IRCTCExt.Bot.ensureTokenForPayment(overlay, config);
+      if (!canPay) return 'done';
       return IRCTCExt.Bot.handlePaymentPage(overlay, config);
     }
 
@@ -161,8 +189,12 @@ IRCTCExt.Bot = {
     const access = await chrome.runtime.sendMessage({ type: 'CHECK_ACCESS', forceRefresh: true }).catch(() => null);
     if (!access?.allowed) {
       const overlay = await IRCTCExt.Overlay.show().catch(() => null);
-      overlay?.setError(access?.message || 'Access expired. Link your Buy Me a Coffee email in the extension popup.');
-      overlay?.setStatus('Booking blocked — trial expired or license not linked.');
+      const message =
+        access?.tier === 'none'
+          ? 'No access yet. Start a free trial or buy a coffee on Buy Me a Coffee, then link your email in the extension popup.'
+          : access?.message || 'Access expired. Link your Buy Me a Coffee email in the extension popup.';
+      overlay?.setError(message);
+      overlay?.setStatus('Booking blocked — access not active.');
       overlay?.setStep('Access');
       await IRCTCExt.Storage.updateState({ running: false, status: 'idle', currentStep: 'access' });
       return;
@@ -190,7 +222,9 @@ IRCTCExt.Bot = {
       paymentDone: false,
       paymentPhase: null,
       paymentGateway: null,
-      awaitingGateway: false
+      awaitingGateway: false,
+      bookingSessionId: crypto.randomUUID(),
+      tokenConsumed: false
     });
 
     try {

@@ -243,6 +243,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       .catch((err) => sendResponse({ ok: false, allowed: false, message: err.message }));
     return true;
   }
+  if (msg.type === 'CONSUME_TOKEN') {
+    IRCTCExt.AccessApi.consumeToken(msg.usageKey)
+      .then((status) => sendResponse({ ok: true, ...status, allowed: IRCTCExt.AccessApi.isStatusAllowed(status) }))
+      .catch((err) => sendResponse({ ok: false, allowed: false, message: err.message, code: err.code }));
+    return true;
+  }
   if (msg.type === 'RESCHEDULE_ALARMS') {
     scheduleAlarms(msg.schedule).then(() => sendResponse({ ok: true }));
     return true;

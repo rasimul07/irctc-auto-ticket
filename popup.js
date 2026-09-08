@@ -104,7 +104,9 @@ function updateAccessUi(status, errorMessage = '', options = {}) {
 
   els.accessStatusText.textContent = AccessApi?.formatStatusMessage(status) || 'Access checked.';
   if (status.allowed) {
-    els.accessStatusText.classList.add(status.tier === 'paid' ? 'access-status--ok' : 'access-status--warn');
+    els.accessStatusText.classList.add(
+      status.tier === 'pro' || status.tier === 'basic' ? 'access-status--ok' : 'access-status--warn'
+    );
   } else {
     els.accessStatusText.classList.add('access-status--error');
   }
@@ -151,7 +153,11 @@ async function linkAccessEmail() {
     await AccessApi.ensureAccess();
     const status = await AccessApi.linkEmail(email);
     updateAccessUi(status);
-    showMessage(status.allowed ? 'Access linked successfully.' : 'Email linked, but no active paid license found yet.');
+    showMessage(
+      status.allowed
+        ? 'Access linked successfully.'
+        : 'Email linked, but no active license found yet. Start a trial or buy a coffee on Buy Me a Coffee first.'
+    );
   } catch (err) {
     showMessage(err.message || 'Could not link email.', true);
   } finally {
@@ -395,7 +401,7 @@ async function startBooking() {
   const config = await Storage.get();
   const accessStatus = await refreshAccess();
   if (!accessStatus?.allowed) {
-    showMessage('Access expired. Pay via Buy Me a Coffee and link your email on the Access tab.', true);
+    showMessage('Access not active. Start a free trial or buy a coffee on Buy Me a Coffee, then link your email on the Access tab.', true);
     switchTab('access');
     return;
   }
@@ -419,7 +425,9 @@ async function startBooking() {
     paymentDone: false,
     paymentPhase: null,
     paymentGateway: null,
-    awaitingGateway: false
+    awaitingGateway: false,
+    bookingSessionId: crypto.randomUUID(),
+    tokenConsumed: false
   });
   updateStatusBadge('running');
   chrome.runtime.sendMessage({ type: 'START_FROM_POPUP' }, async (response) => {
