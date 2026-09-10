@@ -26,7 +26,13 @@ router.get(
       return sendError(res, 'INVALID_DEVICE_ID', 'deviceId query param is required', 400);
     }
 
-    const status = await accessService.resolveAccessStatus(req.clientType, deviceId);
+    let status;
+    try {
+      status = await accessService.resolveAccessStatus(req.clientType, deviceId);
+    } catch (err) {
+      if (err.code !== 'DEVICE_NOT_FOUND') throw err;
+      status = await accessService.registerDevice(req.clientType, deviceId);
+    }
     return sendSuccess(res, status);
   })
 );

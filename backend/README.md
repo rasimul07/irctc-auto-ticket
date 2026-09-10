@@ -32,16 +32,18 @@ curl http://localhost:3000/health
 | Variable | Description |
 |----------|-------------|
 | `PORT` | API port (default `3000`) |
-| `DATABASE_URL` | Postgres connection string (local, RDS, or Supabase) |
-| `DB_HOST` | Supabase/alternate host when password has special characters |
-| `DB_USER` | Database user (default `postgres`) |
-| `DB_PASSWORD` | Database password (use with `DB_HOST`; avoids URL-encoding issues) |
-| `DB_NAME` | Database name (Supabase default: `postgres`) |
-| `DB_PORT` | Database port (default `5432`) |
-| `DB_SSL` | Set `true` for Supabase (auto-enabled for `*.supabase.co`) |
+| `DATABASE_URL` | Postgres connection string (Supabase, local, or RDS). URL-encode special chars in password (`@` → `%40`) |
+| `DB_HOST` | Optional alternate to `DATABASE_URL` when split vars are preferred |
+| `DB_USER` | With `DB_HOST` only (default `postgres`) |
+| `DB_PASSWORD` | With `DB_HOST` only |
+| `DB_NAME` | With `DB_HOST` only (Supabase default: `postgres`) |
+| `DB_PORT` | With `DB_HOST` only (default `5432`) |
+| `DB_SSL` | With `DB_HOST` only; auto-enabled for `*.supabase.co` in `DATABASE_URL` mode |
 | `FREE_TRIAL_DAYS` | Trial length after BMC `recurring_donation.started` (default `7`) |
 | `COFFEE_TOKENS_PER_MONTH` | Tokens granted per `donation.created` (default `10`) |
 | `COFFEE_TOKEN_PERIOD_DAYS` | Coffee token validity window (default `30`) |
+| `COFFEE_RENEW_CRON_ENABLED` | Enable daily coffee token auto-renew job (default `true`) |
+| `COFFEE_RENEW_CRON_SCHEDULE` | Cron expression for coffee renewals (default `0 0 * * *` — midnight UTC) |
 | `BMC_PLAN_BASIC` | BMC membership level name for Basic (default `Basic`) |
 | `BMC_PLAN_PRO` | BMC membership level name for Pro (default `Pro`) |
 | `BMC_WEBHOOK_SECRET` | Buy Me a Coffee webhook HMAC secret |
@@ -143,13 +145,29 @@ curl -X POST http://localhost:3000/api/v1/access/consume-token \
 |------|-----------|------------------|-------------|-------|
 | `none` | — | blocked | blocked | Register only; link email after BMC |
 | `trial` | `recurring_donation.started` | unlimited | blocked | `FREE_TRIAL_DAYS` from webhook |
-| `coffee` | `donation.created` | token-based | blocked | `COFFEE_TOKENS_PER_MONTH` per period |
+| `coffee` | `donation.created` | token-based | blocked | 10 tokens per 30 days; auto-renewed by cron if `coffee_donations_count >= 1` |
 | `basic` | `membership.*` level **Basic** | unlimited | blocked | unlimited |
 | `pro` | `membership.*` level **Pro** | unlimited | allowed | unlimited |
 
 Plan priority (same email): `pro` > `basic` > `coffee` > `trial`. Lower-tier webhooks do not downgrade an active higher tier.
 
 1 token is consumed when the client reaches the IRCTC payment page (`bkgPaymentOptions`). Unlimited plans skip deduction. The same `usageKey` per booking session is idempotent.
+
+### Coffee token auto-renew (cron)
+
+After a successful `donation.created` webhook (`status=succeeded`, `refunded=false`), `coffee_donations_count` is incremented by `data.coffee_count`. A background cron job renews expired coffee periods:
+
+- Resets `tokens_balance` to `COFFEE_TOKENS_PER_MONTH`
+- Extends `token_period_end` by `COFFEE_TOKEN_PERIOD_DAYS`
+- Only when `plan=coffee`, `active=TRUE`, and `coffee_donations_count >= 1`
+
+Manual run:
+
+```bash
+npm run jobs:renew-coffee
+```
+
+`donation.refunded` decrements `coffee_donations_count`; when it reaches 0, the coffee plan is deactivated and cron renewals stop.
 
 ## Buy Me a Coffee webhook
 
@@ -165,6 +183,8 @@ Plan priority (same email): `pro` > `basic` > `coffee` > `trial`. Lower-tier web
 
 Webhook stores event in `bmc_events` (idempotent) and upserts `licenses`.
 
+Coffee donations use `data.supporter_email`, `data.coffee_count`, and `event_id` per the [BMC OpenAPI spec](https://cdn.buymeacoffee.com/assets/integrations/bmc-webhooks-openapi.json). Only `donation.created` / `donation.refunded` affect the coffee plan.
+
 ## AWS RDS later
 
 Update only `.env`:
@@ -177,15 +197,10 @@ Run `npm run db:migrate` against RDS once.
 
 ## Supabase
 
-Use either a URL-encoded `DATABASE_URL` or split variables (recommended when the password contains `@` or other special characters):
+Copy the **URI** from Supabase dashboard → **Connect** → **Session pooler**, then URL-encode special characters in the password (`@` → `%40`):
 
 ```env
-DB_HOST=db.xxxxx.supabase.co
-DB_USER=postgres
-DB_PASSWORD=your-password
-DB_NAME=postgres
-DB_PORT=5432
-DB_SSL=true
+DATABASE_URL=postgresql://postgres.your-ref:your%40password@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres?sslmode=require
 ```
 
 SSL and IPv4-first DNS are configured automatically for Supabase hosts.
@@ -206,12 +221,7 @@ Pushes to `main` that change `backend/**` trigger [`.github/workflows/deploy-bac
 PORT=3000
 NODE_ENV=production
 API_BASE_PATH=/api/v1
-DB_HOST=db.xxxxx.supabase.co
-DB_USER=postgres
-DB_PASSWORD=your-password
-DB_NAME=postgres
-DB_PORT=5432
-DB_SSL=true
+DATABASE_URL=postgresql://postgres.your-ref:your%40password@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres?sslmode=require
 FREE_TRIAL_DAYS=7
 COFFEE_TOKENS_PER_MONTH=10
 COFFEE_TOKEN_PERIOD_DAYS=30
@@ -272,4 +282,5 @@ Use the same endpoints from Angular/Ionic with `X-Client-Type: ionic_android` or
 | `npm run db:up` | Start Docker Postgres |
 | `npm run db:down` | Stop Docker Postgres |
 | `npm run db:migrate` | Apply SQL migrations |
+| `npm run jobs:renew-coffee` | Manually renew expired coffee token periods |
 | `bash scripts/deploy.sh` | Production deploy on EC2 (also run by CI) |

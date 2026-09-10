@@ -2,6 +2,9 @@ node_modules/
 backend/node_modules/
 backend/railticket.pem
 .env
+.env.extension
 backend/.env
+backend/.env.production
+lib/accessConfig.local.js
 *.log
 .DS_Store

@@ -1,0 +1,2 @@
+ALTER TABLE licenses
+  ADD COLUMN IF NOT EXISTS coffee_donations_count INTEGER NOT NULL DEFAULT 0;

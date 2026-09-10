@@ -75,7 +75,8 @@ async function getLicenseByEmail(email) {
   if (!normalized) return null;
   const result = await query(
     `SELECT id, email, plan, bmc_membership_id, expires_at, active,
-            tokens_balance, token_period_end, created_at, updated_at
+            tokens_balance, token_period_end, coffee_donations_count,
+            created_at, updated_at
      FROM licenses
      WHERE email = $1`,
     [normalized]
@@ -316,6 +317,30 @@ function extractBmcExpiresAt(payload) {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
+function isDonationSucceeded(payload) {
+  const data = payload?.data;
+  return (
+    payload?.type === 'donation.created' &&
+    data?.status === 'succeeded' &&
+    data?.refunded === 'false' &&
+    data?.support_type === 'Supporter'
+  );
+}
+
+function isDonationRefundedEvent(payload) {
+  const data = payload?.data;
+  return (
+    payload?.type === 'donation.refunded' ||
+    data?.status === 'refunded' ||
+    data?.refunded === 'true'
+  );
+}
+
+function extractCoffeeCount(payload) {
+  const count = Number(payload?.data?.coffee_count);
+  return Number.isFinite(count) && count > 0 ? count : 1;
+}
+
 function extractMembershipPlan(payload) {
   const levelName = String(payload?.data?.membership_level_name || '').trim();
   if (!levelName) return null;
@@ -356,22 +381,66 @@ async function handleRecurringDonationStarted(email) {
   });
 }
 
-async function handleDonationCreated(email) {
-  const tokenPeriodEnd = addDays(new Date(), config.coffeeTokenPeriodDays);
-  const existing = await getLicenseByEmail(email);
-  if (existing && isLicenseActive(existing) && comparePlanPriority('coffee', existing.plan) < 0) {
-    return existing;
+async function handleDonationCreated(email, payload) {
+  if (!isDonationSucceeded(payload)) {
+    return { license: null, processed: false, reason: 'invalid_donation_status' };
   }
 
-  return upsertLicense({
-    email,
-    plan: 'coffee',
-    expiresAt: null,
-    tokensBalance: config.coffeeTokensPerMonth,
-    tokenPeriodEnd,
-    active: true,
-    forcePlan: false
-  });
+  const normalized = normalizeEmail(email);
+  const existing = await getLicenseByEmail(normalized);
+  if (existing && isLicenseActive(existing) && comparePlanPriority('coffee', existing.plan) < 0) {
+    return { license: existing, processed: true, skippedPlanDowngrade: true };
+  }
+
+  const coffeeCount = extractCoffeeCount(payload);
+  const tokenPeriodEnd = addDays(new Date(), config.coffeeTokenPeriodDays);
+
+  const result = await query(
+    `INSERT INTO licenses (
+       email, plan, active, tokens_balance, token_period_end, coffee_donations_count, updated_at
+     )
+     VALUES ($1, 'coffee', TRUE, $2, $3, $4, NOW())
+     ON CONFLICT (email)
+     DO UPDATE SET
+       plan = 'coffee',
+       active = TRUE,
+       tokens_balance = $2,
+       token_period_end = $3,
+       coffee_donations_count = licenses.coffee_donations_count + $4,
+       updated_at = NOW()
+     RETURNING *`,
+    [normalized, config.coffeeTokensPerMonth, tokenPeriodEnd, coffeeCount]
+  );
+
+  return { license: result.rows[0], processed: true };
+}
+
+async function handleDonationRefunded(email, payload) {
+  if (!isDonationRefundedEvent(payload)) {
+    return { license: null, processed: false, reason: 'invalid_refund_status' };
+  }
+
+  const normalized = normalizeEmail(email);
+  const coffeeCount = extractCoffeeCount(payload);
+
+  const result = await query(
+    `UPDATE licenses
+     SET coffee_donations_count = GREATEST(0, coffee_donations_count - $2),
+         tokens_balance = CASE
+           WHEN GREATEST(0, coffee_donations_count - $2) = 0 THEN 0
+           ELSE tokens_balance
+         END,
+         active = CASE
+           WHEN GREATEST(0, coffee_donations_count - $2) = 0 AND plan = 'coffee' THEN FALSE
+           ELSE active
+         END,
+         updated_at = NOW()
+     WHERE email = $1
+     RETURNING *`,
+    [normalized, coffeeCount]
+  );
+
+  return { license: result.rows[0] || null, processed: !!result.rows[0] };
 }
 
 async function handleMembershipEvent(email, payload, active = true) {
@@ -425,20 +494,26 @@ async function processBmcWebhook(payload) {
       };
     }
     case 'donation.created': {
-      const license = await handleDonationCreated(email);
-      return { duplicate: false, eventId, processed: true, email: license.email, plan: license.plan };
+      const result = await handleDonationCreated(email, payload);
+      return {
+        duplicate: false,
+        eventId,
+        processed: result.processed,
+        email: result.license?.email || normalizeEmail(email),
+        plan: result.license?.plan || 'coffee',
+        reason: result.reason
+      };
     }
     case 'donation.refunded': {
-      const existing = await getLicenseByEmail(email);
-      if (existing && normalizePlan(existing.plan) === 'coffee') {
-        await query(
-          `UPDATE licenses
-           SET active = FALSE, tokens_balance = 0, updated_at = NOW()
-           WHERE email = $1`,
-          [normalizeEmail(email)]
-        );
-      }
-      return { duplicate: false, eventId, processed: true, email: normalizeEmail(email), plan: 'coffee' };
+      const result = await handleDonationRefunded(email, payload);
+      return {
+        duplicate: false,
+        eventId,
+        processed: result.processed,
+        email: normalizeEmail(email),
+        plan: result.license?.plan || 'coffee',
+        reason: result.reason
+      };
     }
     case 'membership.started':
     case 'membership.updated': {

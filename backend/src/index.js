@@ -7,6 +7,7 @@ const healthRouter = require('./routes/health');
 const accessRouter = require('./routes/v1/access');
 const bmcRouter = require('./routes/webhooks/bmc');
 const { notFoundHandler, errorHandler } = require('./middleware/errorHandler');
+const { startCoffeeTokenRenewalCron } = require('./jobs/coffeeTokenRenewal');
 
 const app = express();
 
@@ -40,6 +41,8 @@ async function start() {
   } catch (err) {
     console.error('[api] database unavailable on startup', err.message);
   }
+
+  startCoffeeTokenRenewalCron();
 
   app.listen(config.port, () => {
     console.log(`[api] listening on http://localhost:${config.port}`);

@@ -21,6 +21,8 @@ const config = {
   bmcPlanPro: process.env.BMC_PLAN_PRO || 'Pro',
   jwtSecret: process.env.JWT_SECRET || 'dev-secret',
   bmcWebhookSecret: process.env.BMC_WEBHOOK_SECRET || '',
+  coffeeRenewCronEnabled: process.env.COFFEE_RENEW_CRON_ENABLED !== 'false',
+  coffeeRenewCronSchedule: process.env.COFFEE_RENEW_CRON_SCHEDULE || '0 0 * * *',
   corsOrigin: process.env.CORS_ORIGIN || '*',
   allowedClientTypes,
   apiBaseProd: process.env.API_BASE_PROD || 'https://api.railticket.tool.mridev.in/api/v1'

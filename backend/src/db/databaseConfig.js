@@ -1,4 +1,7 @@
+const path = require('path');
 const dns = require('dns');
+
+require('dotenv').config({ path: path.join(__dirname, '..', '..', '.env') });
 
 dns.setDefaultResultOrder('ipv4first');
 
@@ -6,17 +9,28 @@ function isSupabaseHost(host) {
   return typeof host === 'string' && host.includes('supabase.co');
 }
 
-function appendSslMode(connectionString) {
-  if (!connectionString || connectionString.includes('sslmode=')) {
-    return connectionString;
-  }
-  const separator = connectionString.includes('?') ? '&' : '?';
-  return `${connectionString}${separator}sslmode=require`;
+function stripSslModeParam(connectionString) {
+  return connectionString
+    .replace(/([?&])sslmode=[^&]*/g, (match, prefix) => (prefix === '?' ? '?' : ''))
+    .replace(/\?&/g, '?')
+    .replace(/\?$/, '');
 }
 
 function buildPoolConfig(env = process.env) {
-  const host = env.DB_HOST?.trim();
+  const connectionString = env.DATABASE_URL?.trim();
+  if (connectionString) {
+    const poolConfig = {
+      connectionString: stripSslModeParam(connectionString)
+    };
 
+    if (connectionString.includes('supabase.co') || env.DB_SSL !== 'false') {
+      poolConfig.ssl = { rejectUnauthorized: false };
+    }
+
+    return poolConfig;
+  }
+
+  const host = env.DB_HOST?.trim();
   if (host) {
     const config = {
       host,
@@ -33,20 +47,7 @@ function buildPoolConfig(env = process.env) {
     return config;
   }
 
-  const connectionString = env.DATABASE_URL?.trim();
-  if (!connectionString) {
-    throw new Error('Missing DATABASE_URL or DB_HOST environment variable');
-  }
-
-  const poolConfig = {
-    connectionString: appendSslMode(connectionString)
-  };
-
-  if (connectionString.includes('supabase.co')) {
-    poolConfig.ssl = { rejectUnauthorized: false };
-  }
-
-  return poolConfig;
+  throw new Error('Missing DATABASE_URL or DB_HOST environment variable');
 }
 
 module.exports = { buildPoolConfig, isSupabaseHost };

@@ -30,7 +30,6 @@ const CONTENT_SCRIPT_FILES = [
 
 const CONTENT_CSS_FILES = ['overlay/overlay.css', 'overlay/paymentReview.css'];
 
-const GATEWAY_URL_PATTERN = 'https://www.irctcipay.com/*';
 const GATEWAY_SCRIPT_FILES = [
   'lib/selectors.js',
   'lib/wait.js',
@@ -38,11 +37,17 @@ const GATEWAY_SCRIPT_FILES = [
   'lib/storage.js',
   'lib/bkgPayment.js',
   'lib/gateways/irctcIpay.js',
+  'lib/gateways/phonepe.js',
   'lib/gateways/index.js',
   'overlay/overlay.js',
   'gateway_script.js'
 ];
 const GATEWAY_CSS_FILES = ['overlay/overlay.css'];
+
+function isGatewayUrl(url) {
+  if (!url) return false;
+  return url.includes('irctcipay.com') || url.includes('phonepe.com');
+}
 
 function getNextIstTime(hour, minute = 0, second = 0) {
   const now = new Date();
@@ -255,8 +260,17 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
 });
 
+function tryResumeGateway(tabId, url) {
+  if (!isGatewayUrl(url)) return;
+  resumeGatewayOnTab(tabId).catch((err) => console.warn('[IRCTC-Bot] Gateway inject failed:', err));
+}
+
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (changeInfo.status !== 'complete') return;
-  if (!tab.url?.includes('irctcipay.com')) return;
-  resumeGatewayOnTab(tabId).catch((err) => console.warn('[IRCTC-Bot] Gateway inject failed:', err));
+  tryResumeGateway(tabId, tab.url);
+});
+
+chrome.tabs.onCreated.addListener((tab) => {
+  if (!tab.id || !tab.url) return;
+  tryResumeGateway(tab.id, tab.url);
 });

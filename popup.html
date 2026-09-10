@@ -16,6 +16,7 @@
   </header>
 
   <div id="popupBody" class="popup-body">
+  <div id="toast" class="toast toast--hidden" role="alert" aria-live="polite"></div>
   <nav class="tabs">
     <button class="tab active" data-tab="access">Access</button>
     <button class="tab" data-tab="credentials">Login</button>
@@ -42,15 +43,77 @@
           <dd id="accessActive">—</dd>
         </div>
       </dl>
+
+      <section class="access-plans" aria-label="Subscription plans">
+        <h3 class="access-plans__title">Subscription plans</h3>
+        <p class="access-plans__priority">Plan priority: Pro &gt; Basic &gt; Coffee &gt; Trial</p>
+        <table class="access-plans__table">
+          <thead>
+            <tr>
+              <th scope="col">Plan</th>
+              <th scope="col">Extension</th>
+              <th scope="col">Mobile</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Trial</strong></td>
+              <td>Unlimited</td>
+              <td>Blocked</td>
+            </tr>
+            <tr class="access-plan-row--detail">
+              <td colspan="3">7-day free trial after BMC recurring signup</td>
+            </tr>
+            <tr>
+              <td><strong>Coffee</strong></td>
+              <td>Token-based</td>
+              <td>Blocked</td>
+            </tr>
+            <tr class="access-plan-row--detail">
+              <td colspan="3">10 tokens / 30 days; 1 token per payment page; monthly renew after first donation</td>
+            </tr>
+            <tr>
+              <td><strong>Basic</strong></td>
+              <td>Unlimited</td>
+              <td>Blocked</td>
+            </tr>
+            <tr class="access-plan-row--detail">
+              <td colspan="3">BMC Basic membership — unlimited extension bookings</td>
+            </tr>
+            <tr>
+              <td><strong>Pro</strong></td>
+              <td>Unlimited</td>
+              <td>Allowed</td>
+            </tr>
+            <tr class="access-plan-row--detail">
+              <td colspan="3">BMC Pro membership — extension + future mobile apps</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="access-pay" aria-label="Pay on Buy Me a Coffee">
+        <h3 class="access-pay__title">Pay / subscribe</h3>
+        <div class="access-pay__actions">
+          <a id="bmcLink" class="bmc-button" href="https://buymeacoffee.com/mritools" target="_blank" rel="noopener noreferrer">
+            <span class="bmc-button__emoji" aria-hidden="true">☕</span>
+            Buy me a coffee
+          </a>
+          <div class="access-pay__qr">
+            <img src="qr-code.png" alt="Buy Me a Coffee QR code" class="access-qr">
+            <p class="access-pay__qr-caption">Or scan to pay on Buy Me a Coffee</p>
+          </div>
+        </div>
+      </section>
+
+      <p class="access-email-notice">
+        <strong>Use the same email</strong> you paid with on Buy Me a Coffee when linking access below.
+      </p>
+
       <label>Buy Me a Coffee email
         <input type="email" id="accessEmail" placeholder="email used on Buy Me a Coffee" autocomplete="email">
       </label>
       <button type="button" id="linkAccessEmailBtn" class="btn-secondary">Link email &amp; refresh</button>
-      <p class="access-note">
-        Start a free trial, buy a coffee, or subscribe on
-        <a id="bmcLink" href="https://buymeacoffee.com/mritools" target="_blank" rel="noopener noreferrer">Buy Me a Coffee</a>,
-        then link the same email here. Coffee plans include 10 booking tokens per month (1 token used per payment page). Basic is unlimited on the extension; Pro includes mobile apps.
-      </p>
     </section>
 
     <section id="credentials" class="panel">
@@ -61,9 +124,10 @@
     <section id="journey" class="panel">
       <label>From station code or station name <input type="text" id="fromStation" placeholder="e.g. MLDT or MALDA TOWN"></label>
       <label>To station code or station name <input type="text" id="toStation" placeholder="e.g. SDAH or SEALDAH"></label>
-      <label>Journey Date <input type="date" id="journeyDate"></label>
-      <label>Train Number (preferred) <input type="text" id="trainNo" placeholder="e.g. 12345"></label>
-      <label>Train Name (optional) <input type="text" id="trainName" placeholder="e.g. GOURDAMODAR EXP"></label>
+      <label>Journey Date <input type="date" id="journeyDate" required></label>
+      <label>Train Number <input type="text" id="trainNo" placeholder="e.g. 12345"></label>
+      <label>Train Name <input type="text" id="trainName" placeholder="e.g. GOURDAMODAR EXP"></label>
+      <p class="journey-hint">Train number or train name is required.</p>
       <label>Class
         <select id="travelClass">
           <option value="SL">SL - Sleeper</option>
@@ -79,7 +143,7 @@
       </label>
       <label>Quota
         <select id="quota">
-          <option value="TATKAL">TATKAL</option>
+          <option value="TATKAL" selected>TATKAL</option>
           <option value="GENERAL">GENERAL</option>
           <option value="LADIES">LADIES</option>
         </select>
@@ -171,9 +235,12 @@
   </main>
 
   <footer class="actions">
-    <button type="button" id="saveBtn" class="btn-primary">Save Details</button>
-    <button type="button" id="startBtn" class="btn-accent">Start Auto-Booking</button>
-    <button type="button" id="clearBtn" class="btn-danger">Clear All Data</button>
+    <p class="pre-start-note">Review Login, Journey, Passengers, Timer, and Payment tabs before starting auto-booking.</p>
+    <div class="actions__row actions__row--primary">
+      <button type="button" id="saveBtn" class="btn-primary btn-compact">Save</button>
+      <button type="button" id="startBtn" class="btn-accent btn-compact" title="Start Auto-Booking">Start</button>
+    </div>
+    <button type="button" id="clearBtn" class="btn-danger btn-compact btn-compact--ghost">Clear all</button>
     <p id="message" class="message"></p>
   </footer>
   </div>

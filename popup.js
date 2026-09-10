@@ -48,12 +48,15 @@ const els = {
   message: document.getElementById('message'),
   statusBadge: document.getElementById('statusBadge'),
   toggleMinimizeBtn: document.getElementById('toggleMinimizeBtn'),
-  popupBody: document.getElementById('popupBody')
+  popupBody: document.getElementById('popupBody'),
+  toast: document.getElementById('toast')
 };
 
 const POPUP_MINIMIZED_KEY = 'irctcPopupMinimized';
+let toastTimer = null;
 
 function setMinimized(minimized) {
+  document.documentElement.classList.toggle('popup-minimized', minimized);
   document.body.classList.toggle('popup-minimized', minimized);
   els.toggleMinimizeBtn.textContent = minimized ? '+' : '−';
   els.toggleMinimizeBtn.title = minimized ? 'Expand' : 'Minimize';
@@ -69,6 +72,120 @@ async function loadMinimizedState() {
 function showMessage(text, isError = false) {
   els.message.textContent = text;
   els.message.classList.toggle('error', isError);
+}
+
+function showToast(text, isError = false) {
+  if (!els.toast) return;
+  els.toast.textContent = text;
+  els.toast.classList.remove('toast--hidden', 'toast--error');
+  if (isError) els.toast.classList.add('toast--error');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => {
+    els.toast.classList.add('toast--hidden');
+  }, 4000);
+}
+
+function isCardComplete(card) {
+  return !!(card?.name && card?.number && card?.expiry && card?.cvv);
+}
+
+function validateEssentials(form) {
+  const { credentials, journey, passengers, preferences } = form;
+
+  if (!credentials.username) {
+    return { tab: 'credentials', focusId: 'username', message: 'Please enter your IRCTC username.' };
+  }
+  if (!credentials.password) {
+    return { tab: 'credentials', focusId: 'password', message: 'Please enter your IRCTC password.' };
+  }
+  if (!journey.from) {
+    return { tab: 'journey', focusId: 'fromStation', message: 'Please enter the From station.' };
+  }
+  if (!journey.to) {
+    return { tab: 'journey', focusId: 'toStation', message: 'Please enter the To station.' };
+  }
+  if (!journey.date) {
+    return { tab: 'journey', focusId: 'journeyDate', message: 'Please select the journey date.' };
+  }
+  if (!journey.trainNo && !journey.trainName) {
+    return {
+      tab: 'journey',
+      focusId: 'trainNo',
+      message: 'Enter a train number or train name.'
+    };
+  }
+
+  const hasNamedPassenger = (passengers || []).some((p) => (p.name || '').trim());
+  if (!hasNamedPassenger) {
+    return {
+      tab: 'passengers',
+      focusSelector: '.passenger-card .p-name',
+      message: 'Add at least one passenger with a name matching your IRCTC profile.'
+    };
+  }
+
+  if (preferences?.autoPayEnabled && preferences.paymentMethod === 'cards') {
+    const type = preferences.autoPayType || 'debit';
+    if (type === 'debit' || type === 'credit') {
+      const card = type === 'credit' ? preferences.creditCard : preferences.debitCard;
+      const prefix = type === 'credit' ? 'credit' : 'debit';
+      const label = type === 'credit' ? 'credit' : 'debit';
+      if (!card?.name) {
+        return {
+          tab: 'payment',
+          focusId: `${prefix}CardName`,
+          message: `Enter ${label} card name for auto pay.`
+        };
+      }
+      if (!card?.number) {
+        return {
+          tab: 'payment',
+          focusId: `${prefix}CardNumber`,
+          message: `Enter ${label} card number for auto pay.`
+        };
+      }
+      if (!card?.expiry) {
+        return {
+          tab: 'payment',
+          focusId: `${prefix}CardExpiry`,
+          message: `Enter ${label} card expiry for auto pay.`
+        };
+      }
+      if (!card?.cvv) {
+        return {
+          tab: 'payment',
+          focusId: `${prefix}CardCvv`,
+          message: `Enter ${label} card CVV for auto pay.`
+        };
+      }
+      if (!isCardComplete(card)) {
+        return {
+          tab: 'payment',
+          focusId: `${prefix}CardName`,
+          message: `Complete all ${label} card fields for auto pay.`
+        };
+      }
+    }
+  }
+
+  return null;
+}
+
+function focusField(target) {
+  if (!target) return;
+  requestAnimationFrame(() => {
+    let el = null;
+    if (typeof target === 'string') {
+      el = target.startsWith('.') || target.startsWith('#')
+        ? document.querySelector(target)
+        : document.getElementById(target);
+    } else if (target instanceof HTMLElement) {
+      el = target;
+    }
+    if (!el) return;
+    el.focus();
+    el.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' });
+  });
 }
 
 function setAccessDetailValues(tier, validUntil, active) {
@@ -165,9 +282,10 @@ async function linkAccessEmail() {
   }
 }
 
-function switchTab(tabId) {
+function switchTab(tabId, focusTarget) {
   els.tabs.forEach((t) => t.classList.toggle('active', t.dataset.tab === tabId));
   els.panels.forEach((p) => p.classList.toggle('active', p.id === tabId));
+  if (focusTarget) focusField(focusTarget);
 }
 
 function getSelectedAutoPayType() {
@@ -230,6 +348,7 @@ function createPassengerRow(passenger = {}, index = 0) {
     <label>Age <input type="number" class="p-age" min="1" max="120" value="${passenger.age || ''}"></label>
     <label>Gender
       <select class="p-gender">
+        <option value="" ${!passenger.gender ? 'selected' : ''}>Select</option>
         <option value="M" ${passenger.gender === 'M' ? 'selected' : ''}>Male</option>
         <option value="F" ${passenger.gender === 'F' ? 'selected' : ''}>Female</option>
         <option value="T" ${passenger.gender === 'T' ? 'selected' : ''}>Transgender</option>
@@ -241,12 +360,14 @@ function createPassengerRow(passenger = {}, index = 0) {
         <option ${passenger.berth === 'Lower' ? 'selected' : ''}>Lower</option>
         <option ${passenger.berth === 'Middle' ? 'selected' : ''}>Middle</option>
         <option ${passenger.berth === 'Upper' ? 'selected' : ''}>Upper</option>
+        <option ${passenger.berth === 'Window Side' ? 'selected' : ''}>Window Side</option>
         <option ${passenger.berth === 'Side Lower' ? 'selected' : ''}>Side Lower</option>
         <option ${passenger.berth === 'Side Upper' ? 'selected' : ''}>Side Upper</option>
       </select>
     </label>
     <label>Food
       <select class="p-food">
+        <option value="" ${!passenger.food ? 'selected' : ''}>Select</option>
         <option ${passenger.food === 'Veg' ? 'selected' : ''}>Veg</option>
         <option ${passenger.food === 'Non-Veg' ? 'selected' : ''}>Non-Veg</option>
         <option ${passenger.food === 'No Food' ? 'selected' : ''}>No Food</option>
@@ -396,23 +517,34 @@ async function save() {
   showMessage('Details saved successfully.');
 }
 
+function handleValidationFailure(err) {
+  showToast(err.message, true);
+  if (err.focusId) {
+    switchTab(err.tab, err.focusId);
+  } else if (err.focusSelector) {
+    switchTab(err.tab);
+    focusField(err.focusSelector);
+  } else {
+    switchTab(err.tab);
+  }
+}
+
 async function startBooking() {
+  const form = readForm();
+  const validationError = validateEssentials(form);
+  if (validationError) {
+    handleValidationFailure(validationError);
+    return;
+  }
+
   await save();
-  const config = await Storage.get();
   const accessStatus = await refreshAccess();
   if (!accessStatus?.allowed) {
-    showMessage('Access not active. Start a free trial or buy a coffee on Buy Me a Coffee, then link your email on the Access tab.', true);
-    switchTab('access');
-    return;
-  }
-  if (!config.credentials.username || !config.credentials.password) {
-    showMessage('Please enter IRCTC username and password.', true);
-    switchTab('credentials');
-    return;
-  }
-  if (!config.journey.from || !config.journey.to || !config.journey.date) {
-    showMessage('Please fill journey from, to, and date.', true);
-    switchTab('journey');
+    showToast(
+      'Access not active. Start a free trial or buy a coffee on Buy Me a Coffee, then link your email on the Access tab.',
+      true
+    );
+    switchTab('access', 'accessEmail');
     return;
   }
 
@@ -434,17 +566,17 @@ async function startBooking() {
     if (chrome.runtime.lastError) {
       await Storage.updateState({ running: false, status: 'idle', currentStep: 'init' });
       updateStatusBadge('idle');
-      showMessage(chrome.runtime.lastError.message || 'Could not start booking.', true);
+      showToast(chrome.runtime.lastError.message || 'Could not start booking.', true);
       return;
     }
     if (!response?.ok) {
       await Storage.updateState({ running: false, status: 'idle', currentStep: 'init' });
       updateStatusBadge('idle');
-      showMessage('Access expired or API unavailable. Check the Access tab.', true);
-      switchTab('access');
+      showToast('Access expired or API unavailable. Check the Access tab.', true);
+      switchTab('access', 'accessEmail');
       return;
     }
-    showMessage('Opening IRCTC and starting automation...');
+    showToast('Opening IRCTC and starting automation...');
   });
 }
 

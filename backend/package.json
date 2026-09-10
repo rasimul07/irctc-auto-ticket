@@ -9,7 +9,8 @@
     "dev": "nodemon src/index.js",
     "db:up": "docker compose up -d",
     "db:down": "docker compose down",
-    "db:migrate": "node src/db/migrate.js"
+    "db:migrate": "node src/db/migrate.js",
+    "jobs:renew-coffee": "node src/jobs/runCoffeeRenewal.js"
   },
   "engines": {
     "node": ">=18"
@@ -19,6 +20,7 @@
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "helmet": "^8.0.0",
+    "node-cron": "^3.0.3",
     "pg": "^8.13.3"
   },
   "devDependencies": {
