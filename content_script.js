@@ -172,8 +172,9 @@ IRCTCExt.Bot = {
     }
 
     if (path.includes('train-search')) {
-      await IRCTCExt.Bot.runLoginIfNeeded(config, overlay);
+      await IRCTCExt.LoginFlow.runWithRetry(config, overlay);
       await IRCTCExt.SearchFlow.run(config, overlay);
+      if (location.pathname.includes('train-list')) return 'continue';
       overlay.setStatus('Waiting for train list...');
       return 'wait';
     }
@@ -302,12 +303,14 @@ IRCTCExt.Bot = {
       paymentDone: false,
       paymentPhase: null,
       paymentGateway: null,
-      awaitingGateway: false
+      awaitingGateway: false,
+      autoRestartCount: 0,
+      bookingSessionId: crypto.randomUUID(),
+      tokenConsumed: false
     });
 
     if (location.pathname.includes(TRAIN_SEARCH_PATH)) {
-      this.running = false;
-      await this.start();
+      location.reload();
     } else {
       location.assign(TRAIN_SEARCH_URL);
     }

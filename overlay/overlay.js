@@ -199,9 +199,9 @@ IRCTCExt.Overlay = {
   },
 
   async restart() {
-    if (window.IRCTCExt?.Bot) {
-      await IRCTCExt.Bot.restart();
-    }
+    if (!window.IRCTCExt?.Bot) return;
+    this.setStatus('Refreshing page to restart...');
+    await IRCTCExt.Bot.restart();
   },
 
   async stop() {
