@@ -1,14 +1,38 @@
-importScripts('lib/storage.js', 'lib/accessConfig.js', 'lib/api.js');
+importScripts(
+  'lib/global.js',
+  'lib/storage.js',
+  'lib/accessConfig.js',
+  'lib/api.js',
+  'lib/bookingValidation.js',
+  'sites/registry.js',
+  'sites/eticket/config.js',
+  'sites/nget/config.js'
+);
 
-const IRCTC_URL = 'https://www.irctc.co.in/eticket/train-search';
-const TRAIN_SEARCH_PATH = '/eticket/train-search';
-const ETICKET_URL_PATTERN = 'https://www.irctc.co.in/eticket/*';
-const TRAIN_SEARCH_URL_PATTERN = 'https://www.irctc.co.in/eticket/train-search*';
+IRCTCExt.SiteRegistry.register(IRCTCExt.EticketConfig);
+IRCTCExt.SiteRegistry.register(IRCTCExt.NgetConfig);
+
 const ALARM_AC = 'tatkal-ac';
 const ALARM_NON_AC = 'tatkal-non-ac';
 
 const CONTENT_SCRIPT_FILES = [
-  'lib/selectors.js',
+  'sites/registry.js',
+  'sites/eticket/config.js',
+  'sites/eticket/paths.js',
+  'sites/eticket/selectors.js',
+  'sites/eticket/trainList.js',
+  'sites/eticket/flows/login.js',
+  'sites/eticket/flows/search.js',
+  'sites/eticket/flows/booking.js',
+  'sites/eticket/index.js',
+  'sites/nget/config.js',
+  'sites/nget/paths.js',
+  'sites/nget/selectors.js',
+  'sites/nget/trainList.js',
+  'sites/nget/flows/login.js',
+  'sites/nget/flows/search.js',
+  'sites/nget/flows/booking.js',
+  'sites/nget/index.js',
   'lib/wait.js',
   'lib/modals.js',
   'lib/events.js',
@@ -16,22 +40,18 @@ const CONTENT_SCRIPT_FILES = [
   'lib/accessConfig.js',
   'lib/api.js',
   'lib/stations.js',
-  'lib/trainList.js',
   'lib/passengers.js',
   'lib/psgnPreferences.js',
   'lib/bkgPayment.js',
   'overlay/overlay.js',
   'overlay/paymentReview.js',
-  'flows/login.js',
-  'flows/search.js',
-  'flows/booking.js',
   'content_script.js'
 ];
 
 const CONTENT_CSS_FILES = ['overlay/overlay.css', 'overlay/paymentReview.css'];
 
 const GATEWAY_SCRIPT_FILES = [
-  'lib/selectors.js',
+  'sites/eticket/selectors.js',
   'lib/wait.js',
   'lib/events.js',
   'lib/storage.js',
@@ -79,42 +99,63 @@ async function scheduleAlarms(schedule) {
   }
 }
 
-async function findTrainSearchTab() {
-  const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (activeTab?.url?.includes(TRAIN_SEARCH_PATH)) {
-    return activeTab;
-  }
+async function getActiveSite() {
+  const data = await chrome.storage.local.get('irctcConfig');
+  return IRCTCExt.SiteRegistry.get(data.irctcConfig);
+}
 
-  const trainSearchTabs = await chrome.tabs.query({ url: TRAIN_SEARCH_URL_PATTERN });
-  if (trainSearchTabs.length) {
-    return trainSearchTabs[0];
-  }
+function isTabOnSite(tab, site) {
+  if (!tab?.url || !site?.id) return false;
+  const marker = site.id === 'nget' ? '/nget/' : '/eticket/';
+  return tab.url.includes(marker);
+}
 
-  const eticketTabs = await chrome.tabs.query({ url: ETICKET_URL_PATTERN });
-  return eticketTabs[0] || null;
+async function findSiteTab(site) {
+  const trainSearchTabs = await chrome.tabs.query({ url: site.trainSearchUrlPattern });
+  const onTrainSearch = trainSearchTabs.find((tab) => isTabOnSite(tab, site));
+  if (onTrainSearch) return onTrainSearch;
+
+  const siteTabs = await chrome.tabs.query({ url: site.urlPattern });
+  return siteTabs.find((tab) => isTabOnSite(tab, site)) || null;
+}
+
+async function pingContentScript(tabId) {
+  try {
+    const res = await chrome.tabs.sendMessage(tabId, { type: 'PING' });
+    return !!(res?.ok && res?.ready);
+  } catch {
+    return false;
+  }
+}
+
+async function waitForContentScriptReady(tabId, maxAttempts = 40) {
+  for (let i = 0; i < maxAttempts; i++) {
+    if (await pingContentScript(tabId)) return true;
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  return false;
 }
 
 async function ensureContentScripts(tabId, scriptFiles = CONTENT_SCRIPT_FILES, cssFiles = CONTENT_CSS_FILES) {
+  if (await waitForContentScriptReady(tabId, 6)) return true;
+
   try {
-    const res = await chrome.tabs.sendMessage(tabId, { type: 'PING' });
-    if (res?.ok) return true;
-  } catch {
-    // Content script not loaded on this tab yet.
-  }
-
-  await chrome.scripting.executeScript({
-    target: { tabId },
-    files: scriptFiles
-  });
-  if (cssFiles?.length) {
-    await chrome.scripting.insertCSS({
+    await chrome.scripting.executeScript({
       target: { tabId },
-      files: cssFiles
+      files: scriptFiles
     });
+    if (cssFiles?.length) {
+      await chrome.scripting.insertCSS({
+        target: { tabId },
+        files: cssFiles
+      });
+    }
+  } catch (err) {
+    console.error('[IRCTC-Bot] Script injection failed:', err);
+    return false;
   }
 
-  await new Promise((r) => setTimeout(r, 300));
-  return true;
+  return waitForContentScriptReady(tabId, 20);
 }
 
 async function resumeGatewayOnTab(tabId) {
@@ -130,20 +171,22 @@ async function resumeGatewayOnTab(tabId) {
   }
 }
 
-async function sendStartBooking(tabId, attempt = 0) {
+async function sendStartBooking(tabId) {
+  const ready = await ensureContentScripts(tabId);
+  if (!ready) {
+    console.error('[IRCTC-Bot] Content script not ready on tab', tabId);
+    return false;
+  }
+
   try {
-    await ensureContentScripts(tabId);
     await chrome.tabs.sendMessage(tabId, { type: 'START_BOOKING' });
     return true;
   } catch (err) {
-    if (attempt < 15) {
-      await new Promise((r) => setTimeout(r, 800));
-      return sendStartBooking(tabId, attempt + 1);
-    }
     console.error('[IRCTC-Bot] Failed to start on tab', tabId, err);
     return false;
   }
 }
+
 async function waitForTabReady(tabId) {
   const tab = await chrome.tabs.get(tabId);
   if (tab.status === 'complete' && tab.url && tab.url.includes('irctc.co.in')) {
@@ -179,32 +222,93 @@ async function ensureBookingAccess() {
   }
 }
 
-async function openIrctcAndStart() {
-  const allowed = await ensureBookingAccess();
-  if (!allowed) {
-    console.warn('[IRCTC-Bot] Booking blocked — access not allowed.');
-    return false;
+async function resetRunningState() {
+  const data = await chrome.storage.local.get('irctcConfig');
+  const config = data.irctcConfig || {};
+  await chrome.storage.local.set({
+    irctcConfig: {
+      ...config,
+      state: { ...(config.state || {}), running: false, status: 'idle', currentStep: 'init' }
+    }
+  });
+}
+
+async function openIrctcTab({ skipAccessCheck = false } = {}) {
+  const data = await chrome.storage.local.get('irctcConfig');
+  const config = data.irctcConfig || {};
+
+  const validationError = IRCTCExt.BookingValidation.validate(config);
+  if (validationError) {
+    console.warn('[IRCTC-Bot] Booking blocked — missing details:', validationError.message);
+    await resetRunningState();
+    return { ok: false, error: 'validation_failed', ...validationError };
   }
 
-  const existingTab = await findTrainSearchTab();
+  if (!skipAccessCheck) {
+    const allowed = await ensureBookingAccess();
+    if (!allowed) {
+      console.warn('[IRCTC-Bot] Booking blocked — access not allowed.');
+      await resetRunningState();
+      return { ok: false, error: 'access_denied' };
+    }
+  }
+
+  const site = IRCTCExt.SiteRegistry.get(config);
+  if (!site?.trainSearchUrl) {
+    await resetRunningState();
+    return { ok: false, error: 'site_config_missing' };
+  }
+
+  const existingTab = await findSiteTab(site);
   let tabId;
 
-  if (existingTab) {
-    tabId = existingTab.id;
-    const alreadyOnTrainSearch = existingTab.url?.includes(TRAIN_SEARCH_PATH);
-    if (alreadyOnTrainSearch) {
-      await chrome.tabs.update(tabId, { active: true });
+  try {
+    if (existingTab) {
+      tabId = existingTab.id;
+      const alreadyOnTrainSearch = existingTab.url?.includes(site.trainSearchPath);
+      if (alreadyOnTrainSearch) {
+        await chrome.tabs.update(tabId, { active: true });
+      } else {
+        await chrome.tabs.update(tabId, { active: true, url: site.trainSearchUrl });
+        await waitForTabReady(tabId);
+      }
     } else {
-      await chrome.tabs.update(tabId, { active: true, url: IRCTC_URL });
+      const tab = await chrome.tabs.create({ url: site.trainSearchUrl, active: true });
+      tabId = tab.id;
       await waitForTabReady(tabId);
     }
-  } else {
-    const tab = await chrome.tabs.create({ url: IRCTC_URL, active: true });
-    tabId = tab.id;
-    await waitForTabReady(tabId);
+  } catch (err) {
+    console.error('[IRCTC-Bot] Could not open IRCTC tab:', err);
+    await resetRunningState();
+    return { ok: false, error: 'tab_open_failed', message: err.message || 'Could not open IRCTC tab.' };
   }
 
-  await sendStartBooking(tabId);
+  return { ok: true, tabId, siteId: site.id, siteLabel: site.label || site.id, url: site.trainSearchUrl };
+}
+
+async function openIrctcAndStart({ skipAccessCheck = false } = {}) {
+  const opened = await openIrctcTab({ skipAccessCheck });
+  if (!opened.ok) return opened;
+
+  const started = await sendStartBooking(opened.tabId);
+  if (!started) {
+    await resetRunningState();
+    return {
+      ok: false,
+      error: 'content_script_not_ready',
+      redirected: true,
+      siteId: opened.siteId,
+      siteLabel: opened.siteLabel
+    };
+  }
+
+  return {
+    ok: true,
+    redirected: true,
+    siteId: opened.siteId,
+    siteLabel: opened.siteLabel,
+    url: opened.url
+  };
 }
 
 chrome.runtime.onInstalled.addListener(async () => {
@@ -239,7 +343,33 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type === 'START_FROM_POPUP') {
-    openIrctcAndStart().then((ok) => sendResponse({ ok: !!ok }));
+    (async () => {
+      try {
+        const opened = await openIrctcTab({ skipAccessCheck: !!msg.skipAccessCheck });
+        if (!opened.ok) {
+          sendResponse(opened);
+          return;
+        }
+
+        sendResponse({
+          ok: true,
+          redirected: true,
+          siteId: opened.siteId,
+          siteLabel: opened.siteLabel,
+          url: opened.url
+        });
+
+        const started = await sendStartBooking(opened.tabId);
+        if (!started) {
+          console.error('[IRCTC-Bot] Content script not ready after redirect to', opened.url);
+          await resetRunningState();
+        }
+      } catch (err) {
+        console.error('[IRCTC-Bot] START_FROM_POPUP failed:', err);
+        await resetRunningState();
+        sendResponse({ ok: false, error: err.message || 'start_failed' });
+      }
+    })();
     return true;
   }
   if (msg.type === 'CHECK_ACCESS') {

@@ -1,6 +1,6 @@
 window.IRCTCExt = window.IRCTCExt || {};
 
-IRCTCExt.SELECTORS = {
+IRCTCExt.EticketSelectors = {
   loginHeaderBtn: [
     'nav button.btn-login',
     '.navbar-actions button.btn-login',
@@ -279,3 +279,5 @@ IRCTCExt.SELECTORS = {
     qrCode: ['canvas', 'img[alt*="QR" i]', 'img[src*="qr" i]']
   }
 };
+
+IRCTCExt.SELECTORS = IRCTCExt.EticketSelectors;

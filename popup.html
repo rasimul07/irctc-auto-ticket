@@ -44,6 +44,20 @@
         </div>
       </dl>
 
+      <section class="access-privacy-notice" aria-label="Local data privacy">
+        <p><strong>Your data stays on this device.</strong></p>
+        <p>Login, journey, passenger, and payment details are saved only in this browser on your local machine. They are not uploaded or stored on any remote server.</p>
+        <p>Uninstalling or removing the extension automatically deletes all saved booking data.</p>
+      </section>
+
+      <label>IRCTC website version
+        <select id="bookingSite">
+          <option value="eticket" selected>Beta — eticket</option>
+          <option value="nget">Classic — nget</option>
+        </select>
+      </label>
+      <p class="journey-hint">Classic (nget) automation coming soon. Beta (eticket) is fully supported.</p>
+
       <section class="access-plans" aria-label="Subscription plans">
         <h3 class="access-plans__title">Subscription plans</h3>
         <p class="access-plans__priority">Plan priority: Pro &gt; Basic &gt; Coffee &gt; Trial</p>
@@ -248,6 +262,7 @@
   <script src="lib/storage.js"></script>
   <script src="lib/accessConfig.js"></script>
   <script src="lib/api.js"></script>
+  <script src="lib/bookingValidation.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

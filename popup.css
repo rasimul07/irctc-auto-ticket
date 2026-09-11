@@ -437,6 +437,25 @@ button {
   font-size: 16px;
 }
 
+.access-privacy-notice {
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid #c5d4f0;
+  background: #e8eef8;
+  font-size: 11px;
+  line-height: 1.45;
+  color: #213d77;
+}
+
+.access-privacy-notice p {
+  margin: 0 0 6px;
+}
+
+.access-privacy-notice p:last-child {
+  margin-bottom: 0;
+}
+
 .access-email-notice {
   margin: 0 0 12px;
   padding: 10px 12px;

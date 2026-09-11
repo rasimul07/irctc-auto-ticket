@@ -200,8 +200,16 @@ IRCTCExt.Overlay = {
 
   async restart() {
     if (!window.IRCTCExt?.Bot) return;
-    this.setStatus('Refreshing page to restart...');
-    await IRCTCExt.Bot.restart();
+    try {
+      this.setError('');
+      this.setStatus('Refreshing page to restart...');
+      await IRCTCExt.Bot.restart();
+    } catch (err) {
+      console.error('[IRCTC-Bot] Restart failed:', err);
+      this.setError(err.message || String(err));
+      this.setStatus('Restart failed');
+      this.setStep('Error');
+    }
   },
 
   async stop() {

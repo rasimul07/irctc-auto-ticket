@@ -1,6 +1,6 @@
 window.IRCTCExt = window.IRCTCExt || {};
 
-IRCTCExt.TrainList = {
+IRCTCExt.EticketTrainList = {
   setStatus(overlay, msg) {
     overlay?.setStatus(msg);
   },
@@ -12,7 +12,7 @@ IRCTCExt.TrainList = {
   },
 
   scrollIntoViewIfNeeded(el) {
-    if (!el || IRCTCExt.TrainList.isInViewport(el)) return;
+    if (!el || IRCTCExt.EticketTrainList.isInViewport(el)) return;
     el.scrollIntoView({ block: 'center', inline: 'nearest' });
   },
 
@@ -25,8 +25,8 @@ IRCTCExt.TrainList = {
   },
 
   scoreTrainName(cardName, searchName) {
-    const a = IRCTCExt.TrainList.normalizeTrainText(cardName);
-    const b = IRCTCExt.TrainList.normalizeTrainText(searchName);
+    const a = IRCTCExt.EticketTrainList.normalizeTrainText(cardName);
+    const b = IRCTCExt.EticketTrainList.normalizeTrainText(searchName);
     if (!b) return 0;
     if (a === b) return 100;
     if (a.includes(b) || b.includes(a)) return 80;
@@ -53,7 +53,7 @@ IRCTCExt.TrainList = {
   getPopulatedTrainCards() {
     const sel = IRCTCExt.SELECTORS.trainList;
     return [...document.querySelectorAll(sel.trainCard?.[0] || 'app-train-avl-enq')].filter((card) =>
-      IRCTCExt.TrainList.isPopulatedTrainCard(card)
+      IRCTCExt.EticketTrainList.isPopulatedTrainCard(card)
     );
   },
 
@@ -78,17 +78,17 @@ IRCTCExt.TrainList = {
       (el) => (el.textContent || '').trim() === normalized
     );
     const card = numEl?.closest('app-train-avl-enq') || null;
-    return card && IRCTCExt.TrainList.isPopulatedTrainCard(card) ? card : null;
+    return card && IRCTCExt.EticketTrainList.isPopulatedTrainCard(card) ? card : null;
   },
 
   findTrainCardByNumber(trainNo) {
-    const direct = IRCTCExt.TrainList.findTrainCardByNumberDirect(trainNo);
+    const direct = IRCTCExt.EticketTrainList.findTrainCardByNumberDirect(trainNo);
     if (direct) return direct;
 
     const normalized = String(trainNo || '').trim();
     if (!normalized) return null;
 
-    for (const card of IRCTCExt.TrainList.getPopulatedTrainCards()) {
+    for (const card of IRCTCExt.EticketTrainList.getPopulatedTrainCards()) {
       const heading = card.querySelector('.train-heading strong');
       if (heading && new RegExp(`\\(\\s*${normalized}\\s*\\)`).test(heading.textContent)) {
         return card;
@@ -100,16 +100,16 @@ IRCTCExt.TrainList = {
   findTrainCardByNameDirect(trainName, minScore = 50) {
     if (!trainName) return null;
 
-    const normalizedSearch = IRCTCExt.TrainList.normalizeTrainText(trainName);
+    const normalizedSearch = IRCTCExt.EticketTrainList.normalizeTrainText(trainName);
     let bestCard = null;
     let bestScore = 0;
 
-    for (const card of IRCTCExt.TrainList.getPopulatedTrainCards()) {
-      const name = IRCTCExt.TrainList.getCardTrainName(card);
-      const normalizedName = IRCTCExt.TrainList.normalizeTrainText(name);
+    for (const card of IRCTCExt.EticketTrainList.getPopulatedTrainCards()) {
+      const name = IRCTCExt.EticketTrainList.getCardTrainName(card);
+      const normalizedName = IRCTCExt.EticketTrainList.normalizeTrainText(name);
       if (normalizedName === normalizedSearch) return card;
 
-      const score = IRCTCExt.TrainList.scoreTrainName(name, trainName);
+      const score = IRCTCExt.EticketTrainList.scoreTrainName(name, trainName);
       if (score > bestScore) {
         bestScore = score;
         bestCard = card;
@@ -120,7 +120,7 @@ IRCTCExt.TrainList = {
   },
 
   findTrainCardByName(trainName, minScore = 50) {
-    return IRCTCExt.TrainList.findTrainCardByNameDirect(trainName, minScore);
+    return IRCTCExt.EticketTrainList.findTrainCardByNameDirect(trainName, minScore);
   },
 
   findTrainCard(journey = {}) {
@@ -128,28 +128,28 @@ IRCTCExt.TrainList = {
     const trainName = String(journey.trainName || '').trim();
 
     if (trainNo) {
-      const byNumber = IRCTCExt.TrainList.findTrainCardByNumber(trainNo);
+      const byNumber = IRCTCExt.EticketTrainList.findTrainCardByNumber(trainNo);
       if (byNumber) return byNumber;
     }
 
     if (trainName) {
-      const byName = IRCTCExt.TrainList.findTrainCardByName(trainName);
+      const byName = IRCTCExt.EticketTrainList.findTrainCardByName(trainName);
       if (byName) return byName;
     }
 
     if (trainName || trainNo) return null;
 
-    const cards = IRCTCExt.TrainList.getPopulatedTrainCards();
+    const cards = IRCTCExt.EticketTrainList.getPopulatedTrainCards();
     return cards[0] || null;
   },
 
   async waitForTrainListReady(overlay) {
-    IRCTCExt.TrainList.setStatus(overlay, 'Waiting for train list...');
+    IRCTCExt.EticketTrainList.setStatus(overlay, 'Waiting for train list...');
     const sel = IRCTCExt.SELECTORS.trainList;
 
     const ready = await IRCTCExt.Wait.poll(
       () => {
-        if (IRCTCExt.TrainList.getPopulatedTrainCards().length > 0) return true;
+        if (IRCTCExt.EticketTrainList.getPopulatedTrainCards().length > 0) return true;
         const container = IRCTCExt.Wait.queryOne(sel.container);
         return container && IRCTCExt.Wait.isVisible(container) ? true : null;
       },
@@ -160,12 +160,12 @@ IRCTCExt.TrainList = {
   },
 
   async findTrainCardWithPoll(journey, searchLabel, overlay) {
-    IRCTCExt.TrainList.setStatus(overlay, `Searching train list for ${searchLabel}...`);
+    IRCTCExt.EticketTrainList.setStatus(overlay, `Searching train list for ${searchLabel}...`);
 
-    let card = IRCTCExt.TrainList.findTrainCard(journey);
+    let card = IRCTCExt.EticketTrainList.findTrainCard(journey);
     if (card) return card;
 
-    card = await IRCTCExt.Wait.poll(() => IRCTCExt.TrainList.findTrainCard(journey), {
+    card = await IRCTCExt.Wait.poll(() => IRCTCExt.EticketTrainList.findTrainCard(journey), {
       timeout: 8000,
       interval: 100
     });
@@ -223,7 +223,7 @@ IRCTCExt.TrainList = {
 
     const sel = IRCTCExt.SELECTORS.trainList;
     const codeEl = classCard.querySelector(sel.classCode?.[0] || '.class-code');
-    if (IRCTCExt.TrainList.classMatchesCode(codeEl, travelClass)) return true;
+    if (IRCTCExt.EticketTrainList.classMatchesCode(codeEl, travelClass)) return true;
 
     const codeText = (codeEl?.textContent || classCard.textContent || '').trim();
     const normalizedClass = String(travelClass).trim().toUpperCase();
@@ -233,8 +233,8 @@ IRCTCExt.TrainList = {
   },
 
   findClassCard(card, travelClass) {
-    for (const classCard of IRCTCExt.TrainList.getClassCards(card)) {
-      if (IRCTCExt.TrainList.classCardMatchesTravelClass(classCard, travelClass)) return classCard;
+    for (const classCard of IRCTCExt.EticketTrainList.getClassCards(card)) {
+      if (IRCTCExt.EticketTrainList.classCardMatchesTravelClass(classCard, travelClass)) return classCard;
     }
     return null;
   },
@@ -283,32 +283,32 @@ IRCTCExt.TrainList = {
   },
 
   async loadAvailability(card, overlay, travelClass, maxAttempts = 3) {
-    if (IRCTCExt.TrainList.hasClassCards(card)) {
-      IRCTCExt.TrainList.setStatus(
+    if (IRCTCExt.EticketTrainList.hasClassCards(card)) {
+      IRCTCExt.EticketTrainList.setStatus(
         overlay,
         `Availability already loaded — selecting class ${travelClass}...`
       );
       return true;
     }
 
-    IRCTCExt.TrainList.scrollIntoViewIfNeeded(card);
+    IRCTCExt.EticketTrainList.scrollIntoViewIfNeeded(card);
 
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-      if (IRCTCExt.TrainList.hasClassCards(card)) {
-        IRCTCExt.TrainList.setStatus(
+      if (IRCTCExt.EticketTrainList.hasClassCards(card)) {
+        IRCTCExt.EticketTrainList.setStatus(
           overlay,
           `Availability loaded — selecting class ${travelClass}...`
         );
         return true;
       }
 
-      const btn = IRCTCExt.TrainList.findAvailabilityButton(card);
+      const btn = IRCTCExt.EticketTrainList.findAvailabilityButton(card);
       if (!btn) {
-        if (IRCTCExt.TrainList.hasClassCards(card)) return true;
+        if (IRCTCExt.EticketTrainList.hasClassCards(card)) return true;
         throw new Error('Check Availability button not found');
       }
 
-      IRCTCExt.TrainList.setStatus(
+      IRCTCExt.EticketTrainList.setStatus(
         overlay,
         attempt === 0
           ? 'Clicking Check Availability...'
@@ -318,12 +318,12 @@ IRCTCExt.TrainList = {
       IRCTCExt.Events.click(btn);
       await IRCTCExt.Wait.delay(attempt === 0 ? 350 : 500);
 
-      const loaded = await IRCTCExt.Wait.poll(() => IRCTCExt.TrainList.hasClassCards(card), {
+      const loaded = await IRCTCExt.Wait.poll(() => IRCTCExt.EticketTrainList.hasClassCards(card), {
         timeout: 8000,
         interval: 100
       });
       if (loaded) {
-        IRCTCExt.TrainList.setStatus(
+        IRCTCExt.EticketTrainList.setStatus(
           overlay,
           `Availability loaded — selecting class ${travelClass}...`
         );
@@ -336,65 +336,65 @@ IRCTCExt.TrainList = {
 
   async findClassCardWithScroll(card, travelClass, overlay) {
     for (let i = 0; i < 6; i += 1) {
-      const classCard = IRCTCExt.TrainList.findClassCard(card, travelClass);
+      const classCard = IRCTCExt.EticketTrainList.findClassCard(card, travelClass);
       if (classCard) return classCard;
 
       const scrollBtn = card.querySelector('.btn-scroll-next');
       if (!scrollBtn || !IRCTCExt.Wait.isVisible(scrollBtn)) break;
 
-      IRCTCExt.TrainList.setStatus(overlay, `Scrolling to find class ${travelClass}...`);
+      IRCTCExt.EticketTrainList.setStatus(overlay, `Scrolling to find class ${travelClass}...`);
       IRCTCExt.Events.click(scrollBtn);
       await IRCTCExt.Wait.delay(250);
     }
-    return IRCTCExt.TrainList.findClassCard(card, travelClass);
+    return IRCTCExt.EticketTrainList.findClassCard(card, travelClass);
   },
 
   async bookTrain(config, overlay) {
     const { journey } = config;
 
     overlay?.setStep('Train List');
-    await IRCTCExt.TrainList.waitForTrainListReady(overlay);
+    await IRCTCExt.EticketTrainList.waitForTrainListReady(overlay);
 
     const trainName = String(journey.trainName || '').trim();
     const trainNo = String(journey.trainNo || '').trim();
     const searchLabel = trainNo || trainName || 'train';
     const travelClass = journey.travelClass || 'SL';
 
-    const card = await IRCTCExt.TrainList.findTrainCardWithPoll(journey, searchLabel, overlay);
+    const card = await IRCTCExt.EticketTrainList.findTrainCardWithPoll(journey, searchLabel, overlay);
 
-    const trainNum = IRCTCExt.TrainList.getCardTrainNumber(card) || trainNo || '';
-    const matchedName = IRCTCExt.TrainList.getCardTrainName(card);
+    const trainNum = IRCTCExt.EticketTrainList.getCardTrainNumber(card) || trainNo || '';
+    const matchedName = IRCTCExt.EticketTrainList.getCardTrainName(card);
     const foundLabel =
       trainNum && matchedName
         ? `Found train ${trainNum} — ${matchedName}`
         : matchedName
           ? `Found train ${matchedName}`
           : `Found train ${trainNum}`;
-    IRCTCExt.TrainList.setStatus(overlay, foundLabel);
+    IRCTCExt.EticketTrainList.setStatus(overlay, foundLabel);
 
-    await IRCTCExt.TrainList.loadAvailability(card, overlay, travelClass);
+    await IRCTCExt.EticketTrainList.loadAvailability(card, overlay, travelClass);
 
-    const classCard = await IRCTCExt.TrainList.findClassCardWithScroll(card, travelClass, overlay);
+    const classCard = await IRCTCExt.EticketTrainList.findClassCardWithScroll(card, travelClass, overlay);
     if (!classCard) throw new Error(`Class ${travelClass} not found for train ${trainNum}`);
 
-    const status = IRCTCExt.TrainList.parseClassStatus(classCard);
-    if (!IRCTCExt.TrainList.isBookableStatus(status.type)) {
+    const status = IRCTCExt.EticketTrainList.parseClassStatus(classCard);
+    if (!IRCTCExt.EticketTrainList.isBookableStatus(status.type)) {
       throw new Error(`${travelClass} shows ${status.text || status.type || 'not available'} — not bookable`);
     }
 
     const bookBtn = classCard.querySelector('button.btn-book');
     if (!bookBtn) throw new Error(`BOOK button not found for class ${travelClass}`);
 
-    IRCTCExt.TrainList.setStatus(
+    IRCTCExt.EticketTrainList.setStatus(
       overlay,
       `Class ${travelClass} available (${status.text || status.type}) — clicking Book...`
     );
-    IRCTCExt.TrainList.scrollIntoViewIfNeeded(classCard);
+    IRCTCExt.EticketTrainList.scrollIntoViewIfNeeded(classCard);
     IRCTCExt.Events.click(bookBtn);
     await IRCTCExt.Wait.delay(400);
 
-    IRCTCExt.TrainList.setStatus(overlay, 'Book clicked — waiting for passenger page...');
-    await IRCTCExt.TrainList.confirmBookingAndWait(overlay);
+    IRCTCExt.EticketTrainList.setStatus(overlay, 'Book clicked — waiting for passenger page...');
+    await IRCTCExt.EticketTrainList.confirmBookingAndWait(overlay);
     return true;
   },
 

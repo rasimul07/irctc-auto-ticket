@@ -1,6 +1,6 @@
 window.IRCTCExt = window.IRCTCExt || {};
 
-IRCTCExt.SearchFlow = {
+IRCTCExt.EticketSearchFlow = {
   async submitSearchWithRedirect(overlay, { maxAttempts = 3, redirectTimeoutMs = 8000 } = {}) {
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       overlay.setStatus(attempt === 1 ? 'Submitting search...' : `Retrying search (${attempt}/${maxAttempts})...`);
@@ -11,7 +11,7 @@ IRCTCExt.SearchFlow = {
       IRCTCExt.Events.click(searchBtn);
 
       const redirected = await IRCTCExt.Wait.poll(
-        () => location.pathname.includes('train-list'),
+        () => IRCTCExt.EticketPaths.isTrainListPath(location.pathname),
         { timeout: redirectTimeoutMs, interval: 200 }
       );
 
@@ -84,6 +84,6 @@ IRCTCExt.SearchFlow = {
         );
     if (!quotaOk) throw new Error(`Could not select quota: ${quota}`);
 
-    return IRCTCExt.SearchFlow.submitSearchWithRedirect(overlay);
+    return IRCTCExt.EticketSearchFlow.submitSearchWithRedirect(overlay);
   }
 };

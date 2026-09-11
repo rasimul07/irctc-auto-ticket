@@ -10,6 +10,7 @@ const els = {
   accessValidUntil: document.getElementById('accessValidUntil'),
   accessActive: document.getElementById('accessActive'),
   accessEmail: document.getElementById('accessEmail'),
+  bookingSite: document.getElementById('bookingSite'),
   linkAccessEmailBtn: document.getElementById('linkAccessEmailBtn'),
   bmcLink: document.getElementById('bmcLink'),
   username: document.getElementById('username'),
@@ -85,90 +86,8 @@ function showToast(text, isError = false) {
   }, 4000);
 }
 
-function isCardComplete(card) {
-  return !!(card?.name && card?.number && card?.expiry && card?.cvv);
-}
-
 function validateEssentials(form) {
-  const { credentials, journey, passengers, preferences } = form;
-
-  if (!credentials.username) {
-    return { tab: 'credentials', focusId: 'username', message: 'Please enter your IRCTC username.' };
-  }
-  if (!credentials.password) {
-    return { tab: 'credentials', focusId: 'password', message: 'Please enter your IRCTC password.' };
-  }
-  if (!journey.from) {
-    return { tab: 'journey', focusId: 'fromStation', message: 'Please enter the From station.' };
-  }
-  if (!journey.to) {
-    return { tab: 'journey', focusId: 'toStation', message: 'Please enter the To station.' };
-  }
-  if (!journey.date) {
-    return { tab: 'journey', focusId: 'journeyDate', message: 'Please select the journey date.' };
-  }
-  if (!journey.trainNo && !journey.trainName) {
-    return {
-      tab: 'journey',
-      focusId: 'trainNo',
-      message: 'Enter a train number or train name.'
-    };
-  }
-
-  const hasNamedPassenger = (passengers || []).some((p) => (p.name || '').trim());
-  if (!hasNamedPassenger) {
-    return {
-      tab: 'passengers',
-      focusSelector: '.passenger-card .p-name',
-      message: 'Add at least one passenger with a name matching your IRCTC profile.'
-    };
-  }
-
-  if (preferences?.autoPayEnabled && preferences.paymentMethod === 'cards') {
-    const type = preferences.autoPayType || 'debit';
-    if (type === 'debit' || type === 'credit') {
-      const card = type === 'credit' ? preferences.creditCard : preferences.debitCard;
-      const prefix = type === 'credit' ? 'credit' : 'debit';
-      const label = type === 'credit' ? 'credit' : 'debit';
-      if (!card?.name) {
-        return {
-          tab: 'payment',
-          focusId: `${prefix}CardName`,
-          message: `Enter ${label} card name for auto pay.`
-        };
-      }
-      if (!card?.number) {
-        return {
-          tab: 'payment',
-          focusId: `${prefix}CardNumber`,
-          message: `Enter ${label} card number for auto pay.`
-        };
-      }
-      if (!card?.expiry) {
-        return {
-          tab: 'payment',
-          focusId: `${prefix}CardExpiry`,
-          message: `Enter ${label} card expiry for auto pay.`
-        };
-      }
-      if (!card?.cvv) {
-        return {
-          tab: 'payment',
-          focusId: `${prefix}CardCvv`,
-          message: `Enter ${label} card CVV for auto pay.`
-        };
-      }
-      if (!isCardComplete(card)) {
-        return {
-          tab: 'payment',
-          focusId: `${prefix}CardName`,
-          message: `Complete all ${label} card fields for auto pay.`
-        };
-      }
-    }
-  }
-
-  return null;
+  return window.IRCTCExt?.BookingValidation?.validate(form) ?? null;
 }
 
 function focusField(target) {
@@ -428,6 +347,7 @@ function readForm() {
     },
     passengers: readPassengers(),
     preferences: {
+      bookingSite: els.bookingSite?.value || 'eticket',
       paymentMethod: els.paymentMethod.value,
       cardsProvider: els.cardsProvider.value,
       upiProvider: els.upiProvider.value,
@@ -467,6 +387,7 @@ function fillForm(config) {
   els.trainName.value = config.journey?.trainName || '';
   els.travelClass.value = config.journey?.travelClass || 'SL';
   els.quota.value = config.journey?.quota || 'TATKAL';
+  if (els.bookingSite) els.bookingSite.value = config.preferences?.bookingSite || 'eticket';
   els.paymentMethod.value = config.preferences?.paymentMethod || 'cards';
   els.cardsProvider.value = config.preferences?.cardsProvider || 'PhonePe';
   els.upiProvider.value = config.preferences?.upiProvider || 'IRCTC iPay';
@@ -537,9 +458,8 @@ async function startBooking() {
     return;
   }
 
-  await save();
   const accessStatus = await refreshAccess();
-  if (!accessStatus?.allowed) {
+  if (!AccessApi?.isStatusAllowed(accessStatus)) {
     showToast(
       'Access not active. Start a free trial or buy a coffee on Buy Me a Coffee, then link your email on the Access tab.',
       true
@@ -547,6 +467,10 @@ async function startBooking() {
     switchTab('access', 'accessEmail');
     return;
   }
+
+  await save();
+  const siteLabel =
+    form.preferences?.bookingSite === 'nget' ? 'Classic — nget' : 'Beta — eticket';
 
   await Storage.updateState({
     running: true,
@@ -562,21 +486,36 @@ async function startBooking() {
     tokenConsumed: false
   });
   updateStatusBadge('running');
-  chrome.runtime.sendMessage({ type: 'START_FROM_POPUP' }, async (response) => {
+  els.startBtn.disabled = true;
+  chrome.runtime.sendMessage({ type: 'START_FROM_POPUP', skipAccessCheck: true }, async (response) => {
+    els.startBtn.disabled = false;
     if (chrome.runtime.lastError) {
       await Storage.updateState({ running: false, status: 'idle', currentStep: 'init' });
       updateStatusBadge('idle');
       showToast(chrome.runtime.lastError.message || 'Could not start booking.', true);
       return;
     }
-    if (!response?.ok) {
+    // Popup closes when IRCTC tab opens — response may be undefined even when start succeeded.
+    if (!response) return;
+    if (!response.ok) {
       await Storage.updateState({ running: false, status: 'idle', currentStep: 'init' });
       updateStatusBadge('idle');
-      showToast('Access expired or API unavailable. Check the Access tab.', true);
-      switchTab('access', 'accessEmail');
+      if (response.error === 'validation_failed') {
+        handleValidationFailure(response);
+      } else if (response.error === 'access_denied') {
+        showToast('Access expired or API unavailable. Check the Access tab.', true);
+        switchTab('access', 'accessEmail');
+      } else if (response.error === 'tab_open_failed') {
+        showToast(response.message || 'Could not open IRCTC tab. Check extension permissions.', true);
+      } else if (response.error === 'content_script_not_ready') {
+        showToast('IRCTC page not ready. Reload the IRCTC tab, then click Start again.', true);
+      } else {
+        showToast('Could not start booking. Reload the extension and IRCTC tab, then try again.', true);
+      }
       return;
     }
-    showToast('Opening IRCTC and starting automation...');
+    const label = response.siteLabel || siteLabel;
+    showToast(`Opening ${label} and starting automation...`);
   });
 }
 

@@ -15,35 +15,65 @@
   "background": {
     "service_worker": "background.js"
   },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "96": "icons/icon96.png"
+  },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "IRCTC Tatkal Auto Booking"
+    "default_title": "IRCTC Tatkal Auto Booking",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "96": "icons/icon96.png"
+    }
   },
   "content_scripts": [
     {
-      "matches": ["https://www.irctc.co.in/eticket/*"],
-      "js": ["lib/selectors.js", "lib/wait.js", "lib/modals.js"],
+      "matches": [
+        "https://www.irctc.co.in/eticket/*",
+        "https://www.irctc.co.in/nget/*"
+      ],
+      "js": ["sites/registry.js", "lib/wait.js", "lib/modals.js"],
       "run_at": "document_start"
     },
     {
-      "matches": ["https://www.irctc.co.in/eticket/*"],
+      "matches": [
+        "https://www.irctc.co.in/eticket/*",
+        "https://www.irctc.co.in/nget/*"
+      ],
       "js": [
-        "lib/selectors.js",
+        "sites/registry.js",
+        "sites/eticket/config.js",
+        "sites/eticket/paths.js",
+        "sites/eticket/selectors.js",
+        "sites/eticket/trainList.js",
+        "sites/eticket/flows/login.js",
+        "sites/eticket/flows/search.js",
+        "sites/eticket/flows/booking.js",
+        "sites/eticket/index.js",
+        "sites/nget/config.js",
+        "sites/nget/paths.js",
+        "sites/nget/selectors.js",
+        "sites/nget/trainList.js",
+        "sites/nget/flows/login.js",
+        "sites/nget/flows/search.js",
+        "sites/nget/flows/booking.js",
+        "sites/nget/index.js",
         "lib/wait.js",
         "lib/events.js",
         "lib/storage.js",
         "lib/accessConfig.js",
         "lib/api.js",
         "lib/stations.js",
-        "lib/trainList.js",
         "lib/passengers.js",
         "lib/psgnPreferences.js",
         "lib/bkgPayment.js",
         "overlay/overlay.js",
         "overlay/paymentReview.js",
-        "flows/login.js",
-        "flows/search.js",
-        "flows/booking.js",
         "content_script.js"
       ],
       "css": ["overlay/overlay.css", "overlay/paymentReview.css"],
@@ -56,7 +86,7 @@
         "https://mercury.phonepe.com/*"
       ],
       "js": [
-        "lib/selectors.js",
+        "sites/eticket/selectors.js",
         "lib/wait.js",
         "lib/events.js",
         "lib/storage.js",

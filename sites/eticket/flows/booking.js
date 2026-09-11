@@ -1,6 +1,6 @@
 window.IRCTCExt = window.IRCTCExt || {};
 
-IRCTCExt.BookingFlow = {
+IRCTCExt.EticketBookingFlow = {
   async fillPassengers(config, overlay) {
     if (!location.pathname.includes('psgninput')) {
       throw new Error('Not on passenger input page');

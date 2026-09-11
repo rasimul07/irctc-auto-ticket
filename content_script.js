@@ -1,19 +1,44 @@
-window.IRCTCExt = window.IRCTCExt || {};
+(function (root) {
+  root.IRCTCExt = root.IRCTCExt || {};
+})(typeof globalThis !== 'undefined' ? globalThis : window);
 
 IRCTCExt.Bot = {
   running: false,
   unwatchPath: null,
-  ERROR_PAGE_PATH: '/eticket/error',
   MAX_AUTO_RESTARTS: 3,
+  RESTART_FLAG: 'irctc-ext-restart-pending',
 
-  isErrorPage(path = location.pathname) {
-    return path.includes(this.ERROR_PAGE_PATH);
+  async getSite(config) {
+    const site = IRCTCExt.SiteRegistry.get(config);
+    if (!site?.flows) {
+      throw new Error('Booking site profile not loaded. Reload the extension.');
+    }
+    if (site.selectors) IRCTCExt.SELECTORS = site.selectors;
+    return site;
+  },
+
+  async waitForSiteReady(config, { timeout = 15000 } = {}) {
+    const site = await IRCTCExt.Wait.poll(
+      () => {
+        const profile = IRCTCExt.SiteRegistry.get(config);
+        return profile?.flows ? profile : null;
+      },
+      { timeout, interval: 100 }
+    );
+    if (!site) throw new Error('Booking site profile not loaded. Reload the extension.');
+    return site;
+  },
+
+  isContentScriptReady() {
+    const sites = IRCTCExt.SiteRegistry?.SITES || {};
+    return Object.values(sites).some((site) => site?.flows);
   },
 
   async handleErrorPageIfNeeded(overlay) {
-    if (!IRCTCExt.Bot.isErrorPage()) return false;
-
     const config = await IRCTCExt.Storage.get();
+    const site = await IRCTCExt.Bot.getSite(config);
+    if (!site.isErrorPage()) return false;
+
     if (!config.state.running || config.state.paused) return false;
     if (IRCTCExt.Bot._errorRestartInFlight) return true;
 
@@ -34,7 +59,6 @@ IRCTCExt.Bot = {
         `IRCTC error page detected. Restarting (${count + 1}/${IRCTCExt.Bot.MAX_AUTO_RESTARTS})...`
       );
       overlay?.setStep('Restart');
-
       await IRCTCExt.Storage.updateState({ autoRestartCount: count + 1 });
       await IRCTCExt.Bot.restart();
     } finally {
@@ -48,19 +72,10 @@ IRCTCExt.Bot = {
     return config.state.running && !config.state.paused;
   },
 
-  syncStepFromPath(path, state = {}) {
-    if (path.includes('bkgPaymentOptions')) return 'payment';
-    if (path.includes('reviewBooking')) return 'review';
-    if (path.includes('psgninput')) return state.passengersDone ? 'review' : 'passengers';
-    if (path.includes('train-list')) return 'train-list';
-    if (path.includes('train-search')) return 'search';
-    return 'init';
-  },
-
-  async runLoginIfNeeded(config, overlay) {
-    if (await IRCTCExt.LoginFlow.isLoggedIn()) return;
+  async runLoginIfNeeded(config, overlay, site) {
+    if (await site.flows.LoginFlow.isLoggedIn()) return;
     try {
-      await IRCTCExt.LoginFlow.run(config, overlay);
+      await site.flows.LoginFlow.run(config, overlay);
     } catch (err) {
       console.warn('[IRCTC-Bot] Login step:', err);
       overlay.setStatus('Continuing (login not completed)');
@@ -93,7 +108,7 @@ IRCTCExt.Bot = {
     return true;
   },
 
-  async handlePaymentPage(overlay, config) {
+  async handlePaymentPage(overlay, config, site) {
     if (config.state.paymentDone) return 'done';
 
     overlay.setStep('Payment');
@@ -101,7 +116,7 @@ IRCTCExt.Bot = {
     if (!config.preferences?.autoPayEnabled) {
       overlay.setStatus('Auto pay disabled — complete payment manually.');
       await IRCTCExt.Storage.updateState({ paymentDone: true });
-      await IRCTCExt.BookingFlow.showPaymentReview(overlay);
+      await site.flows.BookingFlow.showPaymentReview(overlay);
       return 'done';
     }
 
@@ -119,67 +134,65 @@ IRCTCExt.Bot = {
     }
 
     await IRCTCExt.Storage.updateState({ paymentDone: true });
-    await IRCTCExt.BookingFlow.showPaymentReview(overlay);
+    await site.flows.BookingFlow.showPaymentReview(overlay);
     return 'done';
   },
 
   async runForCurrentPath(overlay) {
     const config = await IRCTCExt.Storage.get();
+    const site = await IRCTCExt.Bot.getSite(config);
     const path = location.pathname;
 
-    if (IRCTCExt.Bot.isErrorPage(path)) {
+    if (site.isErrorPage(path)) {
       await IRCTCExt.Bot.handleErrorPageIfNeeded(overlay);
       return 'wait';
     }
 
-    const step = IRCTCExt.Bot.syncStepFromPath(path, config.state);
-
+    const step = site.syncStepFromPath(path, config.state);
     await IRCTCExt.Storage.updateState({ currentStep: step });
     overlay.setStep(step);
 
-    if (path.includes('bkgPaymentOptions')) {
+    if (site.isPaymentPath(path)) {
       const canPay = await IRCTCExt.Bot.ensureTokenForPayment(overlay, config);
       if (!canPay) return 'done';
-      return IRCTCExt.Bot.handlePaymentPage(overlay, config);
+      return IRCTCExt.Bot.handlePaymentPage(overlay, config, site);
     }
 
-    if (path.includes('reviewBooking')) {
-      await IRCTCExt.BookingFlow.clickContinueToPayment(overlay);
-      if (location.pathname.includes('bkgPaymentOptions')) {
-        return 'continue';
-      }
+    if (site.isReviewPath(path)) {
+      await site.flows.BookingFlow.clickContinueToPayment(overlay);
+      if (site.isPaymentPath(location.pathname)) return 'continue';
       overlay.setStatus('Waiting for payment page...');
       return 'wait';
     }
 
-    if (path.includes('psgninput')) {
+    if (site.isPassengerPath(path)) {
       if (!config.state.passengersDone) {
-        await IRCTCExt.BookingFlow.fillPassengers(config, overlay);
+        await site.flows.BookingFlow.fillPassengers(config, overlay);
         await IRCTCExt.Storage.updateState({ passengersDone: true, currentStep: 'review' });
         return 'continue';
       }
-      await IRCTCExt.BookingFlow.configurePsgninputOptions(config, overlay);
-      if (location.pathname.includes('bkgPaymentOptions')) return 'continue';
-      if (location.pathname.includes('reviewBooking')) return 'continue';
+      await site.flows.BookingFlow.configurePsgninputOptions(config, overlay);
+      if (site.isPaymentPath(location.pathname)) return 'continue';
+      if (site.isReviewPath(location.pathname)) return 'continue';
       overlay.setStatus('Waiting for review or payment page...');
       return 'wait';
     }
 
-    if (path.includes('train-list')) {
+    if (site.isTrainListPath(path)) {
       overlay.setStatus('Train list loaded — starting booking...');
-      await IRCTCExt.TrainList.bookTrain(config, overlay);
+      await site.TrainList.bookTrain(config, overlay);
       return 'continue';
     }
 
-    if (path.includes('train-search')) {
-      await IRCTCExt.LoginFlow.runWithRetry(config, overlay);
-      await IRCTCExt.SearchFlow.run(config, overlay);
-      if (location.pathname.includes('train-list')) return 'continue';
+    if (site.isTrainSearchPath(path)) {
+      await site.flows.LoginFlow.runWithRetry(config, overlay);
+      await site.flows.SearchFlow.run(config, overlay);
+      if (site.isTrainListPath(location.pathname)) return 'continue';
       overlay.setStatus('Waiting for train list...');
       return 'wait';
     }
 
-    await IRCTCExt.Bot.runLoginIfNeeded(config, overlay);
+    await IRCTCExt.Bot.runLoginIfNeeded(config, overlay, site);
     overlay.setStatus('Waiting for next booking page...');
     return 'wait';
   },
@@ -187,7 +200,10 @@ IRCTCExt.Bot = {
   async start() {
     if (this.running) return;
 
-    const access = await chrome.runtime.sendMessage({ type: 'CHECK_ACCESS', forceRefresh: true }).catch(() => null);
+    const config = await IRCTCExt.Storage.get();
+    await IRCTCExt.Bot.waitForSiteReady(config);
+
+    const access = await chrome.runtime.sendMessage({ type: 'CHECK_ACCESS', forceRefresh: false }).catch(() => null);
     if (!access?.allowed) {
       const overlay = await IRCTCExt.Overlay.show().catch(() => null);
       const message =
@@ -281,8 +297,8 @@ IRCTCExt.Bot = {
   },
 
   async restart() {
-    const TRAIN_SEARCH_URL = 'https://www.irctc.co.in/eticket/train-search';
-    const TRAIN_SEARCH_PATH = '/eticket/train-search';
+    const config = await IRCTCExt.Storage.get();
+    const site = IRCTCExt.SiteRegistry.get(config);
 
     this.running = false;
 
@@ -293,6 +309,8 @@ IRCTCExt.Bot = {
     overlay.setStatus('Restarting from train search...');
     overlay.setStep('Restart');
     overlay.startTimer();
+
+    sessionStorage.setItem(IRCTCExt.Bot.RESTART_FLAG, '1');
 
     await IRCTCExt.Storage.updateState({
       currentStep: 'init',
@@ -309,24 +327,26 @@ IRCTCExt.Bot = {
       tokenConsumed: false
     });
 
-    if (location.pathname.includes(TRAIN_SEARCH_PATH)) {
+    if (site.isTrainSearchPath(location.pathname)) {
       location.reload();
     } else {
-      location.assign(TRAIN_SEARCH_URL);
+      location.assign(site.trainSearchUrl);
     }
   },
 
   init() {
-    if (IRCTCExt.Bot._initialized) return;
-    IRCTCExt.Bot._initialized = true;
+    if (window.__irctcBotInitDone) return;
+    window.__irctcBotInitDone = true;
 
     IRCTCExt.Wait.installIrctcNoiseFilter?.();
 
     IRCTCExt.Modals.init();
     IRCTCExt.Overlay.init().catch((err) => console.warn('[IRCTC-Bot] Overlay init:', err));
-    IRCTCExt.PaymentReviewOverlay.init().then(() => {
-      IRCTCExt.PaymentReviewOverlay.watch();
-    }).catch((err) => console.warn('[IRCTC-Bot] Payment review overlay init:', err));
+    IRCTCExt.PaymentReviewOverlay.init()
+      .then(() => {
+        IRCTCExt.PaymentReviewOverlay.watch();
+      })
+      .catch((err) => console.warn('[IRCTC-Bot] Payment review overlay init:', err));
 
     this.unwatchPath = IRCTCExt.Wait.watchPath(async () => {
       const overlay = await IRCTCExt.Overlay.show().catch(() => null);
@@ -340,40 +360,59 @@ IRCTCExt.Bot = {
 
     chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       if (msg.type === 'PING') {
-        sendResponse({ ok: true });
+        sendResponse({ ok: true, ready: IRCTCExt.Bot.isContentScriptReady() });
         return true;
       }
+
       if (msg.type === 'START_BOOKING') {
-        IRCTCExt.Storage.updateState({
-          currentStep: 'init',
-          running: true,
-          paused: false,
-          status: 'running',
-          passengersDone: false,
-          paymentDone: false,
-          autoRestartCount: 0,
-          paymentPhase: null,
-          paymentGateway: null,
-          awaitingGateway: false
-        }).then(() => {
+        (async () => {
+          const config = await IRCTCExt.Storage.get();
+          await IRCTCExt.Bot.waitForSiteReady(config);
+          await IRCTCExt.Storage.updateState({
+            currentStep: 'init',
+            running: true,
+            paused: false,
+            status: 'running',
+            passengersDone: false,
+            paymentDone: false,
+            autoRestartCount: 0,
+            paymentPhase: null,
+            paymentGateway: null,
+            awaitingGateway: false
+          });
           IRCTCExt.Bot.running = false;
-          IRCTCExt.Bot.start().catch((err) => console.error('[IRCTC-Bot] Start failed:', err));
-        });
+          await IRCTCExt.Bot.start();
+        })().catch((err) => console.error('[IRCTC-Bot] Start failed:', err));
         sendResponse({ ok: true });
         return true;
       }
+
       if (msg.type === 'GET_STATUS') {
         IRCTCExt.Storage.get().then((c) => sendResponse({ state: c.state }));
+        return true;
       }
+
       if (msg.type === 'STOP_BOOKING') {
         IRCTCExt.Overlay.stop();
         sendResponse({ ok: true });
+        return true;
       }
-      return true;
+
+      return false;
     });
 
-    IRCTCExt.Wait.poll(() => document.body, { timeout: 10000, interval: 50 }).then(() => {
-      IRCTCExt.Bot.resumeIfNeeded();
+    IRCTCExt.Wait.poll(() => document.body, { timeout: 10000, interval: 50 }).then(async () => {
+      if (sessionStorage.getItem(IRCTCExt.Bot.RESTART_FLAG) === '1') {
+        sessionStorage.removeItem(IRCTCExt.Bot.RESTART_FLAG);
+        IRCTCExt.Bot.running = false;
+        try {
+          await IRCTCExt.Bot.start();
+        } catch (err) {
+          console.error('[IRCTC-Bot] Restart resume failed:', err);
+        }
+        return;
+      }
+      await IRCTCExt.Bot.resumeIfNeeded();
     });
   }
 };
