@@ -143,6 +143,8 @@ IRCTCExt.Overlay = {
     if (IRCTCExt.Overlay.el) {
       IRCTCExt.Overlay.el.classList.remove('irctc-ext-overlay--hidden');
     }
+    const config = await IRCTCExt.Storage.get().catch(() => null);
+    if (config) IRCTCExt.Overlay.updatePauseButton(config.state?.paused);
     return IRCTCExt.Overlay;
   },
 
@@ -191,11 +193,27 @@ IRCTCExt.Overlay = {
     if (panel) panel.style.display = 'block';
   },
 
+  updatePauseButton(paused) {
+    const btn = document.getElementById('irctc-ext-pause');
+    if (btn) btn.textContent = paused ? 'Resume' : 'Pause';
+  },
+
   async togglePause() {
     const config = await IRCTCExt.Storage.get();
+    if (!config.state.running) {
+      this.setStatus('Not running');
+      return;
+    }
+
     const paused = !config.state.paused;
     await IRCTCExt.Storage.updateState({ paused });
+    this.updatePauseButton(paused);
     this.setStatus(paused ? 'Paused' : 'Resumed');
+    this.setStep(paused ? 'Paused' : config.state.currentStep || 'Running');
+
+    if (!paused && window.IRCTCExt?.Bot) {
+      await IRCTCExt.Bot.resumeIfNeeded();
+    }
   },
 
   async restart() {
@@ -213,11 +231,18 @@ IRCTCExt.Overlay = {
   },
 
   async stop() {
-    if (window.IRCTCExt?.Bot) IRCTCExt.Bot.running = false;
-    await IRCTCExt.Storage.updateState({ running: false, paused: false, status: 'stopped', currentStep: 'init' });
-    this.setStatus('Stopped');
+    this.setStatus('Stopping...');
     this.setStep('Stopped');
     this.stopTimer();
+
+    if (window.IRCTCExt?.Bot?.stop) {
+      await IRCTCExt.Bot.stop();
+      return;
+    }
+
+    await IRCTCExt.Storage.updateState({ running: false, paused: false, status: 'stopped', currentStep: 'init' });
+    this.setStatus('Stopped');
     if (typeof this.onStop === 'function') this.onStop();
+    location.reload();
   }
 };

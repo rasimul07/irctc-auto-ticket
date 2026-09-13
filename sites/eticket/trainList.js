@@ -240,21 +240,40 @@ IRCTCExt.EticketTrainList = {
   },
 
   parseClassStatus(classCard) {
-    const statusEl = classCard?.querySelector('.class-status');
+    const sel = IRCTCExt.SELECTORS.trainList;
+    const statusEl = classCard?.querySelector(sel.classStatus?.[0] || '.class-status');
     if (!statusEl) return { type: '', text: '' };
 
     const text = (statusEl.textContent || '').trim();
-    if (statusEl.classList.contains('AVAILABLE')) return { type: 'AVAILABLE', text };
-    if (statusEl.classList.contains('RAC')) return { type: 'RAC', text };
-    if (statusEl.classList.contains('REGRET')) return { type: 'REGRET', text };
-    if (statusEl.classList.contains('WL')) return { type: 'WL', text };
+    const status = { type: '', text };
 
-    const upper = text.toUpperCase();
-    if (upper.includes('AVAILABLE')) return { type: 'AVAILABLE', text };
-    if (/\bRAC\b/.test(upper)) return { type: 'RAC', text };
-    if (upper.includes('REGRET')) return { type: 'REGRET', text };
-    if (upper.includes('WL')) return { type: 'WL', text };
-    return { type: '', text };
+    if (statusEl.classList.contains('AVAILABLE')) status.type = 'AVAILABLE';
+    else if (statusEl.classList.contains('RAC')) status.type = 'RAC';
+    else if (statusEl.classList.contains('WL')) status.type = 'WL';
+    else if (statusEl.classList.contains('REGRET')) status.type = 'REGRET';
+
+    if (!status.type) {
+      const upper = text.toUpperCase();
+      if (upper.includes('AVAILABLE')) status.type = 'AVAILABLE';
+      else if (/\bRAC\b/.test(upper)) status.type = 'RAC';
+      else if (upper.includes('WL')) status.type = 'WL';
+      else if (upper.includes('REGRET')) status.type = 'REGRET';
+    }
+
+    if (IRCTCExt.EticketTrainList.isHighLoadStatus(status)) {
+      status.type = 'HIGH_LOAD';
+    }
+
+    return status;
+  },
+
+  isHighLoadStatus(status) {
+    const text = String(status?.text || '');
+    return /high\s*load|please\s*retry/i.test(text);
+  },
+
+  isRetryableAvailabilityError(status) {
+    return IRCTCExt.EticketTrainList.isHighLoadStatus(status) || status?.type === 'HIGH_LOAD';
   },
 
   isBookableStatus(statusType) {
@@ -269,17 +288,113 @@ IRCTCExt.EticketTrainList = {
     return /\b(checking|loading)\b/i.test(btn.textContent || '');
   },
 
-  findAvailabilityButton(card) {
+  findRefreshAvailabilityButton(card) {
     const sel = IRCTCExt.SELECTORS.trainList;
-    const direct = IRCTCExt.Wait.queryOne(sel.availabilityBtn, card);
-    if (direct && IRCTCExt.Wait.isVisible(direct)) return direct;
+    const candidates = IRCTCExt.Wait.queryAll(sel.refreshAvailabilityBtn || sel.availabilityBtn, card);
+    const refreshBtn = candidates.find(
+      (btn) => /refresh\s*availability/i.test(btn.textContent || '') && IRCTCExt.Wait.isVisible(btn)
+    );
+    if (refreshBtn) return refreshBtn;
 
     const buttons = card.querySelectorAll('button');
     return (
       [...buttons].find(
-        (btn) => /check\s*availability/i.test(btn.textContent || '') && IRCTCExt.Wait.isVisible(btn)
+        (btn) => /refresh\s*availability/i.test(btn.textContent || '') && IRCTCExt.Wait.isVisible(btn)
       ) || null
     );
+  },
+
+  findClassRefreshIcon(classCard) {
+    if (!classCard) return null;
+    const sel = IRCTCExt.SELECTORS.trainList;
+    const icons = IRCTCExt.Wait.queryAll(sel.classRefreshIcon, classCard);
+    return icons.find((icon) => IRCTCExt.Wait.isVisible(icon)) || null;
+  },
+
+  findAvailabilityButton(card) {
+    const refreshBtn = IRCTCExt.EticketTrainList.findRefreshAvailabilityButton(card);
+    if (refreshBtn && !IRCTCExt.EticketTrainList.isAvailabilityButtonBusy(refreshBtn)) {
+      return refreshBtn;
+    }
+
+    const sel = IRCTCExt.SELECTORS.trainList;
+    const direct = IRCTCExt.Wait.queryOne(sel.availabilityBtn, card);
+    if (direct && IRCTCExt.Wait.isVisible(direct) && !IRCTCExt.EticketTrainList.isAvailabilityButtonBusy(direct)) {
+      return direct;
+    }
+
+    const buttons = card.querySelectorAll('button');
+    return (
+      [...buttons].find((btn) => {
+        if (!IRCTCExt.Wait.isVisible(btn)) return false;
+        if (IRCTCExt.EticketTrainList.isAvailabilityButtonBusy(btn)) return false;
+        return /check\s*availability|refresh\s*availability/i.test(btn.textContent || '');
+      }) || null
+    );
+  },
+
+  findAvailabilityRefreshControl(card, classCard) {
+    const refreshBtn = IRCTCExt.EticketTrainList.findRefreshAvailabilityButton(card);
+    if (refreshBtn && !IRCTCExt.EticketTrainList.isAvailabilityButtonBusy(refreshBtn)) {
+      return refreshBtn;
+    }
+    return IRCTCExt.EticketTrainList.findClassRefreshIcon(classCard);
+  },
+
+  async waitForBookableClass(card, classCard, travelClass, overlay) {
+    let attempt = 0;
+
+    while (await IRCTCExt.Bot.isRunning()) {
+      const control = await IRCTCExt.Bot.checkControlState();
+      if (control === 'stopped') {
+        throw new Error('Booking stopped');
+      }
+      if (control === 'paused') {
+        IRCTCExt.EticketTrainList.setStatus(overlay, 'Paused — click Resume to continue...');
+        await IRCTCExt.Bot.waitUntilResumedOrStopped();
+        if (!(await IRCTCExt.Bot.isRunning())) {
+          throw new Error('Booking stopped');
+        }
+        continue;
+      }
+      const status = IRCTCExt.EticketTrainList.parseClassStatus(classCard);
+      if (IRCTCExt.EticketTrainList.isBookableStatus(status.type)) {
+        return status;
+      }
+
+      if (!IRCTCExt.EticketTrainList.isRetryableAvailabilityError(status)) {
+        throw new Error(
+          `${travelClass} shows ${status.text || status.type || 'not available'} — not bookable`
+        );
+      }
+
+      attempt += 1;
+      IRCTCExt.EticketTrainList.setStatus(
+        overlay,
+        `High load on ${travelClass} — refreshing (attempt ${attempt})...`
+      );
+
+      const refreshControl = IRCTCExt.EticketTrainList.findAvailabilityRefreshControl(card, classCard);
+      if (refreshControl) {
+        IRCTCExt.EticketTrainList.scrollIntoViewIfNeeded(classCard);
+        IRCTCExt.Events.click(refreshControl);
+      }
+
+      await IRCTCExt.Wait.delay(600);
+
+      const previousText = status.text;
+      await IRCTCExt.Wait.poll(
+        () => {
+          const next = IRCTCExt.EticketTrainList.parseClassStatus(classCard);
+          if (IRCTCExt.EticketTrainList.isBookableStatus(next.type)) return next;
+          if (next.text !== previousText) return next;
+          return null;
+        },
+        { timeout: 8000, interval: 200 }
+      );
+    }
+
+    throw new Error('Booking stopped');
   },
 
   async loadAvailability(card, overlay, travelClass, maxAttempts = 3) {
@@ -377,10 +492,12 @@ IRCTCExt.EticketTrainList = {
     const classCard = await IRCTCExt.EticketTrainList.findClassCardWithScroll(card, travelClass, overlay);
     if (!classCard) throw new Error(`Class ${travelClass} not found for train ${trainNum}`);
 
-    const status = IRCTCExt.EticketTrainList.parseClassStatus(classCard);
-    if (!IRCTCExt.EticketTrainList.isBookableStatus(status.type)) {
-      throw new Error(`${travelClass} shows ${status.text || status.type || 'not available'} — not bookable`);
-    }
+    const status = await IRCTCExt.EticketTrainList.waitForBookableClass(
+      card,
+      classCard,
+      travelClass,
+      overlay
+    );
 
     const bookBtn = classCard.querySelector('button.btn-book');
     if (!bookBtn) throw new Error(`BOOK button not found for class ${travelClass}`);

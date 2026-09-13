@@ -59,6 +59,7 @@
         "sites/nget/paths.js",
         "sites/nget/selectors.js",
         "sites/nget/trainList.js",
+        "sites/nget/flows/language.js",
         "sites/nget/flows/login.js",
         "sites/nget/flows/search.js",
         "sites/nget/flows/booking.js",

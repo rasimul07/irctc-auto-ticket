@@ -2,6 +2,8 @@ importScripts(
   'lib/global.js',
   'lib/storage.js',
   'lib/accessConfig.js',
+  'lib/network.js',
+  'lib/schedule.js',
   'lib/api.js',
   'lib/bookingValidation.js',
   'sites/registry.js',
@@ -11,9 +13,6 @@ importScripts(
 
 IRCTCExt.SiteRegistry.register(IRCTCExt.EticketConfig);
 IRCTCExt.SiteRegistry.register(IRCTCExt.NgetConfig);
-
-const ALARM_AC = 'tatkal-ac';
-const ALARM_NON_AC = 'tatkal-non-ac';
 
 const CONTENT_SCRIPT_FILES = [
   'sites/registry.js',
@@ -29,6 +28,7 @@ const CONTENT_SCRIPT_FILES = [
   'sites/nget/paths.js',
   'sites/nget/selectors.js',
   'sites/nget/trainList.js',
+  'sites/nget/flows/language.js',
   'sites/nget/flows/login.js',
   'sites/nget/flows/search.js',
   'sites/nget/flows/booking.js',
@@ -69,34 +69,41 @@ function isGatewayUrl(url) {
   return url.includes('irctcipay.com') || url.includes('phonepe.com');
 }
 
-function getNextIstTime(hour, minute = 0, second = 0) {
-  const now = new Date();
-  const utc = now.getTime() + now.getTimezoneOffset() * 60000;
-  const istOffset = 5.5 * 60 * 60000;
-  const istNow = new Date(utc + istOffset);
-
-  const target = new Date(istNow);
-  target.setHours(hour, minute, second, 0);
-
-  if (target <= istNow) {
-    target.setDate(target.getDate() + 1);
-  }
-
-  const targetUtc = target.getTime() - istOffset;
-  return targetUtc;
+async function scheduleAlarms(schedule) {
+  return IRCTCExt.Schedule.scheduleAlarms(schedule);
 }
 
-async function scheduleAlarms(schedule) {
-  await chrome.alarms.clear(ALARM_AC);
-  await chrome.alarms.clear(ALARM_NON_AC);
+async function restoreScheduleAlarms() {
+  const data = await chrome.storage.local.get('irctcConfig');
+  const schedule = data.irctcConfig?.schedule;
+  if (!schedule?.enabled) return null;
+  return IRCTCExt.Schedule.ensureAlarmScheduled(schedule);
+}
 
-  if (!schedule?.enabled) return;
+async function prepareScheduledBookingState() {
+  const data = await chrome.storage.local.get('irctcConfig');
+  const config = data.irctcConfig || {};
 
-  if (schedule.type === 'ac') {
-    chrome.alarms.create(ALARM_AC, { when: getNextIstTime(10, 0, 0) });
-  } else {
-    chrome.alarms.create(ALARM_NON_AC, { when: getNextIstTime(11, 0, 0) });
-  }
+  await chrome.storage.local.set({
+    irctcConfig: {
+      ...config,
+      state: {
+        ...(config.state || {}),
+        running: true,
+        paused: false,
+        status: 'scheduled',
+        currentStep: 'init',
+        passengersDone: false,
+        paymentDone: false,
+        autoRestartCount: 0,
+        paymentPhase: null,
+        paymentGateway: null,
+        awaitingGateway: false,
+        bookingSessionId: crypto.randomUUID(),
+        tokenConsumed: false
+      }
+    }
+  });
 }
 
 async function getActiveSite() {
@@ -311,11 +318,12 @@ async function openIrctcAndStart({ skipAccessCheck = false } = {}) {
   };
 }
 
-chrome.runtime.onInstalled.addListener(async () => {
-  const data = await chrome.storage.local.get('irctcConfig');
-  if (data.irctcConfig?.schedule) {
-    await scheduleAlarms(data.irctcConfig.schedule);
-  }
+chrome.runtime.onInstalled.addListener(() => {
+  restoreScheduleAlarms().catch((err) => console.error('[IRCTC-Bot] Schedule restore failed:', err));
+});
+
+chrome.runtime.onStartup.addListener(() => {
+  restoreScheduleAlarms().catch((err) => console.error('[IRCTC-Bot] Schedule restore failed:', err));
 });
 
 chrome.storage.onChanged.addListener((changes, area) => {
@@ -325,19 +333,30 @@ chrome.storage.onChanged.addListener((changes, area) => {
 });
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {
-  if (alarm.name === ALARM_AC || alarm.name === ALARM_NON_AC) {
+  const { ALARM_AC, ALARM_NON_AC } = IRCTCExt.Schedule;
+  if (alarm.name !== ALARM_AC && alarm.name !== ALARM_NON_AC) return;
+
+  console.log('[IRCTC-Bot] Tatkal alarm fired:', alarm.name);
+
+  try {
     const data = await chrome.storage.local.get('irctcConfig');
     const config = data.irctcConfig;
-    if (config?.schedule?.enabled) {
-      await chrome.storage.local.set({
-        irctcConfig: {
-          ...config,
-          state: { ...config.state, running: true, currentStep: 'init', status: 'scheduled' }
-        }
-      });
-      await openIrctcAndStart();
-      await scheduleAlarms(config.schedule);
+    if (!config?.schedule?.enabled) return;
+
+    await prepareScheduledBookingState();
+
+    const result = await openIrctcAndStart();
+    if (!result?.ok) {
+      console.warn('[IRCTC-Bot] Scheduled start failed:', result?.error || result?.message);
+    } else {
+      console.log('[IRCTC-Bot] Scheduled auto-booking started');
     }
+
+    const latest = await chrome.storage.local.get('irctcConfig');
+    await scheduleAlarms(latest.irctcConfig?.schedule || config.schedule);
+  } catch (err) {
+    console.error('[IRCTC-Bot] Scheduled start error:', err);
+    await resetRunningState();
   }
 });
 
@@ -375,17 +394,42 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type === 'CHECK_ACCESS') {
     IRCTCExt.AccessApi.ensureAccess({ forceRefresh: !!msg.forceRefresh })
       .then((status) => sendResponse({ ok: true, ...status, allowed: IRCTCExt.AccessApi.isStatusAllowed(status) }))
-      .catch((err) => sendResponse({ ok: false, allowed: false, message: err.message }));
+      .catch((err) =>
+        sendResponse({
+          ok: false,
+          allowed: false,
+          message: IRCTCExt.Network.toUserNetworkMessage(err),
+          code: err.code
+        })
+      );
     return true;
   }
   if (msg.type === 'CONSUME_TOKEN') {
     IRCTCExt.AccessApi.consumeToken(msg.usageKey)
       .then((status) => sendResponse({ ok: true, ...status, allowed: IRCTCExt.AccessApi.isStatusAllowed(status) }))
-      .catch((err) => sendResponse({ ok: false, allowed: false, message: err.message, code: err.code }));
+      .catch((err) =>
+        sendResponse({
+          ok: false,
+          allowed: false,
+          message: IRCTCExt.Network.toUserNetworkMessage(err),
+          code: err.code
+        })
+      );
     return true;
   }
   if (msg.type === 'RESCHEDULE_ALARMS') {
-    scheduleAlarms(msg.schedule).then(() => sendResponse({ ok: true }));
+    const arm = msg.schedule?.enabled
+      ? IRCTCExt.Schedule.ensureAlarmScheduled(msg.schedule)
+      : scheduleAlarms(msg.schedule);
+    arm
+      .then((info) => sendResponse({ ok: true, ...info }))
+      .catch((err) => sendResponse({ ok: false, message: err.message }));
+    return true;
+  }
+  if (msg.type === 'GET_SCHEDULE_STATUS') {
+    IRCTCExt.Schedule.getScheduledAlarmInfo(msg.schedule)
+      .then((info) => sendResponse({ ok: true, ...info }))
+      .catch((err) => sendResponse({ ok: false, message: err.message }));
     return true;
   }
 });
@@ -404,3 +448,5 @@ chrome.tabs.onCreated.addListener((tab) => {
   if (!tab.id || !tab.url) return;
   tryResumeGateway(tab.id, tab.url);
 });
+
+restoreScheduleAlarms().catch((err) => console.error('[IRCTC-Bot] Schedule restore failed:', err));

@@ -1,17 +1,28 @@
-window.IRCTCExt = window.IRCTCExt || {};
+(function (root) {
+  root.IRCTCExt = root.IRCTCExt || {};
+  if (IRCTCExt.NgetLoginFlow) return;
 
-const NGET_NOT_IMPLEMENTED = 'Classic (nget) booking is not implemented yet.';
+  const loginNotImplemented = 'Classic (nget) login is not implemented yet.';
 
-IRCTCExt.NgetLoginFlow = {
-  async isLoggedIn() {
-    return false;
-  },
+  IRCTCExt.NgetLoginFlow = {
+    async isLoggedIn() {
+      return false;
+    },
 
-  async run() {
-    throw new Error(NGET_NOT_IMPLEMENTED);
-  },
+    async run() {
+      throw new Error(loginNotImplemented);
+    },
 
-  async runWithRetry() {
-    throw new Error(NGET_NOT_IMPLEMENTED);
-  }
-};
+    async runWithRetry(config, overlay, { maxAttempts = 3 } = {}) {
+      await IRCTCExt.NgetLanguageFlow.dismissPreferredLanguage(overlay);
+
+      if (await IRCTCExt.NgetLoginFlow.isLoggedIn()) {
+        overlay?.setStatus?.('Already logged in');
+        return true;
+      }
+
+      overlay?.setStatus?.('Language selected — login step pending for nget.');
+      return true;
+    }
+  };
+})(typeof globalThis !== 'undefined' ? globalThis : window);

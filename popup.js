@@ -43,6 +43,7 @@ const els = {
   addPassenger: document.getElementById('addPassenger'),
   scheduleEnabled: document.getElementById('scheduleEnabled'),
   scheduleType: document.getElementById('scheduleType'),
+  scheduleStatus: document.getElementById('scheduleStatus'),
   saveBtn: document.getElementById('saveBtn'),
   startBtn: document.getElementById('startBtn'),
   clearBtn: document.getElementById('clearBtn'),
@@ -160,6 +161,13 @@ async function refreshAccess() {
     return null;
   }
 
+  const Network = IRCTCExt?.Network;
+  if (Network && !Network.isBrowserOnline()) {
+    updateAccessUi(null, Network.OFFLINE_MESSAGE);
+    if (els.linkAccessEmailBtn) els.linkAccessEmailBtn.disabled = true;
+    return null;
+  }
+
   updateAccessUi(null, '', { loading: true });
   if (els.linkAccessEmailBtn) els.linkAccessEmailBtn.disabled = true;
 
@@ -168,7 +176,8 @@ async function refreshAccess() {
     updateAccessUi(status);
     return status;
   } catch (err) {
-    updateAccessUi(null, err.message || 'Could not reach access API. Start backend on localhost:3000.');
+    const message = Network?.toUserNetworkMessage(err) || err.message || 'Could not reach access API. Start backend on localhost:3000.';
+    updateAccessUi(null, message);
     return null;
   } finally {
     if (els.linkAccessEmailBtn) els.linkAccessEmailBtn.disabled = false;
@@ -410,11 +419,53 @@ function updateStatusBadge(status) {
   els.statusBadge.textContent = status.charAt(0).toUpperCase() + status.slice(1);
 }
 
+function readScheduleForm() {
+  return {
+    enabled: !!els.scheduleEnabled?.checked,
+    type: els.scheduleType?.value || 'non-ac'
+  };
+}
+
+async function updateScheduleStatus(schedule = readScheduleForm()) {
+  if (!els.scheduleStatus) return;
+
+  if (schedule.enabled) {
+    const validationError = validateEssentials({ ...readForm(), schedule });
+    if (validationError) {
+      els.scheduleStatus.textContent =
+        `Scheduler enabled, but auto-start will fail until details are complete: ${validationError.message}`;
+      return;
+    }
+  }
+
+  try {
+    const info = await chrome.runtime.sendMessage({ type: 'GET_SCHEDULE_STATUS', schedule });
+    els.scheduleStatus.textContent = info?.message || 'Scheduler status unavailable.';
+  } catch {
+    const fallback = IRCTCExt?.Schedule?.getScheduledAlarmInfo
+      ? await IRCTCExt.Schedule.getScheduledAlarmInfo(schedule)
+      : null;
+    els.scheduleStatus.textContent = fallback?.message || 'Scheduler status unavailable.';
+  }
+}
+
+async function armScheduleIfEnabled(schedule) {
+  await chrome.runtime.sendMessage({ type: 'RESCHEDULE_ALARMS', schedule }).catch(() => null);
+}
+
 async function load() {
   await loadMinimizedState();
   const config = await Storage.get();
   fillForm(config);
+  await armScheduleIfEnabled(config.schedule);
+  await updateScheduleStatus(config.schedule);
   await refreshAccess();
+
+  IRCTCExt?.Network?.watchOnlineStatus(
+    () => refreshAccess(),
+    () => updateAccessUi(null, IRCTCExt.Network.OFFLINE_MESSAGE)
+  );
+
   setInterval(async () => {
     const latest = await Storage.get();
     updateStatusBadge(latest.state?.status || 'idle');
@@ -434,8 +485,17 @@ async function save() {
     access: { ...current.access, ...form.access }
   };
   await Storage.set(next);
-  chrome.runtime.sendMessage({ type: 'RESCHEDULE_ALARMS', schedule: next.schedule });
-  showMessage('Details saved successfully.');
+  const armed = await chrome.runtime.sendMessage({ type: 'RESCHEDULE_ALARMS', schedule: next.schedule });
+  await updateScheduleStatus(next.schedule);
+
+  if (next.schedule.enabled && armed?.when) {
+    const when = IRCTCExt?.Schedule?.formatIstDateTime
+      ? IRCTCExt.Schedule.formatIstDateTime(armed.when)
+      : new Date(armed.when).toLocaleString();
+    showMessage(`Details saved. Auto-booking scheduled for ${when}.`);
+  } else {
+    showMessage('Details saved successfully.');
+  }
 }
 
 function handleValidationFailure(err) {
@@ -537,6 +597,9 @@ els.addPassenger.addEventListener('click', () => {
   }
   els.passengerList.appendChild(createPassengerRow({}, count));
 });
+
+els.scheduleEnabled?.addEventListener('change', () => updateScheduleStatus());
+els.scheduleType?.addEventListener('change', () => updateScheduleStatus());
 
 els.paymentMethod.addEventListener('change', togglePaymentFields);
 els.autoPayEnabled.addEventListener('change', toggleAutoPayFields);

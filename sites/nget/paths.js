@@ -7,7 +7,10 @@ IRCTCExt.NgetPaths = {
     if (path.includes('review')) return 'review';
     if (path.includes('psgninput')) return state.passengersDone ? 'review' : 'passengers';
     if (path.includes('train-list')) return 'train-list';
-    if (path.includes('train-search')) return 'search';
+    if (path.includes('train-search')) {
+      if (IRCTCExt.NgetLanguageFlow?.isLanguageModalVisible?.()) return 'language';
+      return 'search';
+    }
     return 'init';
   },
 

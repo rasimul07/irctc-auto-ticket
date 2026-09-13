@@ -5,7 +5,7 @@ IRCTCExt.EticketBookingFlow = {
     if (!location.pathname.includes('psgninput')) {
       throw new Error('Not on passenger input page');
     }
-    return IRCTCExt.Passengers.selectExistingPassengers(config, overlay);
+    return IRCTCExt.Passengers.addPassengers(config, overlay);
   },
 
   async configurePsgninputOptions(config, overlay) {

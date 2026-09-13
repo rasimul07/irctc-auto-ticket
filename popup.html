@@ -53,7 +53,7 @@
       <label>IRCTC website version
         <select id="bookingSite">
           <option value="eticket" selected>Beta — eticket</option>
-          <option value="nget">Classic — nget</option>
+          <!-- <option value="nget">Classic — nget</option> -->
         </select>
       </label>
       <p class="journey-hint">Classic (nget) automation coming soon. Beta (eticket) is fully supported.</p>
@@ -179,6 +179,7 @@
           <option value="non-ac">Non-AC Tatkal — 11:00 AM IST</option>
         </select>
       </label>
+      <p id="scheduleStatus" class="journey-hint">Scheduler status unavailable.</p>
     </section>
 
     <section id="payment" class="panel">
@@ -261,6 +262,8 @@
 
   <script src="lib/storage.js"></script>
   <script src="lib/accessConfig.js"></script>
+  <script src="lib/network.js"></script>
+  <script src="lib/schedule.js"></script>
   <script src="lib/api.js"></script>
   <script src="lib/bookingValidation.js"></script>
   <script src="popup.js"></script>

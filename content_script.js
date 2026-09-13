@@ -7,6 +7,7 @@ IRCTCExt.Bot = {
   unwatchPath: null,
   MAX_AUTO_RESTARTS: 3,
   RESTART_FLAG: 'irctc-ext-restart-pending',
+  STOP_FLAG: 'irctc-ext-stop-pending',
 
   async getSite(config) {
     const site = IRCTCExt.SiteRegistry.get(config);
@@ -70,6 +71,42 @@ IRCTCExt.Bot = {
   async shouldContinue() {
     const config = await IRCTCExt.Storage.get();
     return config.state.running && !config.state.paused;
+  },
+
+  async isRunning() {
+    const config = await IRCTCExt.Storage.get();
+    return !!config.state.running;
+  },
+
+  async checkControlState() {
+    const config = await IRCTCExt.Storage.get();
+    if (!config.state.running) return 'stopped';
+    if (config.state.paused) return 'paused';
+    return null;
+  },
+
+  async waitUntilResumedOrStopped({ interval = 300 } = {}) {
+    while (true) {
+      const state = await IRCTCExt.Bot.checkControlState();
+      if (state === 'stopped') return 'stopped';
+      if (!state) return 'resumed';
+      await IRCTCExt.Wait.delay(interval);
+    }
+  },
+
+  async stop() {
+    this.running = false;
+    sessionStorage.removeItem(this.RESTART_FLAG);
+    sessionStorage.setItem(this.STOP_FLAG, '1');
+
+    await IRCTCExt.Storage.updateState({
+      running: false,
+      paused: false,
+      status: 'stopped',
+      currentStep: 'init'
+    });
+
+    location.reload();
   },
 
   async runLoginIfNeeded(config, overlay, site) {
@@ -248,13 +285,23 @@ IRCTCExt.Bot = {
       let attempts = 0;
       const maxRetries = 3;
 
-      while (await IRCTCExt.Bot.shouldContinue()) {
+      while (await IRCTCExt.Bot.isRunning()) {
+        if (!(await IRCTCExt.Bot.shouldContinue())) {
+          overlay.setStatus('Paused');
+          overlay.setStep('Paused');
+          const resumed = await IRCTCExt.Bot.waitUntilResumedOrStopped();
+          if (resumed === 'stopped') break;
+          overlay.setStatus('Resumed');
+          continue;
+        }
+
         try {
           const result = await IRCTCExt.Bot.runForCurrentPath(overlay);
           if (result === 'done') break;
           if (result === 'wait') break;
           if (result === 'continue') continue;
         } catch (err) {
+          if (err.code === 'BOOKING_STOPPED' || err.message === 'Booking stopped') break;
           attempts += 1;
           console.error('[IRCTC-Bot]', err);
           overlay.setError(err.message || String(err));
@@ -393,7 +440,7 @@ IRCTCExt.Bot = {
       }
 
       if (msg.type === 'STOP_BOOKING') {
-        IRCTCExt.Overlay.stop();
+        IRCTCExt.Bot.stop().catch((err) => console.error('[IRCTC-Bot] Stop failed:', err));
         sendResponse({ ok: true });
         return true;
       }
@@ -402,6 +449,17 @@ IRCTCExt.Bot = {
     });
 
     IRCTCExt.Wait.poll(() => document.body, { timeout: 10000, interval: 50 }).then(async () => {
+      if (sessionStorage.getItem(IRCTCExt.Bot.STOP_FLAG) === '1') {
+        sessionStorage.removeItem(IRCTCExt.Bot.STOP_FLAG);
+        IRCTCExt.Bot.running = false;
+        const overlay = await IRCTCExt.Overlay.show().catch(() => null);
+        overlay?.setStatus('Stopped');
+        overlay?.setStep('Idle');
+        overlay?.setError('');
+        overlay?.stopTimer();
+        return;
+      }
+
       if (sessionStorage.getItem(IRCTCExt.Bot.RESTART_FLAG) === '1') {
         sessionStorage.removeItem(IRCTCExt.Bot.RESTART_FLAG);
         IRCTCExt.Bot.running = false;

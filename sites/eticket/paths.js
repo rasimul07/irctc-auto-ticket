@@ -5,8 +5,10 @@ IRCTCExt.EticketPaths = {
     if (path.includes('bkgPaymentOptions')) return 'payment';
     if (path.includes('reviewBooking')) return 'review';
     if (path.includes('psgninput')) return state.passengersDone ? 'review' : 'passengers';
-    if (path.includes('train-list')) return 'train-list';
-    if (path.includes('train-search')) return 'search';
+    // Redirect to /eticket/booking/train-list confirms search was submitted.
+    if (IRCTCExt.EticketPaths.isTrainListPath(path)) return 'train-list';
+    // Fill journey details on train-search, then click Search.
+    if (IRCTCExt.EticketPaths.isTrainSearchPath(path)) return 'search';
     return 'init';
   },
 
@@ -15,11 +17,18 @@ IRCTCExt.EticketPaths = {
   },
 
   isTrainListPath(path = location.pathname) {
-    return path.includes('train-list');
+    const listPath = IRCTCExt.EticketConfig.trainListPath;
+    return path.includes(listPath) || path.includes('train-list');
+  },
+
+  /** True when IRCTC navigated to train-list after Search — search submitted successfully. */
+  isSearchSubmittedPath(path = location.pathname) {
+    return IRCTCExt.EticketPaths.isTrainListPath(path);
   },
 
   isTrainSearchPath(path = location.pathname) {
-    return path.includes('train-search');
+    const searchPath = IRCTCExt.EticketConfig.trainSearchPath;
+    return path.includes(searchPath) || path.includes('train-search');
   },
 
   isPaymentPath(path = location.pathname) {

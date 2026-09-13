@@ -11,7 +11,7 @@ IRCTCExt.EticketSearchFlow = {
       IRCTCExt.Events.click(searchBtn);
 
       const redirected = await IRCTCExt.Wait.poll(
-        () => IRCTCExt.EticketPaths.isTrainListPath(location.pathname),
+        () => IRCTCExt.EticketPaths.isSearchSubmittedPath(location.pathname),
         { timeout: redirectTimeoutMs, interval: 200 }
       );
 

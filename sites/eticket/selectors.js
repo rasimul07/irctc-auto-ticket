@@ -120,7 +120,9 @@ IRCTCExt.EticketSelectors = {
     '.custom-dropdown-panel .custom-option',
     '.ui-dropdown-panel li',
     '.p-dropdown-panel li',
-    'ul.ui-dropdown-items li'
+    'ul.ui-dropdown-items li',
+    '.ap-dropdown-panel li',
+    '.ap-dropdown-panel .ui-dropdown-item'
   ],
   trainList: {
     container: ['.train-list-container', 'app-train-list-panel', 'app-train-list', 'app-train-avl-enq .train-listing'],
@@ -131,6 +133,14 @@ IRCTCExt.EticketSelectors = {
     trainName: ['.train-name'],
     dateBadge: ['.train-dates .date-badge'],
     availabilityBtn: ['button.btn-availability'],
+    refreshAvailabilityBtn: [
+      'button.btn-availability.btn-availability--outline',
+      'button.btn-availability'
+    ],
+    classRefreshIcon: [
+      '.class-card .sync-icon.fa-repeat',
+      '[aria-label="Refresh availability"]'
+    ],
     availableClasses: ['.available-classes'],
     classCard: ['.class-card'],
     classCode: ['.class-code'],
@@ -188,7 +198,39 @@ IRCTCExt.EticketSelectors = {
     existingPassengerDetails: ['.ep-passenger-details'],
     existingPassengerAddBtn: ['button.ep-add-btn', 'button.ep-add-btn.app-modal-button--primary'],
     existingPassengerCancelBtn: ['button.app-modal-button--cancel'],
-    passengerListCard: ['app-passenger-list .passenger-card']
+    passengerListCard: ['app-passenger-list .passenger-card'],
+    newPassengerBtn: ['button.btn-new-passenger'],
+    newPassengerModal: ['.ap-container', '.ui-dialog-content .ap-container'],
+    newPassengerTitle: ['.ap-title'],
+    newPassengerName: [
+      'p-autocomplete[formcontrolname="passengerName"] input',
+      'input[formcontrolname="passengerName"]'
+    ],
+    newPassengerAge: ['input[formcontrolname="passengerAge"]'],
+    newPassengerGender: [
+      'p-dropdown[formcontrolname="passengerGender"] .ui-dropdown-trigger',
+      'p-dropdown[formcontrolname="passengerGender"]'
+    ],
+    newPassengerBerth: [
+      'p-dropdown[formcontrolname="passengerBerthChoice"] .ui-dropdown-trigger',
+      'p-dropdown[formcontrolname="passengerBerthChoice"]'
+    ],
+    newPassengerFood: [
+      'p-dropdown[formcontrolname="passengerFoodChoice"] .ui-dropdown-trigger',
+      'p-dropdown[formcontrolname="passengerFoodChoice"]'
+    ],
+    newPassengerNationality: [
+      'p-dropdown[formcontrolname="passengerNationality"] .ui-dropdown-trigger',
+      'p-dropdown[formcontrolname="passengerNationality"]'
+    ],
+    passengerDropdownItem: [
+      '.ap-dropdown-panel .ui-dropdown-item',
+      '.ap-dropdown-panel li.ui-dropdown-item',
+      '.ui-dropdown-panel .ui-dropdown-item',
+      '.ui-dropdown-panel li.ui-dropdown-item'
+    ],
+    newPassengerAddBtn: ['button.ap-add-btn.app-modal-button--primary', 'button.ap-add-btn'],
+    newPassengerCancelBtn: ['.ap-dialog-actions button.app-modal-button--cancel']
   },
   psgnPreferences: {
     loyaltySection: ['app-loyalty-selection'],
