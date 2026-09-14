@@ -168,6 +168,56 @@ input, select {
   font-size: 13px;
 }
 
+.password-field {
+  position: relative;
+  margin-top: 4px;
+}
+
+.password-field input {
+  margin-top: 0;
+  padding-right: 36px;
+}
+
+.password-field__toggle {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  width: 28px;
+  height: 28px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: #5a6a85;
+  cursor: pointer;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.password-field__toggle:hover {
+  color: #213d77;
+  background: #eef2f8;
+}
+
+.password-field__icon {
+  display: block;
+}
+
+.password-field__icon--hide {
+  display: none;
+}
+
+.password-field__toggle--visible .password-field__icon--show {
+  display: none;
+}
+
+.password-field__toggle--visible .password-field__icon--hide {
+  display: block;
+}
+
 .checkbox-row {
   display: flex;
   align-items: center;
@@ -219,6 +269,11 @@ button {
 .btn-primary { background: #213d77; color: #fff; }
 .btn-accent { background: #fb792b; color: #fff; }
 .btn-secondary { background: #eef2f8; color: #213d77; }
+
+.btn-loading {
+  opacity: 0.75;
+  cursor: wait;
+}
 .btn-danger { background: #fff; color: #c0392b; border: 1px solid #e8b4b0; }
 
 .message {

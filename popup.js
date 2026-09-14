@@ -15,6 +15,7 @@ const els = {
   bmcLink: document.getElementById('bmcLink'),
   username: document.getElementById('username'),
   password: document.getElementById('password'),
+  togglePasswordBtn: document.getElementById('togglePasswordBtn'),
   fromStation: document.getElementById('fromStation'),
   toStation: document.getElementById('toStation'),
   journeyDate: document.getElementById('journeyDate'),
@@ -55,7 +56,32 @@ const els = {
 };
 
 const POPUP_MINIMIZED_KEY = 'irctcPopupMinimized';
+const LINK_ACCESS_EMAIL_BTN_LABEL = 'Link email & refresh';
 let toastTimer = null;
+
+function setPasswordVisible(visible) {
+  if (!els.password || !els.togglePasswordBtn) return;
+  els.password.type = visible ? 'text' : 'password';
+  els.togglePasswordBtn.classList.toggle('password-field__toggle--visible', visible);
+  const label = visible ? 'Hide password' : 'Show password';
+  els.togglePasswordBtn.setAttribute('aria-label', label);
+  els.togglePasswordBtn.title = label;
+}
+
+function togglePasswordVisibility() {
+  if (!els.password) return;
+  setPasswordVisible(els.password.type === 'password');
+}
+
+function setLinkAccessEmailLoading(loading, loadingLabel = 'Loading...') {
+  const btn = els.linkAccessEmailBtn;
+  if (!btn) return;
+  btn.disabled = loading;
+  btn.textContent = loading ? loadingLabel : LINK_ACCESS_EMAIL_BTN_LABEL;
+  btn.classList.toggle('btn-loading', loading);
+  if (loading) btn.setAttribute('aria-busy', 'true');
+  else btn.removeAttribute('aria-busy');
+}
 
 function setMinimized(minimized) {
   document.documentElement.classList.toggle('popup-minimized', minimized);
@@ -169,7 +195,7 @@ async function refreshAccess() {
   }
 
   updateAccessUi(null, '', { loading: true });
-  if (els.linkAccessEmailBtn) els.linkAccessEmailBtn.disabled = true;
+  setLinkAccessEmailLoading(true, 'Refreshing...');
 
   try {
     const status = await AccessApi.ensureAccess({ forceRefresh: true });
@@ -180,7 +206,7 @@ async function refreshAccess() {
     updateAccessUi(null, message);
     return null;
   } finally {
-    if (els.linkAccessEmailBtn) els.linkAccessEmailBtn.disabled = false;
+    setLinkAccessEmailLoading(false);
   }
 }
 
@@ -192,7 +218,7 @@ async function linkAccessEmail() {
     return;
   }
 
-  if (els.linkAccessEmailBtn) els.linkAccessEmailBtn.disabled = true;
+  setLinkAccessEmailLoading(true, 'Linking...');
 
   try {
     await AccessApi.ensureAccess();
@@ -206,7 +232,7 @@ async function linkAccessEmail() {
   } catch (err) {
     showMessage(err.message || 'Could not link email.', true);
   } finally {
-    if (els.linkAccessEmailBtn) els.linkAccessEmailBtn.disabled = false;
+    setLinkAccessEmailLoading(false);
   }
 }
 
@@ -457,6 +483,7 @@ async function load() {
   await loadMinimizedState();
   const config = await Storage.get();
   fillForm(config);
+  setPasswordVisible(false);
   await armScheduleIfEnabled(config.schedule);
   await updateScheduleStatus(config.schedule);
   await refreshAccess();
@@ -617,6 +644,7 @@ els.saveBtn.addEventListener('click', save);
 els.startBtn.addEventListener('click', startBooking);
 els.clearBtn.addEventListener('click', clearAll);
 els.linkAccessEmailBtn?.addEventListener('click', linkAccessEmail);
+els.togglePasswordBtn?.addEventListener('click', togglePasswordVisibility);
 els.toggleMinimizeBtn.addEventListener('click', () => {
   setMinimized(!document.body.classList.contains('popup-minimized'));
 });

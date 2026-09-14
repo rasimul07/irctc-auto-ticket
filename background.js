@@ -1,11 +1,6 @@
 importScripts(
-  'lib/global.js',
-  'lib/storage.js',
-  'lib/accessConfig.js',
-  'lib/network.js',
+  'packages/core/dist/chrome-core.iife.js',
   'lib/schedule.js',
-  'lib/api.js',
-  'lib/bookingValidation.js',
   'sites/registry.js',
   'sites/eticket/config.js',
   'sites/nget/config.js'
@@ -14,47 +9,32 @@ importScripts(
 IRCTCExt.SiteRegistry.register(IRCTCExt.EticketConfig);
 IRCTCExt.SiteRegistry.register(IRCTCExt.NgetConfig);
 
-const CONTENT_SCRIPT_FILES = [
-  'sites/registry.js',
-  'sites/eticket/config.js',
-  'sites/eticket/paths.js',
-  'sites/eticket/selectors.js',
-  'sites/eticket/trainList.js',
-  'sites/eticket/flows/login.js',
-  'sites/eticket/flows/search.js',
-  'sites/eticket/flows/booking.js',
-  'sites/eticket/index.js',
+const NGET_SITE_FILES = [
   'sites/nget/config.js',
-  'sites/nget/paths.js',
   'sites/nget/selectors.js',
-  'sites/nget/trainList.js',
+  'sites/nget/paths.js',
   'sites/nget/flows/language.js',
   'sites/nget/flows/login.js',
   'sites/nget/flows/search.js',
   'sites/nget/flows/booking.js',
-  'sites/nget/index.js',
-  'lib/wait.js',
-  'lib/modals.js',
-  'lib/events.js',
-  'lib/storage.js',
-  'lib/accessConfig.js',
-  'lib/api.js',
-  'lib/stations.js',
-  'lib/passengers.js',
-  'lib/psgnPreferences.js',
-  'lib/bkgPayment.js',
-  'overlay/overlay.js',
-  'overlay/paymentReview.js',
-  'content_script.js'
+  'sites/nget/trainList.js',
+  'sites/nget/index.js'
+];
+
+const CONTENT_SCRIPT_FILES = [
+  'packages/core/dist/chrome-core.iife.js',
+  ...NGET_SITE_FILES,
+  'packages/core/dist/extension-bot.iife.js',
+  'overlay/paymentReview.js'
 ];
 
 const CONTENT_CSS_FILES = ['overlay/overlay.css', 'overlay/paymentReview.css'];
 
 const GATEWAY_SCRIPT_FILES = [
+  'packages/core/dist/chrome-core.iife.js',
   'sites/eticket/selectors.js',
   'lib/wait.js',
   'lib/events.js',
-  'lib/storage.js',
   'lib/bkgPayment.js',
   'lib/gateways/irctcIpay.js',
   'lib/gateways/phonepe.js',

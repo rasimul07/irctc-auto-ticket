@@ -15,7 +15,12 @@
 
       get(config) {
         const id = this.getSiteId(config);
-        return this.SITES[id] || this.SITES.eticket;
+        const site = this.SITES[id];
+        if (site) return site;
+        if (id !== 'eticket') {
+          console.warn(`[IRCTC-Bot] Site "${id}" is not loaded. Reload the extension.`);
+        }
+        return this.SITES.eticket;
       },
 
       getById(id) {
