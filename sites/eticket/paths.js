@@ -27,6 +27,7 @@ IRCTCExt.EticketPaths = {
   },
 
   isTrainSearchPath(path = location.pathname) {
+    if (IRCTCExt.EticketPaths.isTrainListPath(path)) return false;
     const searchPath = IRCTCExt.EticketConfig.trainSearchPath;
     return path.includes(searchPath) || path.includes('train-search');
   },

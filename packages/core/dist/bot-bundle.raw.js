@@ -276,6 +276,7 @@ IRCTCExt.EticketPaths = {
   },
 
   isTrainSearchPath(path = location.pathname) {
+    if (IRCTCExt.EticketPaths.isTrainListPath(path)) return false;
     const searchPath = IRCTCExt.EticketConfig.trainSearchPath;
     return path.includes(searchPath) || path.includes('train-search');
   },
@@ -494,7 +495,15 @@ IRCTCExt.EticketSelectors = {
     existingPassengerDetails: ['.ep-passenger-details'],
     existingPassengerAddBtn: ['button.ep-add-btn', 'button.ep-add-btn.app-modal-button--primary'],
     existingPassengerCancelBtn: ['button.app-modal-button--cancel'],
-    passengerListCard: ['app-passenger-list .passenger-card'],
+    passengerListContainer: ['.passenger-list', 'app-passenger-list'],
+    passengerListCard: ['.passenger-list .passenger-card', 'app-passenger-list .passenger-card'],
+    passengerCardName: ['.passenger-name'],
+    passengerCardDetails: ['.passenger-detail-row'],
+    passengerEditBtn: ['.action-icons img[alt="Edit"]', '.action-icon[alt="Edit"]'],
+    passengerDeleteBtn: ['.action-icons img[alt="Delete"]', '.action-icon[alt="Delete"]'],
+    passengerDeleteConfirmBtn: ['button.app-modal-button--primary', 'button.ui-button-danger'],
+    editPassengerModal: ['.add-passenger-dialog .ap-container', '.ap-container'],
+    editPassengerSaveBtn: ['button.ap-add-btn.app-modal-button--primary', 'button.ap-add-btn'],
     newPassengerBtn: ['button.btn-new-passenger'],
     newPassengerModal: ['.ap-container', '.ui-dialog-content .ap-container'],
     newPassengerTitle: ['.ap-title'],
@@ -1318,8 +1327,24 @@ IRCTCExt.EticketLoginFlow = {
 window.IRCTCExt = window.IRCTCExt || {};
 
 IRCTCExt.EticketSearchFlow = {
-  async submitSearchWithRedirect(overlay, { maxAttempts = 3, redirectTimeoutMs = 8000 } = {}) {
+  async completeSearchRedirect(overlay) {
+    await IRCTCExt.Storage.updateState({
+      currentStep: 'train-list',
+      running: true,
+      status: 'running',
+      message: 'Search submitted — loading train list'
+    });
+    overlay.setStep('train-list');
+    overlay.setStatus('Search submitted — loading train list...');
+    return true;
+  },
+
+  async submitSearchWithRedirect(overlay, { maxAttempts = 3, redirectTimeoutMs = 12000 } = {}) {
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      if (IRCTCExt.EticketPaths.isSearchSubmittedPath(location.pathname)) {
+        return IRCTCExt.EticketSearchFlow.completeSearchRedirect(overlay);
+      }
+
       overlay.setStatus(attempt === 1 ? 'Submitting search...' : `Retrying search (${attempt}/${maxAttempts})...`);
 
       const searchBtn = await IRCTCExt.Wait.waitFor(IRCTCExt.SELECTORS.searchButton, { timeout: 5000 });
@@ -1332,28 +1357,31 @@ IRCTCExt.EticketSearchFlow = {
         { timeout: redirectTimeoutMs, interval: 200 }
       );
 
-      if (redirected) {
-        await IRCTCExt.Storage.updateState({
-          currentStep: 'train-list',
-          running: true,
-          status: 'running',
-          message: 'Search submitted — loading train list'
-        });
-        overlay.setStep('train-list');
-        overlay.setStatus('Search submitted — loading train list...');
-        return true;
+      if (redirected || IRCTCExt.EticketPaths.isSearchSubmittedPath(location.pathname)) {
+        return IRCTCExt.EticketSearchFlow.completeSearchRedirect(overlay);
       }
 
       if (attempt < maxAttempts) {
+        if (IRCTCExt.EticketPaths.isSearchSubmittedPath(location.pathname)) {
+          return IRCTCExt.EticketSearchFlow.completeSearchRedirect(overlay);
+        }
         overlay.setStatus(`Search did not redirect, retry ${attempt}/${maxAttempts}...`);
         await IRCTCExt.Wait.delay(500);
       }
+    }
+
+    if (IRCTCExt.EticketPaths.isSearchSubmittedPath(location.pathname)) {
+      return IRCTCExt.EticketSearchFlow.completeSearchRedirect(overlay);
     }
 
     throw new Error('Search did not open train list');
   },
 
   async run(config, overlay) {
+    if (IRCTCExt.EticketPaths.isSearchSubmittedPath(location.pathname)) {
+      return IRCTCExt.EticketSearchFlow.completeSearchRedirect(overlay);
+    }
+
     overlay.setStep('Search');
     overlay.setStatus('Filling journey details...');
     await IRCTCExt.Storage.updateState({ currentStep: 'search' });
@@ -2522,7 +2550,383 @@ IRCTCExt.Passengers = {
   },
 
   countPassengerListCards() {
-    return IRCTCExt.Wait.queryAll(IRCTCExt.SELECTORS.passengers.passengerListCard).length;
+    return IRCTCExt.Passengers.getPassengerListCards().length;
+  },
+
+  getPassengerListCards() {
+    const sel = IRCTCExt.SELECTORS.passengers;
+    const cards = IRCTCExt.Wait.queryAll(sel.passengerListCard);
+    return cards.filter((card) => IRCTCExt.Wait.isVisible(card));
+  },
+
+  parsePassengerListCard(card) {
+    const sel = IRCTCExt.SELECTORS.passengers;
+    const nameEl = IRCTCExt.Wait.queryOne(sel.passengerCardName, card);
+    const rawName = (nameEl?.textContent || '').replace(/\s+/g, ' ').trim();
+    const name = rawName.replace(/^\d+\.\s*/, '').trim();
+
+    const details = { name, age: '', gender: '', country: '', berth: '', dob: '' };
+    const detailRow = IRCTCExt.Wait.queryOne(sel.passengerCardDetails, card) || card;
+    const items = detailRow.querySelectorAll('.detail-item');
+
+    for (const item of items) {
+      const text = (item.textContent || '').replace(/\s+/g, ' ').trim();
+      if (!text) continue;
+
+      const labelEl = item.querySelector('.detail-label');
+      if (labelEl) {
+        const label = (labelEl.textContent || '').replace(/:\s*$/, '').trim().toLowerCase();
+        const valueEl = item.querySelector('.detail-value');
+        const value = (valueEl?.textContent || text.replace(labelEl.textContent, ''))
+          .replace(/\s+/g, ' ')
+          .trim();
+        if (label === 'age') details.age = value;
+        else if (label === 'dob') details.dob = value;
+        continue;
+      }
+
+      if (/^(male|female|transgender)$/i.test(text)) {
+        details.gender = text;
+      } else if (/^india$/i.test(text)) {
+        details.country = text;
+      } else if (
+        /^(upper|lower|middle|window side|side lower|side upper|no preference)$/i.test(text)
+      ) {
+        details.berth = text;
+      }
+    }
+
+    return details;
+  },
+
+  nameMatchesListCard(card, passenger) {
+    const parsed = IRCTCExt.Passengers.parsePassengerListCard(card);
+    return (
+      IRCTCExt.Passengers.normalizeName(parsed.name) ===
+      IRCTCExt.Passengers.normalizeName(passenger.name)
+    );
+  },
+
+  scoreListCardMatch(card, passenger) {
+    if (!IRCTCExt.Passengers.nameMatchesListCard(card, passenger)) return -1;
+
+    const details = IRCTCExt.Passengers.parsePassengerListCard(card);
+    let score = 10;
+
+    if (passenger.age && String(details.age).trim() === String(passenger.age).trim()) {
+      score += 3;
+    }
+    if (
+      passenger.gender &&
+      details.gender &&
+      IRCTCExt.Passengers.segmentMatches(
+        details.gender,
+        IRCTCExt.Passengers.genderToken(passenger.gender)
+      )
+    ) {
+      score += 2;
+    }
+
+    const berth = (passenger.berth || '').trim();
+    if (berth && berth !== 'No Preference') {
+      if (
+        details.berth &&
+        IRCTCExt.Passengers.segmentMatches(details.berth, IRCTCExt.Passengers.berthToken(berth))
+      ) {
+        score += 2;
+      }
+    } else {
+      score += 1;
+    }
+
+    return score;
+  },
+
+  findListCardForPassenger(cards, passenger, usedCards) {
+    const candidates = cards.filter(
+      (card) => !usedCards.has(card) && IRCTCExt.Passengers.nameMatchesListCard(card, passenger)
+    );
+    if (!candidates.length) return null;
+    if (candidates.length === 1) return candidates[0];
+
+    let best = candidates[0];
+    let bestScore = IRCTCExt.Passengers.scoreListCardMatch(best, passenger);
+
+    for (let i = 1; i < candidates.length; i += 1) {
+      const card = candidates[i];
+      const score = IRCTCExt.Passengers.scoreListCardMatch(card, passenger);
+      if (score > bestScore) {
+        bestScore = score;
+        best = card;
+      }
+    }
+
+    return best;
+  },
+
+  partitionListCards(cards, passengers) {
+    const matched = [];
+    const unmatchedPassengers = [];
+    const usedCards = new Set();
+
+    for (const passenger of passengers) {
+      const card = IRCTCExt.Passengers.findListCardForPassenger(cards, passenger, usedCards);
+      if (card) {
+        matched.push({ passenger, card });
+        usedCards.add(card);
+      } else {
+        unmatchedPassengers.push(passenger);
+      }
+    }
+
+    const extraCards = cards.filter((card) => !usedCards.has(card));
+    return { matched, unmatchedPassengers, extraCards };
+  },
+
+  getMismatchType(card, passenger) {
+    const details = IRCTCExt.Passengers.parsePassengerListCard(card);
+
+    if (!IRCTCExt.Passengers.nameMatchesListCard(card, passenger)) return 'name';
+    if (passenger.age && String(details.age).trim() !== String(passenger.age).trim()) {
+      return 'age';
+    }
+
+    if (
+      passenger.gender &&
+      (!details.gender ||
+        !IRCTCExt.Passengers.segmentMatches(
+          details.gender,
+          IRCTCExt.Passengers.genderToken(passenger.gender)
+        ))
+    ) {
+      return 'gender';
+    }
+
+    const berth = (passenger.berth || '').trim();
+    if (berth && berth !== 'No Preference') {
+      if (
+        !details.berth ||
+        !IRCTCExt.Passengers.segmentMatches(details.berth, IRCTCExt.Passengers.berthToken(berth))
+      ) {
+        return 'berth';
+      }
+    }
+
+    return null;
+  },
+
+  cardMatchesPassenger(card, passenger) {
+    return IRCTCExt.Passengers.getMismatchType(card, passenger) === null;
+  },
+
+  isEditPassengerModalOpen() {
+    const sel = IRCTCExt.SELECTORS.passengers;
+    const modal = IRCTCExt.Wait.queryOne(sel.editPassengerModal);
+    if (!modal || !IRCTCExt.Wait.isVisible(modal)) return false;
+    const title = IRCTCExt.Wait.queryOne(sel.newPassengerTitle, modal);
+    return !!(title && /passenger/i.test(title.textContent || ''));
+  },
+
+  async confirmPassengerDeleteIfNeeded() {
+    const sel = IRCTCExt.SELECTORS.passengers;
+    const dialogs = [...document.querySelectorAll('.ui-dialog, [role="dialog"]')].filter((dialog) =>
+      IRCTCExt.Wait.isVisible(dialog)
+    );
+
+    for (const dialog of dialogs) {
+      const buttons = [...dialog.querySelectorAll('button')].filter((btn) =>
+        IRCTCExt.Wait.isVisible(btn)
+      );
+      const confirmBtn =
+        buttons.find((btn) => /delete|confirm|yes|ok/i.test(btn.textContent || '')) ||
+        IRCTCExt.Wait.queryOne(sel.passengerDeleteConfirmBtn, dialog);
+      if (confirmBtn) {
+        IRCTCExt.Events.click(confirmBtn);
+        await IRCTCExt.Wait.delay(300);
+        return true;
+      }
+    }
+
+    return false;
+  },
+
+  async deletePassengerCard(card, overlay) {
+    const sel = IRCTCExt.SELECTORS.passengers;
+    const name = IRCTCExt.Passengers.parsePassengerListCard(card).name;
+    overlay.setStatus(`Deleting passenger: ${name}...`);
+
+    const deleteBtn = IRCTCExt.Wait.queryOne(sel.passengerDeleteBtn, card);
+    if (!deleteBtn || !IRCTCExt.Wait.isVisible(deleteBtn)) {
+      throw new Error(`Delete button not found for ${name}`);
+    }
+
+    IRCTCExt.Events.click(deleteBtn);
+    await IRCTCExt.Wait.delay(400);
+    await IRCTCExt.Passengers.confirmPassengerDeleteIfNeeded();
+
+    const removed = await IRCTCExt.Wait.poll(
+      () => (!document.contains(card) ? true : null),
+      { timeout: 10000, interval: 200 }
+    );
+    if (!removed) throw new Error(`Passenger card was not removed: ${name}`);
+    return true;
+  },
+
+  async editPassengerCard(card, passenger, overlay) {
+    const sel = IRCTCExt.SELECTORS.passengers;
+    overlay.setStatus(`Editing passenger: ${passenger.name}...`);
+
+    const editBtn = IRCTCExt.Wait.queryOne(sel.passengerEditBtn, card);
+    if (!editBtn || !IRCTCExt.Wait.isVisible(editBtn)) {
+      throw new Error(`Edit button not found for ${passenger.name}`);
+    }
+
+    IRCTCExt.Events.click(editBtn);
+    await IRCTCExt.Wait.delay(500);
+
+    const modal = await IRCTCExt.Wait.poll(
+      () =>
+        IRCTCExt.Passengers.isEditPassengerModalOpen()
+          ? IRCTCExt.Wait.queryOne(sel.editPassengerModal)
+          : null,
+      { timeout: 10000, interval: 200 }
+    );
+    if (!modal) throw new Error(`Edit modal did not open for ${passenger.name}`);
+
+    if (passenger.gender) {
+      const genderLabel = IRCTCExt.Passengers.genderLabel(passenger.gender);
+      const genderOk = await IRCTCExt.Passengers.selectDropdownIn(
+        modal,
+        sel.newPassengerGender,
+        genderLabel
+      );
+      if (!genderOk) throw new Error(`Could not set gender for ${passenger.name}`);
+    }
+
+    const berth = (passenger.berth || '').trim();
+    if (berth && berth !== 'No Preference') {
+      const berthDropdown = IRCTCExt.Wait.queryOne(sel.newPassengerBerth, modal);
+      if (berthDropdown && IRCTCExt.Wait.isVisible(berthDropdown)) {
+        const berthOk = await IRCTCExt.Passengers.selectDropdownIn(modal, sel.newPassengerBerth, berth);
+        if (!berthOk) throw new Error(`Could not set berth for ${passenger.name}`);
+      }
+    }
+
+    const foodLabel = IRCTCExt.Passengers.foodLabel(passenger.food);
+    if (foodLabel) {
+      const foodDropdown = IRCTCExt.Wait.queryOne(sel.newPassengerFood, modal);
+      if (foodDropdown && IRCTCExt.Wait.isVisible(foodDropdown)) {
+        await IRCTCExt.Passengers.selectDropdownIn(modal, sel.newPassengerFood, foodLabel);
+      }
+    }
+
+    const saveBtn =
+      IRCTCExt.Wait.queryOne(sel.editPassengerSaveBtn, modal) ||
+      IRCTCExt.Wait.queryOne(sel.newPassengerAddBtn, modal);
+    if (!saveBtn) throw new Error('Save button not found in edit passenger modal');
+
+    IRCTCExt.Events.click(saveBtn);
+
+    await IRCTCExt.Wait.poll(
+      () => (IRCTCExt.Passengers.isEditPassengerModalOpen() ? null : true),
+      { timeout: 12000, interval: 200 }
+    );
+
+    await IRCTCExt.Wait.delay(300);
+    return true;
+  },
+
+  async verifyAndReconcilePassengerList(config, overlay) {
+    const passengers = (config.passengers || []).filter((p) => p.name && String(p.name).trim());
+    const maxPasses = 3;
+
+    for (let pass = 1; pass <= maxPasses; pass += 1) {
+      overlay.setStatus(`Verifying passenger list (${pass}/${maxPasses})...`);
+      await IRCTCExt.Wait.delay(400);
+
+      let changed = false;
+      let cards = IRCTCExt.Passengers.getPassengerListCards();
+      let { matched, unmatchedPassengers, extraCards } = IRCTCExt.Passengers.partitionListCards(
+        cards,
+        passengers
+      );
+
+      for (const card of extraCards) {
+        await IRCTCExt.Passengers.deletePassengerCard(card, overlay);
+        changed = true;
+      }
+
+      if (changed) {
+        cards = IRCTCExt.Passengers.getPassengerListCards();
+        ({ matched, unmatchedPassengers, extraCards } = IRCTCExt.Passengers.partitionListCards(
+          cards,
+          passengers
+        ));
+      }
+
+      for (const { passenger, card } of matched) {
+        const mismatch = IRCTCExt.Passengers.getMismatchType(card, passenger);
+        if (!mismatch) continue;
+
+        if (mismatch === 'name' || mismatch === 'age') {
+          await IRCTCExt.Passengers.deletePassengerCard(card, overlay);
+          const expectedCount = IRCTCExt.Passengers.countPassengerListCards() + 1;
+          await IRCTCExt.Passengers.addNewPassenger(passenger, overlay, expectedCount);
+        } else {
+          await IRCTCExt.Passengers.editPassengerCard(card, passenger, overlay);
+        }
+        changed = true;
+      }
+
+      for (const passenger of unmatchedPassengers) {
+        const expectedCount = IRCTCExt.Passengers.countPassengerListCards() + 1;
+        await IRCTCExt.Passengers.addNewPassenger(passenger, overlay, expectedCount);
+        changed = true;
+      }
+
+      if (!changed) {
+        const finalCards = IRCTCExt.Passengers.getPassengerListCards();
+        if (finalCards.length !== passengers.length) {
+          throw new Error(
+            `Expected ${passengers.length} passenger(s), found ${finalCards.length}`
+          );
+        }
+
+        const usedCards = new Set();
+        const allMatch = passengers.every((passenger) => {
+          const card = IRCTCExt.Passengers.findListCardForPassenger(
+            finalCards,
+            passenger,
+            usedCards
+          );
+          if (!card || !IRCTCExt.Passengers.cardMatchesPassenger(card, passenger)) {
+            return false;
+          }
+          usedCards.add(card);
+          return true;
+        });
+
+        if (!allMatch) {
+          const failing = passengers.find((passenger) => {
+            const card = IRCTCExt.Passengers.findListCardForPassenger(
+              finalCards,
+              passenger,
+              new Set()
+            );
+            return !card || !IRCTCExt.Passengers.cardMatchesPassenger(card, passenger);
+          });
+          if (pass === maxPasses) {
+            throw new Error(`Could not verify passenger: ${failing?.name || 'unknown'}`);
+          }
+          changed = true;
+        } else {
+          overlay.setStatus(`Verified ${passengers.length} passenger(s)`);
+          return true;
+        }
+      }
+    }
+
+    throw new Error('Passenger list verification failed after multiple attempts');
   },
 
   isExistingModalOpen() {
@@ -2830,7 +3234,8 @@ IRCTCExt.Passengers = {
       throw new Error(`Expected ${passengers.length} passenger(s), found ${finalCount - startCount}`);
     }
 
-    overlay.setStatus(`Added ${passengers.length} passenger(s)`);
+    await IRCTCExt.Passengers.verifyAndReconcilePassengerList(config, overlay);
+    overlay.setStatus(`Verified ${passengers.length} passenger(s)`);
     return true;
   },
 

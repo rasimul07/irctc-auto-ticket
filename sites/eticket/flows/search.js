@@ -1,8 +1,24 @@
 window.IRCTCExt = window.IRCTCExt || {};
 
 IRCTCExt.EticketSearchFlow = {
-  async submitSearchWithRedirect(overlay, { maxAttempts = 3, redirectTimeoutMs = 8000 } = {}) {
+  async completeSearchRedirect(overlay) {
+    await IRCTCExt.Storage.updateState({
+      currentStep: 'train-list',
+      running: true,
+      status: 'running',
+      message: 'Search submitted — loading train list'
+    });
+    overlay.setStep('train-list');
+    overlay.setStatus('Search submitted — loading train list...');
+    return true;
+  },
+
+  async submitSearchWithRedirect(overlay, { maxAttempts = 3, redirectTimeoutMs = 12000 } = {}) {
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      if (IRCTCExt.EticketPaths.isSearchSubmittedPath(location.pathname)) {
+        return IRCTCExt.EticketSearchFlow.completeSearchRedirect(overlay);
+      }
+
       overlay.setStatus(attempt === 1 ? 'Submitting search...' : `Retrying search (${attempt}/${maxAttempts})...`);
 
       const searchBtn = await IRCTCExt.Wait.waitFor(IRCTCExt.SELECTORS.searchButton, { timeout: 5000 });
@@ -15,28 +31,31 @@ IRCTCExt.EticketSearchFlow = {
         { timeout: redirectTimeoutMs, interval: 200 }
       );
 
-      if (redirected) {
-        await IRCTCExt.Storage.updateState({
-          currentStep: 'train-list',
-          running: true,
-          status: 'running',
-          message: 'Search submitted — loading train list'
-        });
-        overlay.setStep('train-list');
-        overlay.setStatus('Search submitted — loading train list...');
-        return true;
+      if (redirected || IRCTCExt.EticketPaths.isSearchSubmittedPath(location.pathname)) {
+        return IRCTCExt.EticketSearchFlow.completeSearchRedirect(overlay);
       }
 
       if (attempt < maxAttempts) {
+        if (IRCTCExt.EticketPaths.isSearchSubmittedPath(location.pathname)) {
+          return IRCTCExt.EticketSearchFlow.completeSearchRedirect(overlay);
+        }
         overlay.setStatus(`Search did not redirect, retry ${attempt}/${maxAttempts}...`);
         await IRCTCExt.Wait.delay(500);
       }
+    }
+
+    if (IRCTCExt.EticketPaths.isSearchSubmittedPath(location.pathname)) {
+      return IRCTCExt.EticketSearchFlow.completeSearchRedirect(overlay);
     }
 
     throw new Error('Search did not open train list');
   },
 
   async run(config, overlay) {
+    if (IRCTCExt.EticketPaths.isSearchSubmittedPath(location.pathname)) {
+      return IRCTCExt.EticketSearchFlow.completeSearchRedirect(overlay);
+    }
+
     overlay.setStep('Search');
     overlay.setStatus('Filling journey details...');
     await IRCTCExt.Storage.updateState({ currentStep: 'search' });
