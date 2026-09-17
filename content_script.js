@@ -1,3 +1,5 @@
+// Deprecated: the active extension loads packages/core/dist/extension-bot.iife.js instead.
+// Keep this file only as a reference when porting bot changes into packages/core.
 (function (root) {
   root.IRCTCExt = root.IRCTCExt || {};
 })(typeof globalThis !== 'undefined' ? globalThis : window);
@@ -32,11 +34,34 @@ IRCTCExt.Bot = {
 
   isContentScriptReady() {
     const sites = IRCTCExt.SiteRegistry?.SITES || {};
-    return Object.values(sites).some((site) => site?.flows);
+    return !!(sites.eticket?.flows && sites.nget?.flows);
+  },
+
+  isExtensionInvalidated(err) {
+    return (
+      err?.code === 'EXTENSION_CONTEXT_INVALIDATED' || IRCTCExt.Storage?.isContextInvalidated?.(err)
+    );
+  },
+
+  async handleExtensionInvalidated(overlay, err) {
+    this.running = false;
+    const message = err?.message || IRCTCExt.Storage.CONTEXT_INVALIDATED_MESSAGE;
+    overlay?.setError(message);
+    overlay?.setStatus('Extension disconnected — refresh this IRCTC tab');
+    overlay?.setStep('Error');
   },
 
   async handleErrorPageIfNeeded(overlay) {
-    const config = await IRCTCExt.Storage.get();
+    let config;
+    try {
+      config = await IRCTCExt.Storage.get();
+    } catch (err) {
+      if (IRCTCExt.Bot.isExtensionInvalidated(err)) {
+        await IRCTCExt.Bot.handleExtensionInvalidated(overlay, err);
+        return true;
+      }
+      throw err;
+    }
     const site = await IRCTCExt.Bot.getSite(config);
     if (!site.isErrorPage()) return false;
 
@@ -69,20 +94,35 @@ IRCTCExt.Bot = {
   },
 
   async shouldContinue() {
-    const config = await IRCTCExt.Storage.get();
-    return config.state.running && !config.state.paused;
+    try {
+      const config = await IRCTCExt.Storage.get();
+      return config.state.running && !config.state.paused;
+    } catch (err) {
+      if (IRCTCExt.Bot.isExtensionInvalidated(err)) return false;
+      throw err;
+    }
   },
 
   async isRunning() {
-    const config = await IRCTCExt.Storage.get();
-    return !!config.state.running;
+    try {
+      const config = await IRCTCExt.Storage.get();
+      return !!config.state.running;
+    } catch (err) {
+      if (IRCTCExt.Bot.isExtensionInvalidated(err)) return false;
+      throw err;
+    }
   },
 
   async checkControlState() {
-    const config = await IRCTCExt.Storage.get();
-    if (!config.state.running) return 'stopped';
-    if (config.state.paused) return 'paused';
-    return null;
+    try {
+      const config = await IRCTCExt.Storage.get();
+      if (!config.state.running) return 'stopped';
+      if (config.state.paused) return 'paused';
+      return null;
+    } catch (err) {
+      if (IRCTCExt.Bot.isExtensionInvalidated(err)) return 'stopped';
+      throw err;
+    }
   },
 
   async waitUntilResumedOrStopped({ interval = 300 } = {}) {
@@ -99,12 +139,16 @@ IRCTCExt.Bot = {
     sessionStorage.removeItem(this.RESTART_FLAG);
     sessionStorage.setItem(this.STOP_FLAG, '1');
 
-    await IRCTCExt.Storage.updateState({
-      running: false,
-      paused: false,
-      status: 'stopped',
-      currentStep: 'init'
-    });
+    try {
+      await IRCTCExt.Storage.updateState({
+        running: false,
+        paused: false,
+        status: 'stopped',
+        currentStep: 'init'
+      });
+    } catch (err) {
+      if (!IRCTCExt.Bot.isExtensionInvalidated(err)) throw err;
+    }
 
     location.reload();
   },
@@ -237,7 +281,18 @@ IRCTCExt.Bot = {
   async start() {
     if (this.running) return;
 
-    const config = await IRCTCExt.Storage.get();
+    let config;
+    try {
+      config = await IRCTCExt.Storage.get();
+    } catch (err) {
+      if (IRCTCExt.Bot.isExtensionInvalidated(err)) {
+        const overlay = await IRCTCExt.Overlay.show().catch(() => null);
+        await IRCTCExt.Bot.handleExtensionInvalidated(overlay, err);
+        return;
+      }
+      throw err;
+    }
+
     await IRCTCExt.Bot.waitForSiteReady(config);
 
     const access = await chrome.runtime.sendMessage({ type: 'CHECK_ACCESS', forceRefresh: false }).catch(() => null);
@@ -301,6 +356,10 @@ IRCTCExt.Bot = {
           if (result === 'wait') break;
           if (result === 'continue') continue;
         } catch (err) {
+          if (IRCTCExt.Bot.isExtensionInvalidated(err)) {
+            await IRCTCExt.Bot.handleExtensionInvalidated(overlay, err);
+            break;
+          }
           if (err.code === 'BOOKING_STOPPED' || err.message === 'Booking stopped') break;
           attempts += 1;
           console.error('[IRCTC-Bot]', err);
@@ -321,10 +380,18 @@ IRCTCExt.Bot = {
       }
     } catch (err) {
       console.error('[IRCTC-Bot] Fatal:', err);
-      overlay.setError(err.message || String(err));
-      overlay.setStatus('Failed: ' + (err.message || err));
-      overlay.setStep('Error');
-      await IRCTCExt.Storage.updateState({ status: 'error', running: false, message: err.message });
+      if (IRCTCExt.Bot.isExtensionInvalidated(err)) {
+        await IRCTCExt.Bot.handleExtensionInvalidated(overlay, err);
+      } else {
+        overlay.setError(err.message || String(err));
+        overlay.setStatus('Failed: ' + (err.message || err));
+        overlay.setStep('Error');
+        try {
+          await IRCTCExt.Storage.updateState({ status: 'error', running: false, message: err.message });
+        } catch (storageErr) {
+          if (!IRCTCExt.Bot.isExtensionInvalidated(storageErr)) throw storageErr;
+        }
+      }
     } finally {
       this.running = false;
     }
@@ -334,11 +401,25 @@ IRCTCExt.Bot = {
     const overlay = await IRCTCExt.Overlay.show().catch(() => null);
     if (await IRCTCExt.Bot.handleErrorPageIfNeeded(overlay)) return;
 
-    const config = await IRCTCExt.Storage.get();
+    let config;
+    try {
+      config = await IRCTCExt.Storage.get();
+    } catch (err) {
+      if (IRCTCExt.Bot.isExtensionInvalidated(err)) {
+        await IRCTCExt.Bot.handleExtensionInvalidated(overlay, err);
+        return;
+      }
+      throw err;
+    }
+
     if (!config.state.running || config.state.paused || this.running) return;
     try {
       await IRCTCExt.Bot.start();
     } catch (err) {
+      if (IRCTCExt.Bot.isExtensionInvalidated(err)) {
+        await IRCTCExt.Bot.handleExtensionInvalidated(overlay, err);
+        return;
+      }
       console.error('[IRCTC-Bot] Resume failed:', err);
     }
   },
@@ -399,10 +480,15 @@ IRCTCExt.Bot = {
       const overlay = await IRCTCExt.Overlay.show().catch(() => null);
       if (await IRCTCExt.Bot.handleErrorPageIfNeeded(overlay)) return;
 
-      const config = await IRCTCExt.Storage.get();
-      if (!config.state.running || config.state.paused) return;
-
-      await IRCTCExt.Bot.resumeIfNeeded();
+      try {
+        const config = await IRCTCExt.Storage.get();
+        if (!config.state.running || config.state.paused) return;
+        await IRCTCExt.Bot.resumeIfNeeded();
+      } catch (err) {
+        if (IRCTCExt.Bot.isExtensionInvalidated(err)) {
+          await IRCTCExt.Bot.handleExtensionInvalidated(overlay, err);
+        }
+      }
     });
 
     chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
@@ -429,13 +515,29 @@ IRCTCExt.Bot = {
           });
           IRCTCExt.Bot.running = false;
           await IRCTCExt.Bot.start();
-        })().catch((err) => console.error('[IRCTC-Bot] Start failed:', err));
+        })().catch(async (err) => {
+          if (IRCTCExt.Bot.isExtensionInvalidated(err)) {
+            const overlay = await IRCTCExt.Overlay.show().catch(() => null);
+            await IRCTCExt.Bot.handleExtensionInvalidated(overlay, err);
+            return;
+          }
+          console.error('[IRCTC-Bot] Start failed:', err);
+        });
         sendResponse({ ok: true });
         return true;
       }
 
       if (msg.type === 'GET_STATUS') {
-        IRCTCExt.Storage.get().then((c) => sendResponse({ state: c.state }));
+        IRCTCExt.Storage.get()
+          .then((c) => sendResponse({ state: c.state }))
+          .catch((err) =>
+            sendResponse({
+              state: null,
+              error: IRCTCExt.Bot.isExtensionInvalidated(err)
+                ? err.message
+                : String(err?.message || err)
+            })
+          );
         return true;
       }
 
@@ -466,6 +568,11 @@ IRCTCExt.Bot = {
         try {
           await IRCTCExt.Bot.start();
         } catch (err) {
+          if (IRCTCExt.Bot.isExtensionInvalidated(err)) {
+            const overlay = await IRCTCExt.Overlay.show().catch(() => null);
+            await IRCTCExt.Bot.handleExtensionInvalidated(overlay, err);
+            return;
+          }
           console.error('[IRCTC-Bot] Restart resume failed:', err);
         }
         return;

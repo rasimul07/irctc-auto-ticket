@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>IRCTC Tatkal</title>
+  <link rel="stylesheet" href="packages/core/src/theme/tokens.css">
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
@@ -17,14 +18,33 @@
 
   <div id="popupBody" class="popup-body">
   <div id="toast" class="toast toast--hidden" role="alert" aria-live="polite"></div>
-  <nav class="tabs">
-    <button class="tab active" data-tab="access">Access</button>
-    <button class="tab" data-tab="credentials">Login</button>
-    <button class="tab" data-tab="journey">Journey</button>
-    <button class="tab" data-tab="passengers">Passengers</button>
-    <button class="tab" data-tab="schedule">Timer</button>
-    <button class="tab" data-tab="payment">Payment</button>
-  </nav>
+  <section id="profileBar" class="profile-bar" aria-label="Booking sets">
+    <div class="profile-bar__row">
+      <label class="profile-bar__label" for="bookingSetSelect">Active set</label>
+      <select id="bookingSetSelect" class="profile-bar__select"></select>
+    </div>
+    <div class="profile-bar__actions">
+      <button type="button" id="addSetBtn" class="btn-secondary btn-compact" title="Add set">+</button>
+      <button type="button" id="duplicateSetBtn" class="btn-secondary btn-compact" title="Duplicate set">Copy</button>
+      <button type="button" id="renameSetBtn" class="btn-secondary btn-compact" title="Rename set">Rename</button>
+      <button type="button" id="deleteSetBtn" class="btn-secondary btn-compact" title="Delete set">Delete</button>
+    </div>
+  </section>
+  <div class="tabs-scroll">
+    <nav class="tabs">
+      <button class="tab active" data-tab="access">Access</button>
+      <button class="tab" data-tab="credentials">Login</button>
+      <button class="tab" data-tab="journey">Journey</button>
+      <button class="tab" data-tab="passengers">Passengers</button>
+      <button class="tab" data-tab="schedule">Timer</button>
+      <button class="tab" data-tab="payment">Payment</button>
+    </nav>
+  </div>
+  <div id="setupProgress" class="setup-progress" aria-label="Setup progress">
+    <div class="setup-progress__bar" aria-hidden="true"><span id="setupProgressFill" style="width:0%"></span></div>
+    <div id="setupProgressSteps" class="setup-progress__steps"></div>
+    <span id="setupProgressLabel" class="setup-progress__label">0/4</span>
+  </div>
 
   <main>
     <section id="access" class="panel active">
@@ -53,7 +73,7 @@
       <label>IRCTC website version
         <select id="bookingSite">
           <option value="eticket" selected>Beta — eticket</option>
-          <!-- <option value="nget">Classic — nget</option> -->
+          <option value="nget">Classic — nget</option>
         </select>
       </label>
       <p class="journey-hint">Classic (nget) automation coming soon. Beta (eticket) is fully supported.</p>
@@ -131,8 +151,21 @@
     </section>
 
     <section id="credentials" class="panel">
+      <p class="pre-start-note">Review Login, Journey, Passengers, Timer, and Payment tabs before starting auto-booking.</p>
       <label>Username <input type="text" id="username" autocomplete="username"></label>
-      <label>Password <input type="password" id="password" autocomplete="current-password"></label>
+      <label>Password
+        <div class="password-field">
+          <input type="password" id="password" autocomplete="current-password">
+          <button type="button" id="togglePasswordBtn" class="password-field__toggle" aria-label="Show password" title="Show password">
+            <svg class="password-field__icon password-field__icon--show" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path fill="currentColor" d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/>
+            </svg>
+            <svg class="password-field__icon password-field__icon--hide" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path fill="currentColor" d="M12 7c2.76 0 5 2.24 5 5 0 .65-.13 1.26-.36 1.83l2.92 2.92c1.51-1.26 2.7-2.89 3.43-4.75-1.73-4.39-6-7.5-11-7.5-1.4 0-2.74.25-3.98.7l2.16 2.16C10.74 7.13 11.35 7 12 7zM2 4.27l2.28 2.28.46.46C3.08 8.3 1.78 10.02 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 20.73 3.27 3 2 4.27zM7.53 9.8l1.55 1.55c-.05.21-.08.43-.08.65 0 1.66 1.34 3 3 3 .22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-.78 3.15 3.15.02-.16c0-1.66-1.34-3-3-3l-.17.01z"/>
+            </svg>
+          </button>
+        </div>
+      </label>
     </section>
 
     <section id="journey" class="panel">
@@ -250,22 +283,16 @@
   </main>
 
   <footer class="actions">
-    <p class="pre-start-note">Review Login, Journey, Passengers, Timer, and Payment tabs before starting auto-booking.</p>
     <div class="actions__row actions__row--primary">
       <button type="button" id="saveBtn" class="btn-primary btn-compact">Save</button>
       <button type="button" id="startBtn" class="btn-accent btn-compact" title="Start Auto-Booking">Start</button>
     </div>
     <button type="button" id="clearBtn" class="btn-danger btn-compact btn-compact--ghost">Clear all</button>
-    <p id="message" class="message"></p>
   </footer>
   </div>
 
-  <script src="lib/storage.js"></script>
-  <script src="lib/accessConfig.js"></script>
-  <script src="lib/network.js"></script>
+  <script src="packages/core/dist/chrome-core.iife.js"></script>
   <script src="lib/schedule.js"></script>
-  <script src="lib/api.js"></script>
-  <script src="lib/bookingValidation.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

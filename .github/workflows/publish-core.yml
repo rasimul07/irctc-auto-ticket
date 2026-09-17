@@ -1,0 +1,53 @@
+name: Publish @rasimul07/core
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'packages/core/src/**'
+      - 'packages/core/build.mjs'
+      - 'packages/core/package.json'
+      - '.github/workflows/publish-core.yml'
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    if: "!contains(github.event.head_commit.message, '[skip ci]')"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: https://npm.pkg.github.com
+          scope: '@rasimul07'
+
+      - name: Bump patch version
+        working-directory: packages/core
+        run: npm version patch --no-git-tag-version
+
+      - name: Install and build
+        working-directory: packages/core
+        run: |
+          npm ci
+          npm run build
+
+      - name: Publish to GitHub Packages
+        working-directory: packages/core
+        run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Commit version bump
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add packages/core/package.json packages/core/package-lock.json
+          git diff --staged --quiet || git commit -m "chore(core): bump version [skip ci]"
+          git push

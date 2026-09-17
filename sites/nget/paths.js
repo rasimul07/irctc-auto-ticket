@@ -9,6 +9,7 @@ IRCTCExt.NgetPaths = {
     if (path.includes('train-list')) return 'train-list';
     if (path.includes('train-search')) {
       if (IRCTCExt.NgetLanguageFlow?.isLanguageModalVisible?.()) return 'language';
+      if (IRCTCExt.NgetLoginFlow?.needsLogin?.()) return 'login';
       return 'search';
     }
     return 'init';

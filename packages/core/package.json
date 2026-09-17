@@ -1,0 +1,41 @@
+{
+  "name": "@rasimul07/core",
+  "version": "0.1.0",
+  "description": "Shared IRCTC Tatkal booking logic for Chrome extension and Ionic app",
+  "type": "module",
+  "private": false,
+  "main": "./dist/index.js",
+  "exports": {
+    ".": "./dist/index.js",
+    "./bot-bundle": "./dist/bot-bundle.iife.js",
+    "./gateway-bundle": "./dist/gateway-bundle.iife.js",
+    "./extension-bot": "./dist/extension-bot.iife.js",
+    "./extension-gateway": "./dist/extension-gateway.iife.js",
+    "./chrome-core": "./dist/chrome-core.iife.js",
+    "./overlay.css": "./src/bot/overlay/overlay.css",
+    "./theme/tokens.css": "./src/theme/tokens.css",
+    "./validation/setupProgress": "./src/validation/setupProgress.js"
+  },
+  "files": [
+    "dist",
+    "src/theme/tokens.css",
+    "src/bot/overlay/overlay.css",
+    "src/validation/setupProgress.js"
+  ],
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rasimul07/irctc-auto-ticket.git",
+    "directory": "packages/core"
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "build:watch": "node build.mjs --watch",
+    "prepublishOnly": "npm run build"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0"
+  }
+}

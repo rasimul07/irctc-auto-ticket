@@ -46,36 +46,18 @@
         "https://www.irctc.co.in/nget/*"
       ],
       "js": [
-        "sites/registry.js",
-        "sites/eticket/config.js",
-        "sites/eticket/paths.js",
-        "sites/eticket/selectors.js",
-        "sites/eticket/trainList.js",
-        "sites/eticket/flows/login.js",
-        "sites/eticket/flows/search.js",
-        "sites/eticket/flows/booking.js",
-        "sites/eticket/index.js",
+        "packages/core/dist/chrome-core.iife.js",
         "sites/nget/config.js",
-        "sites/nget/paths.js",
         "sites/nget/selectors.js",
-        "sites/nget/trainList.js",
+        "sites/nget/paths.js",
         "sites/nget/flows/language.js",
         "sites/nget/flows/login.js",
         "sites/nget/flows/search.js",
         "sites/nget/flows/booking.js",
+        "sites/nget/trainList.js",
         "sites/nget/index.js",
-        "lib/wait.js",
-        "lib/events.js",
-        "lib/storage.js",
-        "lib/accessConfig.js",
-        "lib/api.js",
-        "lib/stations.js",
-        "lib/passengers.js",
-        "lib/psgnPreferences.js",
-        "lib/bkgPayment.js",
-        "overlay/overlay.js",
-        "overlay/paymentReview.js",
-        "content_script.js"
+        "packages/core/dist/extension-bot.iife.js",
+        "overlay/paymentReview.js"
       ],
       "css": ["overlay/overlay.css", "overlay/paymentReview.css"],
       "run_at": "document_idle"
@@ -87,16 +69,8 @@
         "https://mercury.phonepe.com/*"
       ],
       "js": [
-        "sites/eticket/selectors.js",
-        "lib/wait.js",
-        "lib/events.js",
-        "lib/storage.js",
-        "lib/bkgPayment.js",
-        "lib/gateways/irctcIpay.js",
-        "lib/gateways/phonepe.js",
-        "lib/gateways/index.js",
-        "overlay/overlay.js",
-        "gateway_script.js"
+        "packages/core/dist/chrome-core.iife.js",
+        "packages/core/dist/extension-gateway.iife.js"
       ],
       "css": ["overlay/overlay.css"],
       "run_at": "document_idle"

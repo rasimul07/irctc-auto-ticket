@@ -2,23 +2,57 @@
   root.IRCTCExt = root.IRCTCExt || {};
   if (IRCTCExt.NgetBookingFlow) return;
 
-  const bookingNotImplemented = 'Classic (nget) booking is not implemented yet.';
+  function activateSharedBookingSelectors() {
+    const eticketSelectors = IRCTCExt.EticketSelectors;
+    if (!eticketSelectors) {
+      throw new Error('Eticket selectors not loaded. Reload the extension.');
+    }
+    IRCTCExt.SELECTORS = {
+      ...IRCTCExt.NgetSelectors,
+      passengers: eticketSelectors.passengers,
+      psgnPreferences: eticketSelectors.psgnPreferences,
+      payment: eticketSelectors.payment
+    };
+  }
 
   IRCTCExt.NgetBookingFlow = {
-    async fillPassengers() {
-      throw new Error(bookingNotImplemented);
+    async fillPassengers(config, overlay) {
+      if (!location.pathname.includes('psgninput')) {
+        throw new Error('Not on passenger input page');
+      }
+      activateSharedBookingSelectors();
+      return IRCTCExt.Passengers.addPassengers(config, overlay);
     },
 
-    async configurePsgninputOptions() {
-      throw new Error(bookingNotImplemented);
+    async configurePsgninputOptions(config, overlay) {
+      if (!location.pathname.includes('psgninput')) {
+        throw new Error('Not on passenger input page');
+      }
+      activateSharedBookingSelectors();
+      return IRCTCExt.PsgnPreferences.configure(config, overlay);
     },
 
-    async clickContinueToPayment() {
-      throw new Error(bookingNotImplemented);
+    async clickContinueToPayment(overlay) {
+      if (!location.pathname.includes('reviewBooking') && !location.pathname.includes('review')) {
+        throw new Error('Not on review booking page');
+      }
+      activateSharedBookingSelectors();
+      return IRCTCExt.PsgnPreferences.clickContinueToPayment(overlay);
     },
 
-    async showPaymentReview() {
-      throw new Error(bookingNotImplemented);
+    async showPaymentReview(overlay) {
+      activateSharedBookingSelectors();
+      overlay.setStep('Payment');
+      const message = 'Complete payment manually on IRCTC.';
+      if (IRCTCExt.PaymentReviewOverlay?.show) {
+        await IRCTCExt.PaymentReviewOverlay.show();
+        overlay.showPause(message);
+      } else {
+        overlay.setStatus(message);
+        overlay.showPause?.(message);
+      }
+      await IRCTCExt.Storage.updateState({ status: 'done', running: false, currentStep: 'done' });
+      return true;
     }
   };
 })(typeof globalThis !== 'undefined' ? globalThis : window);

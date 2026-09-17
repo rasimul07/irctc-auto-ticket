@@ -199,14 +199,32 @@ IRCTCExt.Overlay = {
   },
 
   async togglePause() {
-    const config = await IRCTCExt.Storage.get();
+    let config;
+    try {
+      config = await IRCTCExt.Storage.get();
+    } catch (err) {
+      if (IRCTCExt.Bot?.isExtensionInvalidated?.(err)) {
+        await IRCTCExt.Bot.handleExtensionInvalidated(this, err);
+        return;
+      }
+      throw err;
+    }
+
     if (!config.state.running) {
       this.setStatus('Not running');
       return;
     }
 
     const paused = !config.state.paused;
-    await IRCTCExt.Storage.updateState({ paused });
+    try {
+      await IRCTCExt.Storage.updateState({ paused });
+    } catch (err) {
+      if (IRCTCExt.Bot?.isExtensionInvalidated?.(err)) {
+        await IRCTCExt.Bot.handleExtensionInvalidated(this, err);
+        return;
+      }
+      throw err;
+    }
     this.updatePauseButton(paused);
     this.setStatus(paused ? 'Paused' : 'Resumed');
     this.setStep(paused ? 'Paused' : config.state.currentStep || 'Running');
@@ -240,7 +258,11 @@ IRCTCExt.Overlay = {
       return;
     }
 
-    await IRCTCExt.Storage.updateState({ running: false, paused: false, status: 'stopped', currentStep: 'init' });
+    try {
+      await IRCTCExt.Storage.updateState({ running: false, paused: false, status: 'stopped', currentStep: 'init' });
+    } catch (err) {
+      if (!IRCTCExt.Bot?.isExtensionInvalidated?.(err)) throw err;
+    }
     this.setStatus('Stopped');
     if (typeof this.onStop === 'function') this.onStop();
     location.reload();
