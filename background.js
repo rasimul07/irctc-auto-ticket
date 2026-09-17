@@ -2,12 +2,32 @@ importScripts(
   'packages/core/dist/chrome-core.iife.js',
   'lib/schedule.js',
   'sites/registry.js',
-  'sites/eticket/config.js',
+  'packages/core/src/bot/sites/eticket/config.js',
   'sites/nget/config.js'
 );
 
 IRCTCExt.SiteRegistry.register(IRCTCExt.EticketConfig);
 IRCTCExt.SiteRegistry.register(IRCTCExt.NgetConfig);
+
+async function getConfigStore() {
+  const data = await chrome.storage.local.get('irctcConfig');
+  return IRCTCExt.ConfigSets.migrateToV2(data.irctcConfig);
+}
+
+async function getActiveConfig() {
+  const store = await getConfigStore();
+  return IRCTCExt.ConfigSets.resolveActiveConfig(store);
+}
+
+async function saveConfigStore(store) {
+  await chrome.storage.local.set({ irctcConfig: IRCTCExt.ConfigSets.normalizeStore(store) });
+}
+
+async function updateStoreState(updates) {
+  const store = await getConfigStore();
+  store.state = { ...(store.state || {}), ...updates };
+  await saveConfigStore(store);
+}
 
 const NGET_SITE_FILES = [
   'sites/nget/config.js',
@@ -32,15 +52,7 @@ const CONTENT_CSS_FILES = ['overlay/overlay.css', 'overlay/paymentReview.css'];
 
 const GATEWAY_SCRIPT_FILES = [
   'packages/core/dist/chrome-core.iife.js',
-  'sites/eticket/selectors.js',
-  'lib/wait.js',
-  'lib/events.js',
-  'lib/bkgPayment.js',
-  'lib/gateways/irctcIpay.js',
-  'lib/gateways/phonepe.js',
-  'lib/gateways/index.js',
-  'overlay/overlay.js',
-  'gateway_script.js'
+  'packages/core/dist/extension-gateway.iife.js'
 ];
 const GATEWAY_CSS_FILES = ['overlay/overlay.css'];
 
@@ -54,41 +66,31 @@ async function scheduleAlarms(schedule) {
 }
 
 async function restoreScheduleAlarms() {
-  const data = await chrome.storage.local.get('irctcConfig');
-  const schedule = data.irctcConfig?.schedule;
+  const config = await getActiveConfig();
+  const schedule = config?.schedule;
   if (!schedule?.enabled) return null;
   return IRCTCExt.Schedule.ensureAlarmScheduled(schedule);
 }
 
 async function prepareScheduledBookingState() {
-  const data = await chrome.storage.local.get('irctcConfig');
-  const config = data.irctcConfig || {};
-
-  await chrome.storage.local.set({
-    irctcConfig: {
-      ...config,
-      state: {
-        ...(config.state || {}),
-        running: true,
-        paused: false,
-        status: 'scheduled',
-        currentStep: 'init',
-        passengersDone: false,
-        paymentDone: false,
-        autoRestartCount: 0,
-        paymentPhase: null,
-        paymentGateway: null,
-        awaitingGateway: false,
-        bookingSessionId: crypto.randomUUID(),
-        tokenConsumed: false
-      }
-    }
+  await updateStoreState({
+    running: true,
+    paused: false,
+    status: 'scheduled',
+    currentStep: 'init',
+    passengersDone: false,
+    paymentDone: false,
+    autoRestartCount: 0,
+    paymentPhase: null,
+    paymentGateway: null,
+    awaitingGateway: false,
+    bookingSessionId: crypto.randomUUID(),
+    tokenConsumed: false
   });
 }
 
 async function getActiveSite() {
-  const data = await chrome.storage.local.get('irctcConfig');
-  return IRCTCExt.SiteRegistry.get(data.irctcConfig);
+  return IRCTCExt.SiteRegistry.get(await getActiveConfig());
 }
 
 function isTabOnSite(tab, site) {
@@ -146,8 +148,7 @@ async function ensureContentScripts(tabId, scriptFiles = CONTENT_SCRIPT_FILES, c
 }
 
 async function resumeGatewayOnTab(tabId) {
-  const data = await chrome.storage.local.get('irctcConfig');
-  const config = data.irctcConfig;
+  const config = await getActiveConfig();
   if (!config?.state?.running || !config?.state?.awaitingGateway) return;
 
   await ensureContentScripts(tabId, GATEWAY_SCRIPT_FILES, GATEWAY_CSS_FILES);
@@ -210,19 +211,11 @@ async function ensureBookingAccess() {
 }
 
 async function resetRunningState() {
-  const data = await chrome.storage.local.get('irctcConfig');
-  const config = data.irctcConfig || {};
-  await chrome.storage.local.set({
-    irctcConfig: {
-      ...config,
-      state: { ...(config.state || {}), running: false, status: 'idle', currentStep: 'init' }
-    }
-  });
+  await updateStoreState({ running: false, status: 'idle', currentStep: 'init' });
 }
 
 async function openIrctcTab({ skipAccessCheck = false } = {}) {
-  const data = await chrome.storage.local.get('irctcConfig');
-  const config = data.irctcConfig || {};
+  const config = await getActiveConfig();
 
   const validationError = IRCTCExt.BookingValidation.validate(config);
   if (validationError) {
@@ -307,8 +300,11 @@ chrome.runtime.onStartup.addListener(() => {
 });
 
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === 'local' && changes.irctcConfig?.newValue?.schedule) {
-    scheduleAlarms(changes.irctcConfig.newValue.schedule);
+  if (area === 'local' && changes.irctcConfig?.newValue) {
+    const config = IRCTCExt.ConfigSets.resolveActiveConfig(
+      IRCTCExt.ConfigSets.migrateToV2(changes.irctcConfig.newValue)
+    );
+    if (config.schedule) scheduleAlarms(config.schedule);
   }
 });
 
@@ -319,8 +315,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   console.log('[IRCTC-Bot] Tatkal alarm fired:', alarm.name);
 
   try {
-    const data = await chrome.storage.local.get('irctcConfig');
-    const config = data.irctcConfig;
+    const config = await getActiveConfig();
     if (!config?.schedule?.enabled) return;
 
     await prepareScheduledBookingState();
@@ -332,8 +327,8 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
       console.log('[IRCTC-Bot] Scheduled auto-booking started');
     }
 
-    const latest = await chrome.storage.local.get('irctcConfig');
-    await scheduleAlarms(latest.irctcConfig?.schedule || config.schedule);
+    const latest = await getActiveConfig();
+    await scheduleAlarms(latest.schedule || config.schedule);
   } catch (err) {
     console.error('[IRCTC-Bot] Scheduled start error:', err);
     await resetRunningState();

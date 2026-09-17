@@ -48,7 +48,25 @@ export const DEFAULT_CONFIG = {
   }
 };
 
+export const CONFIG_VERSION = 2;
 export const STORAGE_KEY = 'irctcConfig';
+
+export {
+  createEmptySet,
+  createFreshStore,
+  migrateToV2,
+  normalizeStore,
+  resolveActiveConfig,
+  persistActiveSet,
+  listSets,
+  setActiveSet,
+  createSet,
+  duplicateSet,
+  renameSet,
+  deleteSet,
+  getActiveSet,
+  nextSetName
+} from './sets.js';
 
 export function cloneDefaultConfig() {
   return JSON.parse(JSON.stringify(DEFAULT_CONFIG));

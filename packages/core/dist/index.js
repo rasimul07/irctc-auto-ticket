@@ -4,6 +4,185 @@ var __export = (target, all) => {
     __defProp(target, name, { get: all[name], enumerable: true });
 };
 
+// src/config/sets.js
+var CONFIG_VERSION = 2;
+function newSetId() {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return `set-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+function createEmptySet(name = "Set 1") {
+  const defaults = cloneDefaultConfig();
+  return {
+    id: newSetId(),
+    name,
+    credentials: defaults.credentials,
+    journey: defaults.journey,
+    passengers: defaults.passengers,
+    preferences: defaults.preferences,
+    schedule: defaults.schedule
+  };
+}
+function createFreshStore() {
+  const set = createEmptySet("Set 1");
+  const defaults = cloneDefaultConfig();
+  return {
+    version: CONFIG_VERSION,
+    activeSetId: set.id,
+    sets: [set],
+    access: defaults.access,
+    state: defaults.state
+  };
+}
+function isV2Store(raw) {
+  return raw?.version === CONFIG_VERSION && Array.isArray(raw?.sets) && raw.sets.length > 0;
+}
+function migrateToV2(raw) {
+  if (!raw || typeof raw !== "object") {
+    return createFreshStore();
+  }
+  if (isV2Store(raw)) {
+    return normalizeStore(raw);
+  }
+  const defaults = cloneDefaultConfig();
+  const set = createEmptySet("Set 1");
+  set.credentials = { ...defaults.credentials, ...raw.credentials || {} };
+  set.journey = { ...defaults.journey, ...raw.journey || {} };
+  set.passengers = raw.passengers?.length ? raw.passengers : defaults.passengers;
+  set.preferences = { ...defaults.preferences, ...raw.preferences || {} };
+  set.schedule = { ...defaults.schedule, ...raw.schedule || {} };
+  return {
+    version: CONFIG_VERSION,
+    activeSetId: set.id,
+    sets: [set],
+    access: { ...defaults.access, ...raw.access || {} },
+    state: { ...defaults.state, ...raw.state || {} }
+  };
+}
+function normalizeStore(store) {
+  const next = {
+    version: CONFIG_VERSION,
+    activeSetId: store.activeSetId,
+    sets: (store.sets || []).map((set) => ({
+      ...createEmptySet(set.name || "Set"),
+      ...set,
+      credentials: { ...DEFAULT_CONFIG.credentials, ...set.credentials || {} },
+      journey: { ...DEFAULT_CONFIG.journey, ...set.journey || {} },
+      passengers: set.passengers?.length ? set.passengers : DEFAULT_CONFIG.passengers,
+      preferences: { ...DEFAULT_CONFIG.preferences, ...set.preferences || {} },
+      schedule: { ...DEFAULT_CONFIG.schedule, ...set.schedule || {} }
+    })),
+    access: { ...DEFAULT_CONFIG.access, ...store.access || {} },
+    state: { ...DEFAULT_CONFIG.state, ...store.state || {} }
+  };
+  if (!next.sets.length) {
+    const set = createEmptySet("Set 1");
+    next.sets = [set];
+    next.activeSetId = set.id;
+  }
+  if (!next.sets.some((set) => set.id === next.activeSetId)) {
+    next.activeSetId = next.sets[0].id;
+  }
+  return next;
+}
+function getActiveSet(store) {
+  const normalized = normalizeStore(store);
+  return normalized.sets.find((set) => set.id === normalized.activeSetId) || normalized.sets[0];
+}
+function resolveActiveConfig(store) {
+  const normalized = normalizeStore(store);
+  const active = getActiveSet(normalized);
+  return {
+    credentials: active.credentials,
+    journey: active.journey,
+    passengers: active.passengers,
+    preferences: active.preferences,
+    schedule: active.schedule,
+    access: normalized.access,
+    state: normalized.state,
+    activeSetId: normalized.activeSetId,
+    activeSetName: active.name
+  };
+}
+function persistActiveSet(store, flatConfig) {
+  const normalized = normalizeStore(store);
+  const activeIndex = normalized.sets.findIndex((set) => set.id === normalized.activeSetId);
+  const index = activeIndex >= 0 ? activeIndex : 0;
+  const current = normalized.sets[index];
+  const merged = mergeConfig(resolveActiveConfig(normalized), flatConfig);
+  normalized.sets[index] = {
+    ...current,
+    credentials: merged.credentials,
+    journey: merged.journey,
+    passengers: merged.passengers,
+    preferences: merged.preferences,
+    schedule: merged.schedule
+  };
+  if (flatConfig.access) {
+    normalized.access = { ...normalized.access, ...flatConfig.access };
+  }
+  if (flatConfig.state) {
+    normalized.state = { ...normalized.state, ...flatConfig.state };
+  }
+  return normalized;
+}
+function listSets(store) {
+  return normalizeStore(store).sets.map((set) => ({ id: set.id, name: set.name }));
+}
+function nextSetName(store) {
+  const count = normalizeStore(store).sets.length;
+  return `Set ${count + 1}`;
+}
+function setActiveSet(store, id) {
+  const normalized = normalizeStore(store);
+  if (!normalized.sets.some((set) => set.id === id)) {
+    throw new Error("Booking set not found.");
+  }
+  normalized.activeSetId = id;
+  return normalized;
+}
+function createSet(store, name) {
+  const normalized = normalizeStore(store);
+  const set = createEmptySet(name || nextSetName(normalized));
+  normalized.sets.push(set);
+  normalized.activeSetId = set.id;
+  return normalized;
+}
+function duplicateSet(store, id) {
+  const normalized = normalizeStore(store);
+  const source = normalized.sets.find((set) => set.id === id);
+  if (!source) throw new Error("Booking set not found.");
+  const copy = {
+    ...JSON.parse(JSON.stringify(source)),
+    id: newSetId(),
+    name: `${source.name} copy`
+  };
+  normalized.sets.push(copy);
+  normalized.activeSetId = copy.id;
+  return normalized;
+}
+function renameSet(store, id, name) {
+  const normalized = normalizeStore(store);
+  const trimmed = String(name || "").trim();
+  if (!trimmed) throw new Error("Set name cannot be empty.");
+  const set = normalized.sets.find((item) => item.id === id);
+  if (!set) throw new Error("Booking set not found.");
+  set.name = trimmed;
+  return normalized;
+}
+function deleteSet(store, id) {
+  const normalized = normalizeStore(store);
+  if (normalized.sets.length <= 1) {
+    throw new Error("Cannot delete the only booking set.");
+  }
+  normalized.sets = normalized.sets.filter((set) => set.id !== id);
+  if (normalized.activeSetId === id) {
+    normalized.activeSetId = normalized.sets[0].id;
+  }
+  return normalized;
+}
+
 // src/config/schema.js
 var DEFAULT_CONFIG = {
   credentials: { username: "", password: "" },
@@ -73,26 +252,79 @@ function mergeConfig(current, partial) {
 // src/storage/createStorage.js
 function createStorage(adapter) {
   const storage = {
-    _cachedConfig: null,
-    async get() {
+    _cachedStore: null,
+    async _loadStore() {
+      if (storage._cachedStore) {
+        return normalizeStore(storage._cachedStore);
+      }
       const data = await adapter.getItem();
-      return { ...cloneDefaultConfig(), ...data || {} };
+      const store = migrateToV2(data);
+      storage._cachedStore = store;
+      return store;
+    },
+    async _saveStore(store) {
+      const normalized = normalizeStore(store);
+      storage._cachedStore = normalized;
+      await adapter.setItem(normalized);
+      return normalized;
+    },
+    async getStore() {
+      return storage._loadStore();
+    },
+    async get() {
+      const store = await storage._loadStore();
+      return resolveActiveConfig(store);
     },
     async set(config) {
-      await adapter.setItem(config);
-      storage._cachedConfig = config;
+      const store = await storage._loadStore();
+      const next = persistActiveSet(store, config);
+      await storage._saveStore(next);
+      return resolveActiveConfig(next);
     },
     async update(partial) {
       const current = await storage.get();
       const next = mergeConfig(current, partial);
-      await storage.set(next);
-      return next;
+      return storage.set(next);
     },
     async updateState(updates) {
-      const current = await storage.get();
-      current.state = { ...current.state, ...updates };
-      await storage.set(current);
-      return current;
+      const store = await storage._loadStore();
+      store.state = { ...store.state, ...updates };
+      await storage._saveStore(store);
+      return resolveActiveConfig(store);
+    },
+    async listSets() {
+      const store = await storage._loadStore();
+      return listSets(store);
+    },
+    async switchSet(id) {
+      const store = await storage._loadStore();
+      const next = setActiveSet(store, id);
+      await storage._saveStore(next);
+      return resolveActiveConfig(next);
+    },
+    async addSet(name) {
+      const store = await storage._loadStore();
+      const next = createSet(store, name);
+      await storage._saveStore(next);
+      return resolveActiveConfig(next);
+    },
+    async duplicateSet(id) {
+      const store = await storage._loadStore();
+      const next = duplicateSet(store, id);
+      await storage._saveStore(next);
+      return resolveActiveConfig(next);
+    },
+    async removeSet(id) {
+      const store = await storage._loadStore();
+      const next = deleteSet(store, id);
+      await storage._saveStore(next);
+      return resolveActiveConfig(next);
+    },
+    async renameSet(id, name) {
+      const store = await storage._loadStore();
+      const next = renameSet(store, id, name);
+      await storage._saveStore(next);
+      return resolveActiveConfig(next);
     },
     async clear() {
       if (adapter.removeItem) {
@@ -100,7 +332,10 @@ function createStorage(adapter) {
       } else {
         await adapter.setItem(null);
       }
-      storage._cachedConfig = null;
+      storage._cachedStore = null;
+      const fresh = createFreshStore();
+      await storage._saveStore(fresh);
+      return resolveActiveConfig(fresh);
     }
   };
   return storage;
@@ -474,6 +709,53 @@ function validateBookingConfig(config) {
   return null;
 }
 
+// src/validation/setupProgress.js
+function isCardComplete2(card) {
+  return !!(card?.name && card?.number && card?.expiry && card?.cvv);
+}
+function getSetupSteps(config) {
+  const credentials = config?.credentials || {};
+  const journey = config?.journey || {};
+  const passengers = config?.passengers || [];
+  const preferences = config?.preferences || {};
+  const loginDone = !!(credentials.username?.trim() && credentials.password);
+  const journeyDone = !!(journey.from?.trim() && journey.to?.trim() && journey.date && (journey.trainNo?.trim() || journey.trainName?.trim()));
+  const passengersDone = passengers.some((p) => (p.name || "").trim() && (p.age || "").trim() && p.gender);
+  const paymentDone = !preferences.autoPayEnabled || preferences.paymentMethod !== "cards" || (preferences.autoPayType === "credit" ? isCardComplete2(preferences.creditCard) : isCardComplete2(preferences.debitCard));
+  return [
+    {
+      id: "login",
+      label: "Login",
+      done: loginDone,
+      hint: loginDone ? "IRCTC credentials saved" : "Add username and password"
+    },
+    {
+      id: "journey",
+      label: "Journey",
+      done: journeyDone,
+      hint: journeyDone ? `${journey.from} \u2192 ${journey.to}` : "Stations, date, and train"
+    },
+    {
+      id: "passengers",
+      label: "Passengers",
+      done: passengersDone,
+      hint: passengersDone ? `${passengers.filter((p) => p.name?.trim()).length} passenger(s)` : "At least one complete passenger"
+    },
+    {
+      id: "payment",
+      label: "Payment",
+      done: paymentDone,
+      hint: preferences.autoPayEnabled ? "Auto-pay configured" : "Manual payment (optional)"
+    }
+  ];
+}
+function getSetupCompletion(config) {
+  const steps = getSetupSteps(config);
+  const done = steps.filter((step) => step.done).length;
+  const ready = steps.filter((step) => step.id !== "payment").every((step) => step.done);
+  return { done, total: steps.length, ready, steps };
+}
+
 // src/platform/bridge.js
 function createPlatformBridge() {
   const handlers = /* @__PURE__ */ new Set();
@@ -632,6 +914,8 @@ export {
   createStorage,
   createWebViewBridge,
   getApiBase,
+  getSetupCompletion,
+  getSetupSteps,
   isMobileClient,
   mergeConfig,
   network_exports as network,

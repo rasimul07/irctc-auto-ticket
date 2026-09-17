@@ -32,7 +32,19 @@ IRCTCExt.Bot = {
 
   isContentScriptReady() {
     const sites = IRCTCExt.SiteRegistry?.SITES || {};
-    return !!(sites.eticket?.flows && sites.nget?.flows);
+    const onNget = location.pathname.includes('/nget/');
+    const onEticket = location.pathname.includes('/eticket/');
+    if (onNget) return !!sites.nget?.flows;
+    if (onEticket) return !!sites.eticket?.flows;
+    return !!(sites.eticket?.flows || sites.nget?.flows);
+  },
+
+  isWebViewHost() {
+    return typeof chrome === 'undefined' || !chrome.runtime?.sendMessage;
+  },
+
+  isAutoPayAvailable() {
+    return !!IRCTCExt.BkgPayment?.handleCardsPayment;
   },
 
   async handleErrorPageIfNeeded(overlay) {
@@ -147,10 +159,46 @@ IRCTCExt.Bot = {
   },
 
   async handlePaymentPage(overlay, config, site) {
+    if (config.state.paymentDone) return 'done';
+
     overlay.setStep('Payment');
-    overlay.setStatus('Complete payment manually on IRCTC.');
-    await IRCTCExt.Storage.updateState({ paymentDone: true, status: 'done', currentStep: 'done' });
-    IRCTCExt.PlatformBridge?.sendMessage('BOOKING_STATUS', { status: 'payment_manual' });
+
+    const autoPayEnabled = !!config.preferences?.autoPayEnabled;
+    const canAutoPay = IRCTCExt.Bot.isAutoPayAvailable();
+
+    if (!autoPayEnabled || !canAutoPay) {
+      const reason = !autoPayEnabled
+        ? 'Auto pay disabled — complete payment manually.'
+        : 'Auto pay is not available in this host — complete payment manually.';
+      overlay.setStatus(reason);
+      await IRCTCExt.Storage.updateState({ paymentDone: true });
+      await site.flows.BookingFlow.showPaymentReview(overlay);
+      IRCTCExt.PlatformBridge?.sendMessage('BOOKING_STATUS', { status: 'payment_manual' });
+      return 'done';
+    }
+
+    const method = config.preferences?.paymentMethod || 'cards';
+
+    if (method === 'upi') {
+      await IRCTCExt.BkgPayment.handleUpiPayment(config, overlay);
+      overlay.setStatus('Payment provider selected. Complete payment on IRCTC.');
+    } else if (method === 'cards') {
+      const result = await IRCTCExt.BkgPayment.handleCardsPayment(config, overlay);
+      if (result?.awaitingGateway) {
+        IRCTCExt.PlatformBridge?.sendMessage('BOOKING_STATUS', {
+          status: 'awaiting_gateway',
+          gateway: result.gateway
+        });
+        return 'wait';
+      }
+      overlay.setStatus('Cards payment flow started. Complete payment on gateway.');
+    } else {
+      throw new Error(`Unsupported payment method: ${method}`);
+    }
+
+    await IRCTCExt.Storage.updateState({ paymentDone: true });
+    await site.flows.BookingFlow.showPaymentReview(overlay);
+    IRCTCExt.PlatformBridge?.sendMessage('BOOKING_STATUS', { status: 'done' });
     return 'done';
   },
 

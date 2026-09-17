@@ -48,16 +48,34 @@ const els = {
   saveBtn: document.getElementById('saveBtn'),
   startBtn: document.getElementById('startBtn'),
   clearBtn: document.getElementById('clearBtn'),
-  message: document.getElementById('message'),
   statusBadge: document.getElementById('statusBadge'),
+  profileBar: document.getElementById('profileBar'),
+  setupProgressFill: document.getElementById('setupProgressFill'),
+  setupProgressLabel: document.getElementById('setupProgressLabel'),
+  setupProgressSteps: document.getElementById('setupProgressSteps'),
   toggleMinimizeBtn: document.getElementById('toggleMinimizeBtn'),
   popupBody: document.getElementById('popupBody'),
-  toast: document.getElementById('toast')
+  toast: document.getElementById('toast'),
+  bookingSetSelect: document.getElementById('bookingSetSelect'),
+  addSetBtn: document.getElementById('addSetBtn'),
+  duplicateSetBtn: document.getElementById('duplicateSetBtn'),
+  renameSetBtn: document.getElementById('renameSetBtn'),
+  deleteSetBtn: document.getElementById('deleteSetBtn')
 };
+
+let activeSetId = null;
+let setsLocked = false;
 
 const POPUP_MINIMIZED_KEY = 'irctcPopupMinimized';
 const LINK_ACCESS_EMAIL_BTN_LABEL = 'Link email & refresh';
+const SETUP_STEP_TABS = {
+  login: 'credentials',
+  journey: 'journey',
+  passengers: 'passengers',
+  payment: 'payment'
+};
 let toastTimer = null;
+let activeSetName = 'Set 1';
 
 function setPasswordVisible(visible) {
   if (!els.password || !els.togglePasswordBtn) return;
@@ -95,11 +113,6 @@ function setMinimized(minimized) {
 async function loadMinimizedState() {
   const data = await chrome.storage.local.get(POPUP_MINIMIZED_KEY);
   setMinimized(!!data[POPUP_MINIMIZED_KEY]);
-}
-
-function showMessage(text, isError = false) {
-  els.message.textContent = text;
-  els.message.classList.toggle('error', isError);
 }
 
 function showToast(text, isError = false) {
@@ -213,7 +226,7 @@ async function refreshAccess() {
 async function linkAccessEmail() {
   const email = els.accessEmail.value.trim();
   if (!email) {
-    showMessage('Enter your Buy Me a Coffee email.', true);
+    showToast('Enter your Buy Me a Coffee email.', true);
     switchTab('access');
     return;
   }
@@ -224,13 +237,13 @@ async function linkAccessEmail() {
     await AccessApi.ensureAccess();
     const status = await AccessApi.linkEmail(email);
     updateAccessUi(status);
-    showMessage(
+    showToast(
       status.allowed
         ? 'Access linked successfully.'
         : 'Email linked, but no active license found yet. Start a trial or buy a coffee on Buy Me a Coffee first.'
     );
   } catch (err) {
-    showMessage(err.message || 'Could not link email.', true);
+    showToast(err.message || 'Could not link email.', true);
   } finally {
     setLinkAccessEmailLoading(false);
   }
@@ -438,11 +451,50 @@ function fillForm(config) {
   els.accessEmail.value = config.access?.email || '';
   if (AccessApi && els.bmcLink) els.bmcLink.href = AccessApi.BMC_URL;
   renderPassengers(config.passengers);
-  updateStatusBadge(config.state?.status || 'idle');
+  activeSetName = config.activeSetName || 'Set 1';
+  updateStatusBadge(config.state?.status || 'idle', activeSetName);
+  updateSetupProgress(config);
 }
 
-function updateStatusBadge(status) {
-  els.statusBadge.textContent = status.charAt(0).toUpperCase() + status.slice(1);
+function formatStatusLabel(status) {
+  const normalized = String(status || 'idle');
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+}
+
+function updateStatusBadge(status, setName = activeSetName) {
+  if (!els.statusBadge) return;
+  const label = formatStatusLabel(status);
+  els.statusBadge.textContent = `${setName} · ${label}`;
+  els.statusBadge.classList.remove('badge--idle', 'badge--running', 'badge--error', 'badge--done');
+  if (status === 'running') els.statusBadge.classList.add('badge--running');
+  else if (status === 'error') els.statusBadge.classList.add('badge--error');
+  else if (status === 'done') els.statusBadge.classList.add('badge--done');
+  else els.statusBadge.classList.add('badge--idle');
+}
+
+function updateSetupProgress(config) {
+  const progressApi = window.IRCTCExt?.SetupProgress;
+  if (!progressApi || !els.setupProgressFill || !els.setupProgressLabel) return;
+
+  const completion = progressApi.getSetupCompletion(config);
+  const percent = completion.total ? Math.round((completion.done / completion.total) * 100) : 0;
+  els.setupProgressFill.style.width = `${percent}%`;
+  els.setupProgressLabel.textContent = `${completion.done}/${completion.total}`;
+
+  if (!els.setupProgressSteps) return;
+  els.setupProgressSteps.innerHTML = '';
+  completion.steps.forEach((step) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = `setup-progress__step${step.done ? ' setup-progress__step--done' : ''}`;
+    btn.title = `${step.label}: ${step.hint}`;
+    btn.textContent = step.label.charAt(0);
+    btn.addEventListener('click', () => {
+      const tabId = SETUP_STEP_TABS[step.id];
+      if (tabId) switchTab(tabId);
+    });
+    els.setupProgressSteps.appendChild(btn);
+  });
 }
 
 function readScheduleForm() {
@@ -479,10 +531,120 @@ async function armScheduleIfEnabled(schedule) {
   await chrome.runtime.sendMessage({ type: 'RESCHEDULE_ALARMS', schedule }).catch(() => null);
 }
 
+function updateSetControlsLocked(running) {
+  setsLocked = !!running;
+  if (els.bookingSetSelect) els.bookingSetSelect.disabled = setsLocked;
+  if (els.addSetBtn) els.addSetBtn.disabled = setsLocked;
+  if (els.duplicateSetBtn) els.duplicateSetBtn.disabled = setsLocked;
+  if (els.renameSetBtn) els.renameSetBtn.disabled = setsLocked;
+  if (els.deleteSetBtn) els.deleteSetBtn.disabled = setsLocked;
+  els.profileBar?.classList.toggle('profile-bar--locked', setsLocked);
+}
+
+async function renderSetSelector() {
+  if (!els.bookingSetSelect || !Storage.listSets) return;
+  const sets = await Storage.listSets();
+  const config = await Storage.get();
+  activeSetId = config.activeSetId || sets[0]?.id || null;
+  els.bookingSetSelect.innerHTML = '';
+  sets.forEach((set) => {
+    const option = document.createElement('option');
+    option.value = set.id;
+    option.textContent = set.name;
+    if (set.id === activeSetId) option.selected = true;
+    els.bookingSetSelect.appendChild(option);
+  });
+  updateSetControlsLocked(config.state?.running);
+}
+
+async function persistFormToActiveSet() {
+  const current = await Storage.get();
+  const form = readForm();
+  const next = {
+    ...current,
+    ...form,
+    journey: { ...current.journey, ...form.journey },
+    credentials: { ...current.credentials, ...form.credentials },
+    schedule: { ...current.schedule, ...form.schedule },
+    preferences: { ...current.preferences, ...form.preferences },
+    access: { ...current.access, ...form.access }
+  };
+  await Storage.set(next);
+}
+
+async function switchBookingSet(id) {
+  if (!id || id === activeSetId) return;
+  if (setsLocked) {
+    showToast('Stop booking before switching sets.', true);
+    return;
+  }
+  await persistFormToActiveSet();
+  const config = await Storage.switchSet(id);
+  activeSetId = config.activeSetId;
+  fillForm(config);
+  await renderSetSelector();
+  showToast(`Switched to ${config.activeSetName || 'selected set'}.`);
+}
+
+async function addBookingSet() {
+  if (setsLocked) {
+    showToast('Stop booking before adding a set.', true);
+    return;
+  }
+  await persistFormToActiveSet();
+  const config = await Storage.addSet();
+  activeSetId = config.activeSetId;
+  fillForm(config);
+  await renderSetSelector();
+  showToast(`Created ${config.activeSetName || 'new set'}.`);
+}
+
+async function duplicateBookingSet() {
+  if (setsLocked || !activeSetId) return;
+  await persistFormToActiveSet();
+  const config = await Storage.duplicateSet(activeSetId);
+  activeSetId = config.activeSetId;
+  fillForm(config);
+  await renderSetSelector();
+  showToast(`Duplicated to ${config.activeSetName || 'new set'}.`);
+}
+
+async function renameBookingSet() {
+  if (setsLocked || !activeSetId) return;
+  const sets = await Storage.listSets();
+  const current = sets.find((set) => set.id === activeSetId);
+  const name = window.prompt('Rename booking set', current?.name || 'Set');
+  if (!name?.trim()) return;
+  await Storage.renameSet(activeSetId, name.trim());
+  activeSetName = name.trim();
+  await renderSetSelector();
+  const latest = await Storage.get();
+  updateStatusBadge(latest.state?.status || 'idle', activeSetName);
+  showToast('Set renamed.');
+}
+
+async function deleteBookingSet() {
+  if (setsLocked || !activeSetId) return;
+  const sets = await Storage.listSets();
+  if (sets.length <= 1) {
+    showToast('Cannot delete the only set.', true);
+    return;
+  }
+  const current = sets.find((set) => set.id === activeSetId);
+  if (!window.confirm(`Delete "${current?.name || 'this set'}"?`)) return;
+  const config = await Storage.removeSet(activeSetId);
+  activeSetId = config.activeSetId;
+  fillForm(config);
+  await renderSetSelector();
+  showToast('Set deleted.');
+}
+
 async function load() {
   await loadMinimizedState();
   const config = await Storage.get();
+  activeSetId = config.activeSetId || null;
   fillForm(config);
+  await renderSetSelector();
   setPasswordVisible(false);
   await armScheduleIfEnabled(config.schedule);
   await updateScheduleStatus(config.schedule);
@@ -495,9 +657,17 @@ async function load() {
 
   setInterval(async () => {
     const latest = await Storage.get();
-    updateStatusBadge(latest.state?.status || 'idle');
+    activeSetName = latest.activeSetName || activeSetName;
+    updateStatusBadge(latest.state?.status || 'idle', activeSetName);
+    updateSetControlsLocked(latest.state?.running);
   }, 2000);
 }
+
+['username', 'password', 'fromStation', 'toStation', 'journeyDate', 'trainNo', 'trainName'].forEach((id) => {
+  document.getElementById(id)?.addEventListener('input', () => {
+    updateSetupProgress({ ...readForm(), activeSetName });
+  });
+});
 
 async function save() {
   const current = await Storage.get();
@@ -519,10 +689,12 @@ async function save() {
     const when = IRCTCExt?.Schedule?.formatIstDateTime
       ? IRCTCExt.Schedule.formatIstDateTime(armed.when)
       : new Date(armed.when).toLocaleString();
-    showMessage(`Details saved. Auto-booking scheduled for ${when}.`);
+    showToast(`Details saved. Auto-booking scheduled for ${when}.`);
   } else {
-    showMessage('Details saved successfully.');
+    showToast('Details saved successfully.');
   }
+  const latest = await Storage.get();
+  updateSetupProgress(latest);
 }
 
 function handleValidationFailure(err) {
@@ -572,13 +744,13 @@ async function startBooking() {
     bookingSessionId: crypto.randomUUID(),
     tokenConsumed: false
   });
-  updateStatusBadge('running');
+  updateStatusBadge('running', activeSetName);
   els.startBtn.disabled = true;
   chrome.runtime.sendMessage({ type: 'START_FROM_POPUP', skipAccessCheck: true }, async (response) => {
     els.startBtn.disabled = false;
     if (chrome.runtime.lastError) {
       await Storage.updateState({ running: false, status: 'idle', currentStep: 'init' });
-      updateStatusBadge('idle');
+      updateStatusBadge('idle', activeSetName);
       showToast(chrome.runtime.lastError.message || 'Could not start booking.', true);
       return;
     }
@@ -586,7 +758,7 @@ async function startBooking() {
     if (!response) return;
     if (!response.ok) {
       await Storage.updateState({ running: false, status: 'idle', currentStep: 'init' });
-      updateStatusBadge('idle');
+      updateStatusBadge('idle', activeSetName);
       if (response.error === 'validation_failed') {
         handleValidationFailure(response);
       } else if (response.error === 'access_denied') {
@@ -602,14 +774,18 @@ async function startBooking() {
       return;
     }
     const label = response.siteLabel || siteLabel;
-    showToast(`Opening ${label} and starting automation...`);
+    const setName = (await Storage.get()).activeSetName || 'active set';
+    showToast(`Opening ${label} with ${setName}...`);
   });
 }
 
 async function clearAll() {
   await Storage.clear();
-  fillForm(DEFAULT_CONFIG);
-  showMessage('All data cleared.');
+  const config = await Storage.get();
+  activeSetId = config.activeSetId || null;
+  fillForm(config);
+  await renderSetSelector();
+  showToast('All data cleared.');
 }
 
 els.tabs.forEach((tab) => {
@@ -619,7 +795,7 @@ els.tabs.forEach((tab) => {
 els.addPassenger.addEventListener('click', () => {
   const count = els.passengerList.querySelectorAll('.passenger-card').length;
   if (count >= 6) {
-    showMessage('Maximum 6 passengers allowed.', true);
+    showToast('Maximum 6 passengers allowed.', true);
     return;
   }
   els.passengerList.appendChild(createPassengerRow({}, count));
@@ -638,6 +814,22 @@ document.querySelectorAll('input[name="autoPayType"]').forEach((radio) => {
   document.getElementById(id)?.addEventListener('blur', (e) => {
     e.target.value = formatCardExpiry(e.target.value);
   });
+});
+
+els.bookingSetSelect?.addEventListener('change', (e) => {
+  switchBookingSet(e.target.value).catch((err) => showToast(err.message || 'Could not switch set.', true));
+});
+els.addSetBtn?.addEventListener('click', () => {
+  addBookingSet().catch((err) => showToast(err.message || 'Could not add set.', true));
+});
+els.duplicateSetBtn?.addEventListener('click', () => {
+  duplicateBookingSet().catch((err) => showToast(err.message || 'Could not duplicate set.', true));
+});
+els.renameSetBtn?.addEventListener('click', () => {
+  renameBookingSet().catch((err) => showToast(err.message || 'Could not rename set.', true));
+});
+els.deleteSetBtn?.addEventListener('click', () => {
+  deleteBookingSet().catch((err) => showToast(err.message || 'Could not delete set.', true));
 });
 
 els.saveBtn.addEventListener('click', save);

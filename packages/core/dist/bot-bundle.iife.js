@@ -1253,9 +1253,15 @@
       return true;
     },
     async showPaymentReview(overlay) {
-      await IRCTCExt.PaymentReviewOverlay.show();
       overlay.setStep("Payment");
-      overlay.showPause("Complete payment manually on IRCTC.");
+      const message = "Complete payment manually on IRCTC.";
+      if (IRCTCExt.PaymentReviewOverlay?.show) {
+        await IRCTCExt.PaymentReviewOverlay.show();
+        overlay.showPause(message);
+      } else {
+        overlay.setStatus(message);
+        overlay.showPause?.(message);
+      }
       await IRCTCExt.Storage.updateState({ status: "done", running: false, currentStep: "done" });
       return true;
     },
@@ -3013,6 +3019,228 @@
     }
   };
   window.IRCTCExt = window.IRCTCExt || {};
+  IRCTCExt.BkgPayment = {
+    normalizeProviderName(name) {
+      return String(name || "").trim().toLowerCase();
+    },
+    isIpayProvider(providerName) {
+      const normalized = IRCTCExt.BkgPayment.normalizeProviderName(providerName);
+      return normalized === "irctc ipay" || normalized === "ipay";
+    },
+    getPaymentProvider(config) {
+      const method = config.preferences?.paymentMethod || "cards";
+      if (method === "upi") {
+        return config.preferences?.upiProvider || "IRCTC iPay";
+      }
+      if (method === "cards") {
+        return config.preferences?.cardsProvider || "PhonePe";
+      }
+      return "IRCTC iPay";
+    },
+    clickTarget(el) {
+      if (!el) return;
+      el.scrollIntoView({ block: "center", inline: "nearest" });
+      IRCTCExt.Events.click(el);
+    },
+    getBankCellLabel(cell) {
+      const span = cell.querySelector("span");
+      const logo = cell.querySelector("img.bank-logo");
+      return (span?.textContent || logo?.getAttribute("alt") || "").trim();
+    },
+    isProviderSelected(cell) {
+      if (!cell) return false;
+      const sel = IRCTCExt.SELECTORS.payment;
+      const card = cell.querySelector(sel.bankCard?.[0] || ".bank-card");
+      if (card?.classList.contains("bank-selected")) return true;
+      if (cell.classList.contains("bank-selected")) return true;
+      return false;
+    },
+    getBankCellClickTargets(cell) {
+      const sel = IRCTCExt.SELECTORS.payment;
+      const targets = [cell];
+      const card = cell.querySelector(sel.bankCard?.[0] || ".bank-card");
+      const logo = cell.querySelector(sel.bankLogo?.[0] || "img.bank-logo");
+      const label = cell.querySelector("span");
+      if (card) targets.push(card);
+      if (logo) targets.push(logo);
+      if (label) targets.push(label);
+      return targets;
+    },
+    findBankCell(providerName) {
+      const target = IRCTCExt.BkgPayment.normalizeProviderName(providerName);
+      if (!target) return null;
+      const sel = IRCTCExt.SELECTORS.payment;
+      const cells = document.querySelectorAll(sel.bankCell?.[0] || ".bank-cell");
+      for (const cell of cells) {
+        if (!IRCTCExt.Wait.isVisible(cell)) continue;
+        const label = IRCTCExt.BkgPayment.normalizeProviderName(
+          IRCTCExt.BkgPayment.getBankCellLabel(cell)
+        );
+        if (label === target) return cell;
+      }
+      return null;
+    },
+    findIpayCard() {
+      const sel = IRCTCExt.SELECTORS.payment;
+      const card = IRCTCExt.Wait.queryOne(sel.ipayCard, document);
+      if (card && IRCTCExt.Wait.isVisible(card)) return card;
+      return null;
+    },
+    isIpayCardSelected() {
+      const card = IRCTCExt.BkgPayment.findIpayCard();
+      return !!card?.classList.contains("bank-selected");
+    },
+    async ensureIpayCardSelected(maxAttempts = 6) {
+      for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+        if (IRCTCExt.BkgPayment.isIpayCardSelected()) return true;
+        const card = IRCTCExt.BkgPayment.findIpayCard();
+        if (!card) throw new Error("IRCTC iPay card not found");
+        IRCTCExt.BkgPayment.clickTarget(card);
+        await IRCTCExt.Wait.delay(350);
+      }
+      if (!IRCTCExt.BkgPayment.isIpayCardSelected()) {
+        throw new Error("Could not select IRCTC iPay card");
+      }
+      return true;
+    },
+    findIpayClickToPayButton() {
+      const sel = IRCTCExt.SELECTORS.payment;
+      const buttons = document.querySelectorAll(sel.ipayClickToPay?.[0] || "button.ipay-qr-button");
+      for (const btn of buttons) {
+        if (IRCTCExt.Wait.isVisible(btn) && /click\s*to\s*pay/i.test(btn.textContent || "")) {
+          return btn;
+        }
+      }
+      return null;
+    },
+    async clickIpay(overlay) {
+      const sel = IRCTCExt.SELECTORS.payment;
+      overlay?.setStatus("Selecting IRCTC iPay...");
+      await IRCTCExt.Wait.waitFor(sel.paymentWrapper, { timeout: 15e3, visible: true });
+      await IRCTCExt.BkgPayment.ensureIpayCardSelected();
+      const clickBtn = await IRCTCExt.Wait.poll(
+        () => IRCTCExt.BkgPayment.findIpayClickToPayButton(),
+        { timeout: 15e3, interval: 200 }
+      );
+      if (!clickBtn) throw new Error('IRCTC iPay "Click to pay" button not found');
+      for (let attempt = 0; attempt < 6; attempt += 1) {
+        IRCTCExt.BkgPayment.clickTarget(clickBtn);
+        await IRCTCExt.Wait.delay(350);
+      }
+      return true;
+    },
+    async clickBankProvider(providerName, overlay, maxAttempts = 6) {
+      overlay?.setStatus(`Selecting ${providerName}...`);
+      await IRCTCExt.Wait.waitFor(IRCTCExt.SELECTORS.payment.paymentWrapper, {
+        timeout: 15e3,
+        visible: true
+      });
+      const cell = await IRCTCExt.Wait.poll(
+        () => IRCTCExt.BkgPayment.findBankCell(providerName),
+        { timeout: 15e3, interval: 200 }
+      );
+      if (!cell) throw new Error(`Payment provider not found: ${providerName}`);
+      const targets = IRCTCExt.BkgPayment.getBankCellClickTargets(cell);
+      for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+        if (IRCTCExt.BkgPayment.isProviderSelected(cell)) return true;
+        for (const target of targets) {
+          IRCTCExt.BkgPayment.clickTarget(target);
+          await IRCTCExt.Wait.delay(200);
+          if (IRCTCExt.BkgPayment.isProviderSelected(cell)) return true;
+        }
+        await IRCTCExt.Wait.delay(350);
+      }
+      throw new Error(`Could not select payment provider: ${providerName}`);
+    },
+    isPayAndBookEnabled(btn) {
+      if (!btn) return false;
+      if (btn.disabled) return false;
+      if (btn.classList.contains("disabled")) return false;
+      if (btn.getAttribute("aria-disabled") === "true") return false;
+      return IRCTCExt.Wait.isVisible(btn);
+    },
+    findPayAndBookButton(root = document) {
+      const sel = IRCTCExt.SELECTORS.payment;
+      const roots = [
+        root.querySelector(sel.paymentWrapper?.[0] || "app-payment"),
+        root.querySelector(".payment-wrapper"),
+        root
+      ].filter(Boolean);
+      for (const searchRoot of roots) {
+        const buttons = searchRoot.querySelectorAll(sel.payAndBookBtn?.[0] || "button.btn-payment");
+        for (const btn of buttons) {
+          if (IRCTCExt.BkgPayment.isPayAndBookEnabled(btn) && /pay\s*&\s*book/i.test(btn.textContent || "")) {
+            return btn;
+          }
+        }
+      }
+      const fallbackButtons = root.querySelectorAll("button.btn-payment, button.btn.btn-payment");
+      for (const btn of fallbackButtons) {
+        if (IRCTCExt.BkgPayment.isPayAndBookEnabled(btn) && /pay\s*&\s*book/i.test(btn.textContent || "")) {
+          return btn;
+        }
+      }
+      return null;
+    },
+    async clickPayAndBook(overlay) {
+      overlay?.setStatus("Clicking Pay & Book...");
+      const payBtn = await IRCTCExt.Wait.poll(
+        () => IRCTCExt.BkgPayment.findPayAndBookButton(document),
+        { timeout: 15e3, interval: 200 }
+      );
+      if (!payBtn) throw new Error("Pay & Book button not found");
+      IRCTCExt.BkgPayment.clickTarget(payBtn);
+      await IRCTCExt.Wait.delay(600);
+      return true;
+    },
+    async handleUpiPayment(config, overlay) {
+      const provider = IRCTCExt.BkgPayment.getPaymentProvider(config);
+      overlay?.setStatus(`Selecting UPI provider: ${provider}...`);
+      if (IRCTCExt.BkgPayment.isIpayProvider(provider)) {
+        return IRCTCExt.BkgPayment.clickIpay(overlay);
+      }
+      await IRCTCExt.BkgPayment.clickBankProvider(provider, overlay);
+      await IRCTCExt.BkgPayment.clickPayAndBook(overlay);
+      overlay?.setStatus("Pay & Book clicked. Complete payment on gateway.");
+      return true;
+    },
+    async handleCardsPayment(config, overlay) {
+      const provider = IRCTCExt.BkgPayment.getPaymentProvider(config);
+      overlay?.setStatus(`Selecting cards provider: ${provider}...`);
+      if (IRCTCExt.BkgPayment.isIpayProvider(provider)) {
+        await IRCTCExt.BkgPayment.ensureIpayCardSelected();
+      } else {
+        await IRCTCExt.BkgPayment.clickBankProvider(provider, overlay);
+      }
+      await IRCTCExt.Storage.updateState({
+        paymentPhase: "gateway",
+        paymentGateway: IRCTCExt.BkgPayment.isIpayProvider(provider) ? "irctcIpay" : provider,
+        awaitingGateway: true
+      });
+      overlay?.setStatus("Clicking Pay & Book...");
+      await IRCTCExt.BkgPayment.clickPayAndBook(overlay);
+      overlay?.setStatus("Redirecting to payment gateway...");
+      return {
+        awaitingGateway: true,
+        gateway: IRCTCExt.BkgPayment.isIpayProvider(provider) ? "irctcIpay" : provider
+      };
+    },
+    getAutoPaySettings(config) {
+      const prefs = config.preferences || {};
+      const type = prefs.autoPayType || "debit";
+      return {
+        enabled: !!prefs.autoPayEnabled,
+        type,
+        card: type === "credit" ? prefs.creditCard : type === "debit" ? prefs.debitCard : null
+      };
+    },
+    async selectPaymentProvider(config, overlay) {
+      const method = config.preferences?.paymentMethod || "cards";
+      if (method === "upi") return IRCTCExt.BkgPayment.handleUpiPayment(config, overlay);
+      return IRCTCExt.BkgPayment.handleCardsPayment(config, overlay);
+    }
+  };
+  window.IRCTCExt = window.IRCTCExt || {};
   IRCTCExt.Overlay = {
     el: null,
     startTime: null,
@@ -3259,7 +3487,17 @@
     },
     isContentScriptReady() {
       const sites = IRCTCExt.SiteRegistry?.SITES || {};
-      return !!(sites.eticket?.flows && sites.nget?.flows);
+      const onNget = location.pathname.includes("/nget/");
+      const onEticket = location.pathname.includes("/eticket/");
+      if (onNget) return !!sites.nget?.flows;
+      if (onEticket) return !!sites.eticket?.flows;
+      return !!(sites.eticket?.flows || sites.nget?.flows);
+    },
+    isWebViewHost() {
+      return typeof chrome === "undefined" || !chrome.runtime?.sendMessage;
+    },
+    isAutoPayAvailable() {
+      return !!IRCTCExt.BkgPayment?.handleCardsPayment;
     },
     async handleErrorPageIfNeeded(overlay) {
       const config = await IRCTCExt.Storage.get();
@@ -3354,10 +3592,38 @@
       return true;
     },
     async handlePaymentPage(overlay, config, site) {
+      if (config.state.paymentDone) return "done";
       overlay.setStep("Payment");
-      overlay.setStatus("Complete payment manually on IRCTC.");
-      await IRCTCExt.Storage.updateState({ paymentDone: true, status: "done", currentStep: "done" });
-      IRCTCExt.PlatformBridge?.sendMessage("BOOKING_STATUS", { status: "payment_manual" });
+      const autoPayEnabled = !!config.preferences?.autoPayEnabled;
+      const canAutoPay = IRCTCExt.Bot.isAutoPayAvailable();
+      if (!autoPayEnabled || !canAutoPay) {
+        const reason = !autoPayEnabled ? "Auto pay disabled \u2014 complete payment manually." : "Auto pay is not available in this host \u2014 complete payment manually.";
+        overlay.setStatus(reason);
+        await IRCTCExt.Storage.updateState({ paymentDone: true });
+        await site.flows.BookingFlow.showPaymentReview(overlay);
+        IRCTCExt.PlatformBridge?.sendMessage("BOOKING_STATUS", { status: "payment_manual" });
+        return "done";
+      }
+      const method = config.preferences?.paymentMethod || "cards";
+      if (method === "upi") {
+        await IRCTCExt.BkgPayment.handleUpiPayment(config, overlay);
+        overlay.setStatus("Payment provider selected. Complete payment on IRCTC.");
+      } else if (method === "cards") {
+        const result = await IRCTCExt.BkgPayment.handleCardsPayment(config, overlay);
+        if (result?.awaitingGateway) {
+          IRCTCExt.PlatformBridge?.sendMessage("BOOKING_STATUS", {
+            status: "awaiting_gateway",
+            gateway: result.gateway
+          });
+          return "wait";
+        }
+        overlay.setStatus("Cards payment flow started. Complete payment on gateway.");
+      } else {
+        throw new Error(`Unsupported payment method: ${method}`);
+      }
+      await IRCTCExt.Storage.updateState({ paymentDone: true });
+      await site.flows.BookingFlow.showPaymentReview(overlay);
+      IRCTCExt.PlatformBridge?.sendMessage("BOOKING_STATUS", { status: "done" });
       return "done";
     },
     async runForCurrentPath(overlay) {

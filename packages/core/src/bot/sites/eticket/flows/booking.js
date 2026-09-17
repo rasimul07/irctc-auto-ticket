@@ -45,9 +45,15 @@ IRCTCExt.EticketBookingFlow = {
   },
 
   async showPaymentReview(overlay) {
-    await IRCTCExt.PaymentReviewOverlay.show();
     overlay.setStep('Payment');
-    overlay.showPause('Complete payment manually on IRCTC.');
+    const message = 'Complete payment manually on IRCTC.';
+    if (IRCTCExt.PaymentReviewOverlay?.show) {
+      await IRCTCExt.PaymentReviewOverlay.show();
+      overlay.showPause(message);
+    } else {
+      overlay.setStatus(message);
+      overlay.showPause?.(message);
+    }
     await IRCTCExt.Storage.updateState({ status: 'done', running: false, currentStep: 'done' });
     return true;
   },

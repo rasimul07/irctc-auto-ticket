@@ -70,15 +70,7 @@
       ],
       "js": [
         "packages/core/dist/chrome-core.iife.js",
-        "sites/eticket/selectors.js",
-        "lib/wait.js",
-        "lib/events.js",
-        "lib/bkgPayment.js",
-        "lib/gateways/irctcIpay.js",
-        "lib/gateways/phonepe.js",
-        "lib/gateways/index.js",
-        "overlay/overlay.js",
-        "gateway_script.js"
+        "packages/core/dist/extension-gateway.iife.js"
       ],
       "css": ["overlay/overlay.css"],
       "run_at": "document_idle"

@@ -1,3 +1,5 @@
+// Deprecated: the active extension loads packages/core/dist/extension-bot.iife.js instead.
+// Keep this file only as a reference when porting bot changes into packages/core.
 (function (root) {
   root.IRCTCExt = root.IRCTCExt || {};
 })(typeof globalThis !== 'undefined' ? globalThis : window);

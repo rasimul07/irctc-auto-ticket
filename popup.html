@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>IRCTC Tatkal</title>
+  <link rel="stylesheet" href="packages/core/src/theme/tokens.css">
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
@@ -17,14 +18,33 @@
 
   <div id="popupBody" class="popup-body">
   <div id="toast" class="toast toast--hidden" role="alert" aria-live="polite"></div>
-  <nav class="tabs">
-    <button class="tab active" data-tab="access">Access</button>
-    <button class="tab" data-tab="credentials">Login</button>
-    <button class="tab" data-tab="journey">Journey</button>
-    <button class="tab" data-tab="passengers">Passengers</button>
-    <button class="tab" data-tab="schedule">Timer</button>
-    <button class="tab" data-tab="payment">Payment</button>
-  </nav>
+  <section id="profileBar" class="profile-bar" aria-label="Booking sets">
+    <div class="profile-bar__row">
+      <label class="profile-bar__label" for="bookingSetSelect">Active set</label>
+      <select id="bookingSetSelect" class="profile-bar__select"></select>
+    </div>
+    <div class="profile-bar__actions">
+      <button type="button" id="addSetBtn" class="btn-secondary btn-compact" title="Add set">+</button>
+      <button type="button" id="duplicateSetBtn" class="btn-secondary btn-compact" title="Duplicate set">Copy</button>
+      <button type="button" id="renameSetBtn" class="btn-secondary btn-compact" title="Rename set">Rename</button>
+      <button type="button" id="deleteSetBtn" class="btn-secondary btn-compact" title="Delete set">Delete</button>
+    </div>
+  </section>
+  <div class="tabs-scroll">
+    <nav class="tabs">
+      <button class="tab active" data-tab="access">Access</button>
+      <button class="tab" data-tab="credentials">Login</button>
+      <button class="tab" data-tab="journey">Journey</button>
+      <button class="tab" data-tab="passengers">Passengers</button>
+      <button class="tab" data-tab="schedule">Timer</button>
+      <button class="tab" data-tab="payment">Payment</button>
+    </nav>
+  </div>
+  <div id="setupProgress" class="setup-progress" aria-label="Setup progress">
+    <div class="setup-progress__bar" aria-hidden="true"><span id="setupProgressFill" style="width:0%"></span></div>
+    <div id="setupProgressSteps" class="setup-progress__steps"></div>
+    <span id="setupProgressLabel" class="setup-progress__label">0/4</span>
+  </div>
 
   <main>
     <section id="access" class="panel active">
@@ -131,6 +151,7 @@
     </section>
 
     <section id="credentials" class="panel">
+      <p class="pre-start-note">Review Login, Journey, Passengers, Timer, and Payment tabs before starting auto-booking.</p>
       <label>Username <input type="text" id="username" autocomplete="username"></label>
       <label>Password
         <div class="password-field">
@@ -262,13 +283,11 @@
   </main>
 
   <footer class="actions">
-    <p class="pre-start-note">Review Login, Journey, Passengers, Timer, and Payment tabs before starting auto-booking.</p>
     <div class="actions__row actions__row--primary">
       <button type="button" id="saveBtn" class="btn-primary btn-compact">Save</button>
       <button type="button" id="startBtn" class="btn-accent btn-compact" title="Start Auto-Booking">Start</button>
     </div>
     <button type="button" id="clearBtn" class="btn-danger btn-compact btn-compact--ghost">Clear all</button>
-    <p id="message" class="message"></p>
   </footer>
   </div>
 

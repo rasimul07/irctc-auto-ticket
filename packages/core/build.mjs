@@ -7,6 +7,16 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const dist = join(__dirname, 'dist');
 mkdirSync(dist, { recursive: true });
 
+const sharedBotLibs = [
+  'src/bot/lib/wait.js',
+  'src/bot/lib/modals.js',
+  'src/bot/lib/events.js',
+  'src/bot/lib/stations.js',
+  'src/bot/lib/passengers.js',
+  'src/bot/lib/psgnPreferences.js',
+  'src/bot/lib/bkgPayment.js'
+];
+
 const extensionBotFiles = [
   'src/bot/sites/registry.js',
   'src/bot/sites/eticket/config.js',
@@ -17,17 +27,28 @@ const extensionBotFiles = [
   'src/bot/sites/eticket/flows/search.js',
   'src/bot/sites/eticket/flows/booking.js',
   'src/bot/sites/eticket/index.js',
-  'src/bot/lib/wait.js',
-  'src/bot/lib/modals.js',
-  'src/bot/lib/events.js',
-  'src/bot/lib/stations.js',
-  'src/bot/lib/passengers.js',
-  'src/bot/lib/psgnPreferences.js',
+  ...sharedBotLibs,
   'src/bot/overlay/overlay.js',
   'src/bot/bot.js'
 ];
 
 const webviewBotFiles = ['src/bot/webview-storage.js', ...extensionBotFiles];
+
+const gatewaySharedFiles = [
+  'src/bot/sites/eticket/selectors.js',
+  'src/bot/lib/wait.js',
+  'src/bot/lib/events.js',
+  'src/bot/lib/bkgPayment.js',
+  'src/bot/lib/gateways/irctcIpay.js',
+  'src/bot/lib/gateways/phonepe.js',
+  'src/bot/lib/gateways/index.js',
+  'src/bot/overlay/overlay.js',
+  'src/bot/gateway-bot.js'
+];
+
+const gatewayBotFiles = ['src/bot/webview-storage.js', ...gatewaySharedFiles];
+
+const extensionGatewayFiles = [...gatewaySharedFiles];
 
 function writeConcatBundle(name, files) {
   const content = files.map((f) => readFileSync(join(__dirname, f), 'utf8')).join('\n;\n');
@@ -55,8 +76,10 @@ await esbuild.build({
 
 writeConcatBundle('bot-bundle', webviewBotFiles);
 writeConcatBundle('extension-bot', extensionBotFiles);
+writeConcatBundle('gateway-bundle', gatewayBotFiles);
+writeConcatBundle('extension-gateway', extensionGatewayFiles);
 
-for (const name of ['bot-bundle', 'extension-bot']) {
+for (const name of ['bot-bundle', 'extension-bot', 'gateway-bundle', 'extension-gateway']) {
   await esbuild.build({
     entryPoints: [join(dist, `${name}.raw.js`)],
     outfile: join(dist, `${name}.iife.js`),
