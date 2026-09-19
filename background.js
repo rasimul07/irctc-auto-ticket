@@ -3,7 +3,7 @@ importScripts(
   'lib/schedule.js',
   'sites/registry.js',
   'packages/core/src/bot/sites/eticket/config.js',
-  'sites/nget/config.js'
+  'packages/core/src/bot/sites/nget/config.js'
 );
 
 IRCTCExt.SiteRegistry.register(IRCTCExt.EticketConfig);
@@ -29,21 +29,8 @@ async function updateStoreState(updates) {
   await saveConfigStore(store);
 }
 
-const NGET_SITE_FILES = [
-  'sites/nget/config.js',
-  'sites/nget/selectors.js',
-  'sites/nget/paths.js',
-  'sites/nget/flows/language.js',
-  'sites/nget/flows/login.js',
-  'sites/nget/flows/search.js',
-  'sites/nget/flows/booking.js',
-  'sites/nget/trainList.js',
-  'sites/nget/index.js'
-];
-
 const CONTENT_SCRIPT_FILES = [
   'packages/core/dist/chrome-core.iife.js',
-  ...NGET_SITE_FILES,
   'packages/core/dist/extension-bot.iife.js',
   'overlay/paymentReview.js'
 ];

@@ -47,15 +47,6 @@
       ],
       "js": [
         "packages/core/dist/chrome-core.iife.js",
-        "sites/nget/config.js",
-        "sites/nget/selectors.js",
-        "sites/nget/paths.js",
-        "sites/nget/flows/language.js",
-        "sites/nget/flows/login.js",
-        "sites/nget/flows/search.js",
-        "sites/nget/flows/booking.js",
-        "sites/nget/trainList.js",
-        "sites/nget/index.js",
         "packages/core/dist/extension-bot.iife.js",
         "overlay/paymentReview.js"
       ],

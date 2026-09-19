@@ -213,9 +213,9 @@ Choose **IRCTC website version** on the popup **Access** tab (`preferences.booki
 | **eticket** (beta) | `/eticket` | `https://www.irctc.co.in/eticket/train-search` | Fully automated |
 | **nget** (classic) | `/nget` | `https://www.irctc.co.in/nget/train-search` | Stub only — coming soon |
 
-Site-specific automation lives under [`sites/eticket/`](sites/eticket/) and [`sites/nget/`](sites/nget/). Shared DOM helpers stay in [`lib/`](lib/). The active site is resolved by [`sites/registry.js`](sites/registry.js).
+Site-specific automation lives under [`packages/core/src/bot/sites/eticket/`](packages/core/src/bot/sites/eticket/) and [`packages/core/src/bot/sites/nget/`](packages/core/src/bot/sites/nget/). Shared DOM helpers are in [`packages/core/src/bot/lib/`](packages/core/src/bot/lib/). The active site is resolved by [`packages/core/src/bot/sites/registry.js`](packages/core/src/bot/sites/registry.js) (also loaded at `document_start` via [`sites/registry.js`](sites/registry.js)).
 
-To add a step for a site: implement it in `sites/<site>/flows/`, wire path detection in `sites/<site>/paths.js`, and register selectors in `sites/<site>/selectors.js`.
+To add a step for a site: implement it in `packages/core/src/bot/sites/<site>/flows/`, wire path detection in `paths.js`, and register selectors in `selectors.js`, then add the files to [`packages/core/build.mjs`](packages/core/build.mjs).
 
 ### IRCTC pages (eticket / beta)
 
@@ -269,21 +269,23 @@ On IRCTC pages: **Pause**, **Restart** (train-search), **Stop**, and **Continue*
 ├── content_script.js      # Bot router → sites/registry
 ├── gateway_script.js      # irctcipay.com resume
 ├── sites/
-│   ├── registry.js        # Active site resolver (eticket | nget)
-│   ├── eticket/           # Beta IRCTC flow (selectors, paths, flows, trainList)
-│   └── nget/              # Classic IRCTC flow (stub)
-├── lib/                   # Shared DOM helpers, passenger/payment logic, API client
+│   └── registry.js        # Active site resolver (document_start bootstrap)
+├── packages/core/         # @rasimul07/core — shared bot, sites, bundles
+│   └── src/bot/sites/
+│       ├── eticket/       # Beta IRCTC flow
+│       └── nget/          # Classic IRCTC flow
+├── lib/                   # Legacy shared helpers (most logic moved to packages/core)
 ├── overlay/               # Status overlay + payment-page review panel
 └── backend/               # Access/licensing API (Express + Postgres)
 ```
 
 | Module | Role |
 |--------|------|
-| `sites/eticket/trainList.js` | Train match, availability, Book (eticket) |
-| `sites/eticket/flows/` | Login, search, booking steps (eticket) |
-| `lib/passengers.js` | Existing-passenger modal |
-| `lib/psgnPreferences.js` | Loyalty, payment method, fare, review |
-| `lib/bkgPayment.js` | Provider selection, Pay & Book |
+| `packages/core/src/bot/sites/eticket/trainList.js` | Train match, availability, Book (eticket) |
+| `packages/core/src/bot/sites/nget/` | Classic IRCTC flow (language, login, search, booking) |
+| `packages/core/src/bot/lib/passengers.js` | Passenger add/reconcile |
+| `packages/core/src/bot/lib/psgnPreferences.js` | Loyalty, payment method, fare, review |
+| `packages/core/src/bot/lib/bkgPayment.js` | Provider selection, Pay & Book |
 | `lib/gateways/irctcIpay.js` | iPay auto-fill |
 | `lib/gateways/phonepe.js` | PhonePe Mercury auto-fill (card + QR) |
 | `lib/storage.js` | `chrome.storage.local` → `irctcConfig` |

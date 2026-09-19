@@ -1364,6 +1364,1633 @@ IRCTCExt.EticketSite = {
 IRCTCExt.SiteRegistry?.register(IRCTCExt.EticketSite);
 
 ;
+(function (root) {
+  root.IRCTCExt = root.IRCTCExt || {};
+
+  IRCTCExt.NgetConfig = {
+    id: 'nget',
+    label: 'Classic — nget',
+    homeUrl: 'https://www.irctc.co.in/nget',
+    trainSearchUrl: 'https://www.irctc.co.in/nget/train-search',
+    trainSearchPath: '/nget/train-search',
+    urlPattern: 'https://www.irctc.co.in/nget/*',
+    trainSearchUrlPattern: 'https://www.irctc.co.in/nget/train-search*',
+    errorPagePath: '/nget/error'
+  };
+})(typeof globalThis !== 'undefined' ? globalThis : window);
+
+;
+window.IRCTCExt = window.IRCTCExt || {};
+
+// TODO: verify nget path segments when implementing classic flow automation.
+IRCTCExt.NgetPaths = {
+  syncStepFromPath(path, state = {}) {
+    if (path.includes('payment')) return 'payment';
+    if (path.includes('review')) return 'review';
+    if (path.includes('psgninput')) return state.passengersDone ? 'review' : 'passengers';
+    if (path.includes('train-list')) return 'train-list';
+    if (path.includes('train-search')) {
+      if (IRCTCExt.NgetLanguageFlow?.isLanguageModalVisible?.()) return 'language';
+      if (IRCTCExt.NgetLoginFlow?.needsLogin?.()) return 'login';
+      return 'search';
+    }
+    return 'init';
+  },
+
+  isErrorPage(path = location.pathname) {
+    return path.includes(IRCTCExt.NgetConfig.errorPagePath);
+  },
+
+  isTrainListPath(path = location.pathname) {
+    return path.includes('train-list');
+  },
+
+  isTrainSearchPath(path = location.pathname) {
+    return path.includes('train-search');
+  },
+
+  isPaymentPath(path = location.pathname) {
+    return path.includes('payment');
+  },
+
+  isReviewPath(path = location.pathname) {
+    return path.includes('review');
+  },
+
+  isPassengerPath(path = location.pathname) {
+    return path.includes('psgninput');
+  }
+};
+
+;
+window.IRCTCExt = window.IRCTCExt || {};
+
+IRCTCExt.NgetSelectors = {
+  languageDialog: [
+    '.ui-dialog-content .pnr-detail',
+    '.ui-dialog-content',
+    '.ui-dialog.ui-widget'
+  ],
+  languageButtons: [
+    '.ui-dialog-content button.btn.btn-primary',
+    '.ui-dialog-content button.btn-primary',
+    '.ui-dialog button.btn-primary'
+  ],
+  languageButtonRow: [
+    '.ui-dialog-content .text-center.col-xs-12',
+    '.ui-dialog-content .text-center'
+  ],
+  languageEnglishSubmit: [
+    '.ui-dialog-content button[type="submit"].btn-primary',
+    '.ui-dialog button[type="submit"].btn-primary'
+  ],
+  loginHeaderBtn: [
+    'a.search_btn.loginText[aria-label*="Login"]',
+    'a.search_btn.loginText',
+    'button.search_btn:not(.train_Search)'
+  ], // desktop + sidebar; prefer findDesktopLoginButton / findSidebarLoginButton
+  hamburgerMenu: [
+    '.h_menu_drop_button a',
+    '.h_menu_drop_button .fa-align-justify',
+    'div.h_menu_drop_button a'
+  ],
+  hamburgerSidebar: [
+    '.ui-sidebar.ui-sidebar-active',
+    '.ui-sidebar-right.ui-sidebar-active'
+  ],
+  sidebarLoginBtn: [
+    '.ui-sidebar-active nav.nav-bar button.search_btn',
+    '.ui-sidebar-active button.search_btn'
+  ],
+  desktopLoginBtn: [
+    'a.search_btn.loginText[aria-label*="Login"]',
+    'a.search_btn.loginText'
+  ],
+  loginDialog: ['.ui-dialog-content:has(.irmodal)', '.ui-dialog .ui-dialog-content'],
+  loginModal: ['.ui-dialog-content .irmodal', '.ui-dialog-content .irmodal[role="form"]', '.irmodal'],
+  loginUsername: [
+    'input[formcontrolname="userid"]',
+    'input[placeholder="User Name"]',
+    '.irmodal input[formcontrolname="userid"]'
+  ],
+  loginPassword: [
+    'input[formcontrolname="password"]',
+    'input[placeholder="Password"]',
+    '.irmodal input[formcontrolname="password"]'
+  ],
+  loginSubmit: [
+    'button.train_Search[type="submit"]',
+    'button.search_btn.train_Search.train_Search_custom_hover[type="submit"]',
+    '.irmodal button.train_Search[type="submit"]',
+    '.irmodal button.search_btn.train_Search'
+  ],
+  loginCaptcha: [
+    '.irmodal input[placeholder*="Captcha"]',
+    '.irmodal input[placeholder*="CAPTCHA"]',
+    '.irmodal input[formcontrolname="captcha"]'
+  ],
+  loggedInProfile: [
+    'a[href*="logout"]',
+    'button[aria-label*="Logout"]',
+    '.user-profile',
+    '.profile-icon'
+  ],
+  searchFrom: [
+    'p-autocomplete#origin input.ui-autocomplete-input',
+    '#origin input.ui-autocomplete-input',
+    'p-autocomplete[formcontrolname="origin"] input'
+  ],
+  searchTo: [
+    'p-autocomplete#destination input.ui-autocomplete-input',
+    '#destination input.ui-autocomplete-input',
+    'p-autocomplete[formcontrolname="destination"] input'
+  ],
+  searchDate: [
+    'p-calendar#jDate input',
+    'p-calendar[formcontrolname="journeyDate"] input',
+    '#jDate input'
+  ],
+  searchClass: [
+    'p-dropdown#journeyClass .ui-dropdown-trigger',
+    'p-dropdown[formcontrolname="journeyClass"] .ui-dropdown-trigger'
+  ],
+  searchQuota: [
+    'p-dropdown#journeyQuota .ui-dropdown-trigger',
+    'p-dropdown[formcontrolname="journeyQuota"] .ui-dropdown-trigger'
+  ],
+  searchButton: [
+    'button.search_btn.train_Search',
+    'button.train_Search[type="submit"]',
+    'button.train_Search'
+  ],
+  autocompletePanel: [
+    '.ui-autocomplete-panel',
+    'ul.ui-autocomplete-items'
+  ],
+  autocompleteOptions: [
+    '.ui-autocomplete-panel li.ui-autocomplete-list-item',
+    'ul.ui-autocomplete-items li'
+  ],
+  dropdownPanel: [
+    '.ui-dropdown-panel .ui-dropdown-item',
+    'ul.ui-dropdown-items li',
+    '.ui-dropdown-panel li'
+  ],
+  dropdownOptions: [
+    '.ui-dropdown-panel .ui-dropdown-item',
+    'ul.ui-dropdown-items li'
+  ],
+  calendarPanel: [
+    '.ui-datepicker',
+    '.ui-datepicker-calendar'
+  ],
+  trainList: {
+    container: ['.trains-div', 'app-train-avl-enq'],
+    trainCard: ['app-train-avl-enq'],
+    trainHeading: ['.train-heading strong'],
+    classCell: ['div.pre-avl'],
+    classLabel: ['div.pre-avl strong'],
+    classRefreshLink: ['div.pre-avl .col-xs-12.link', 'div.pre-avl .link'],
+    classRefreshIcon: ['div.pre-avl .fa-repeat', 'div.pre-avl .fa.fa-repeat'],
+    classStatus: ['div.pre-avl'],
+    classPickerCell: ['div.pre-avl'],
+    classTabMenu: ['p-tabmenu', '.ui-tabmenu'],
+    classTabItem: ['.ui-tabmenuitem'],
+    classTabActive: ['.ui-tabmenuitem.ui-state-active'],
+    datePanel: ['p-tabmenu'],
+    dateCell: ['div.pre-avl'],
+    dateLabel: ['div.pre-avl > div:first-child strong'],
+    dateStatus: ['div.pre-avl .AVAILABLE', 'div.pre-avl .RAC', 'div.pre-avl .WL', 'div.pre-avl .REGRET'],
+    bookNowBtn: ['button.train_Search', 'button.btnDefault.train_Search'],
+    bookNowEnabled: [
+      'button.train_Search:not(.disable-book)',
+      'button.btnDefault.train_Search:not(.disable-book)'
+    ]
+  }
+};
+
+;
+(function (root) {
+  root.IRCTCExt = root.IRCTCExt || {};
+  if (IRCTCExt.NgetTrainList) return;
+
+  IRCTCExt.NgetTrainList = {
+    setStatus(overlay, msg) {
+      overlay?.setStatus(msg);
+    },
+
+    scrollIntoViewIfNeeded(el) {
+      if (!el) return;
+      el.scrollIntoView({ block: 'center', inline: 'nearest' });
+    },
+
+    normalizeTrainText(text) {
+      return String(text || '')
+        .toLowerCase()
+        .replace(/[^\w\s]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    },
+
+    scoreTrainName(cardName, searchName) {
+      const a = IRCTCExt.NgetTrainList.normalizeTrainText(cardName);
+      const b = IRCTCExt.NgetTrainList.normalizeTrainText(searchName);
+      if (!b) return 0;
+      if (a === b) return 100;
+      if (a.includes(b) || b.includes(a)) return 80;
+
+      const wordsA = a.split(' ').filter(Boolean);
+      const wordsB = b.split(' ').filter(Boolean);
+      if (!wordsB.length) return 0;
+
+      const overlap = wordsB.filter((word) =>
+        wordsA.some((cardWord) => cardWord.includes(word) || word.includes(cardWord))
+      ).length;
+      return Math.round((overlap / wordsB.length) * 70);
+    },
+
+    parseCardHeading(text) {
+      const raw = String(text || '').trim();
+      const match = raw.match(/^(.+?)\s*\(\s*(\d+)\s*\)\s*$/);
+      if (!match) return { name: raw, number: '' };
+      return { name: match[1].trim(), number: match[2].trim() };
+    },
+
+    getCardHeading(card) {
+      const sel = IRCTCExt.SELECTORS.trainList;
+      const el = IRCTCExt.Wait.queryOne(sel.trainHeading, card);
+      return (el?.textContent || '').trim();
+    },
+
+    getCardTrainName(card) {
+      return IRCTCExt.NgetTrainList.parseCardHeading(IRCTCExt.NgetTrainList.getCardHeading(card)).name;
+    },
+
+    getCardTrainNumber(card) {
+      return IRCTCExt.NgetTrainList.parseCardHeading(IRCTCExt.NgetTrainList.getCardHeading(card)).number;
+    },
+
+    resolveTrainCard(el) {
+      if (!el) return null;
+      if (el.matches?.('app-train-avl-enq')) return el;
+      return el.closest('app-train-avl-enq');
+    },
+
+    isPopulatedTrainCard(card) {
+      if (!card) return false;
+      const heading = IRCTCExt.Wait.queryOne(IRCTCExt.SELECTORS.trainList.trainHeading, card);
+      return !!(heading && IRCTCExt.Wait.isVisible(heading));
+    },
+
+    getPopulatedTrainCards() {
+      const sel = IRCTCExt.SELECTORS.trainList;
+      const headingSelector = sel.trainHeading?.[0] || '.train-heading strong';
+      const cards = [];
+      const seen = new Set();
+
+      for (const heading of document.querySelectorAll(headingSelector)) {
+        if (!IRCTCExt.Wait.isVisible(heading)) continue;
+        const card = IRCTCExt.NgetTrainList.resolveTrainCard(heading);
+        if (!card || seen.has(card)) continue;
+        if (!IRCTCExt.NgetTrainList.isPopulatedTrainCard(card)) continue;
+        seen.add(card);
+        cards.push(card);
+      }
+
+      if (cards.length) return cards;
+
+      return [...document.querySelectorAll(sel.trainCard?.[0] || 'app-train-avl-enq')].filter((card) =>
+        IRCTCExt.NgetTrainList.isPopulatedTrainCard(card)
+      );
+    },
+
+    findTrainCardByNumber(trainNo) {
+      const normalized = String(trainNo || '').trim();
+      if (!normalized) return null;
+
+      for (const card of IRCTCExt.NgetTrainList.getPopulatedTrainCards()) {
+        if (IRCTCExt.NgetTrainList.getCardTrainNumber(card) === normalized) return card;
+      }
+
+      const headingSelector = IRCTCExt.SELECTORS.trainList.trainHeading?.[0] || '.train-heading strong';
+      const numberPattern = new RegExp(`\\(\\s*${normalized}\\s*\\)`);
+      for (const heading of document.querySelectorAll(headingSelector)) {
+        if (!IRCTCExt.Wait.isVisible(heading)) continue;
+        if (!numberPattern.test(heading.textContent || '')) continue;
+        const card = IRCTCExt.NgetTrainList.resolveTrainCard(heading);
+        if (card && IRCTCExt.NgetTrainList.isPopulatedTrainCard(card)) return card;
+      }
+
+      return null;
+    },
+
+    findTrainCardByName(trainName, minScore = 50) {
+      if (!trainName) return null;
+
+      const normalizedSearch = IRCTCExt.NgetTrainList.normalizeTrainText(trainName);
+      let bestCard = null;
+      let bestScore = 0;
+
+      for (const card of IRCTCExt.NgetTrainList.getPopulatedTrainCards()) {
+        const name = IRCTCExt.NgetTrainList.getCardTrainName(card);
+        const normalizedName = IRCTCExt.NgetTrainList.normalizeTrainText(name);
+        if (normalizedName === normalizedSearch) return card;
+
+        const score = IRCTCExt.NgetTrainList.scoreTrainName(name, trainName);
+        if (score > bestScore) {
+          bestScore = score;
+          bestCard = card;
+        }
+      }
+
+      return bestScore >= minScore ? bestCard : null;
+    },
+
+    findTrainCard(journey = {}) {
+      const trainNo = String(journey.trainNo || '').trim();
+      const trainName = String(journey.trainName || '').trim();
+
+      if (trainNo) {
+        const byNumber = IRCTCExt.NgetTrainList.findTrainCardByNumber(trainNo);
+        if (byNumber) return byNumber;
+
+        if (!/^\d+$/.test(trainNo)) {
+          const byNoAsName = IRCTCExt.NgetTrainList.findTrainCardByName(trainNo);
+          if (byNoAsName) return byNoAsName;
+        }
+      }
+
+      if (trainName) {
+        const byName = IRCTCExt.NgetTrainList.findTrainCardByName(trainName);
+        if (byName) return byName;
+      }
+
+      if (trainName || trainNo) return null;
+      return IRCTCExt.NgetTrainList.getPopulatedTrainCards()[0] || null;
+    },
+
+    async waitForTrainListReady(overlay) {
+      IRCTCExt.NgetTrainList.setStatus(overlay, 'Waiting for train list...');
+
+      const ready = await IRCTCExt.Wait.poll(
+        () => (IRCTCExt.NgetTrainList.getPopulatedTrainCards().length > 0 ? true : null),
+        { timeout: 20000, interval: 100 }
+      );
+
+      if (!ready) throw new Error('Train list did not load');
+    },
+
+    async findTrainCardWithPoll(journey, searchLabel, overlay) {
+      IRCTCExt.NgetTrainList.setStatus(overlay, `Searching train list for ${searchLabel}...`);
+
+      let card = IRCTCExt.NgetTrainList.findTrainCard(journey);
+      if (card) return card;
+
+      card = await IRCTCExt.Wait.poll(() => IRCTCExt.NgetTrainList.findTrainCard(journey), {
+        timeout: 8000,
+        interval: 100
+      });
+
+      if (!card && (journey.trainName || journey.trainNo)) {
+        throw new Error(`Train ${searchLabel} not found in results`);
+      }
+      if (!card) throw new Error('No trains found on page');
+      return card;
+    },
+
+    classCellMatchesTravelClass(classCell, travelClass) {
+      if (!classCell || !travelClass) return false;
+
+      const labelEl = classCell.querySelector('strong');
+      const text = (labelEl?.textContent || classCell.textContent || '').trim();
+      const normalizedClass = String(travelClass).trim().toUpperCase();
+      const classLabel = IRCTCExt.Stations.getClassLabel(travelClass);
+
+      if (text.includes(classLabel)) return true;
+      if (new RegExp(`\\(\\s*${normalizedClass}\\s*\\)`).test(text)) return true;
+      if (new RegExp(`\\b${normalizedClass}\\b`).test(text.toUpperCase())) return true;
+
+      return false;
+    },
+
+    isClassPickerCell(cell) {
+      if (!cell || IRCTCExt.NgetTrainList.isDateAvailabilityCell(cell)) return false;
+
+      if (IRCTCExt.NgetTrainList.findClassRefreshControl(cell)) return true;
+
+      const strong = cell.querySelector('div:first-child strong, strong');
+      const label = (strong?.textContent || '').trim();
+      if (!label) return false;
+      if (/\b(mon|tue|wed|thu|fri|sat|sun)\b/i.test(label)) return false;
+
+      return (
+        /\([A-Z0-9]{1,3}\)/.test(label) ||
+        /sleeper|tier|class|chair|sitting|economy|anubhuti|vistadome/i.test(label)
+      );
+    },
+
+    isDateAvailabilityCell(cell) {
+      if (!cell) return false;
+      if (cell.querySelector('.AVAILABLE, .RAC, .WL, .REGRET')) return true;
+      const label = IRCTCExt.NgetTrainList.getDateCellLabel(cell);
+      return /\b(mon|tue|wed|thu|fri|sat|sun)\b/i.test(label);
+    },
+
+    getClassPickerCells(card) {
+      const sel = IRCTCExt.SELECTORS.trainList;
+      const cells = [...card.querySelectorAll(sel.classPickerCell?.[0] || 'div.pre-avl')];
+      return cells.filter((cell) => IRCTCExt.NgetTrainList.isClassPickerCell(cell));
+    },
+
+    getClassCells(card) {
+      return IRCTCExt.NgetTrainList.getClassPickerCells(card);
+    },
+
+    getDatePanel(card) {
+      const sel = IRCTCExt.SELECTORS.trainList;
+      return IRCTCExt.Wait.queryOne(sel.datePanel, card);
+    },
+
+    getDateAvailabilityCells(card) {
+      const panel = IRCTCExt.NgetTrainList.getDatePanel(card);
+      if (!panel) return [];
+
+      const container = panel.closest('.col-xs-12') || card;
+      const cells = [...container.querySelectorAll('div.pre-avl')];
+      return cells.filter((cell) => IRCTCExt.NgetTrainList.isDateAvailabilityCell(cell));
+    },
+
+    getDateCellLabel(dateCell) {
+      const sel = IRCTCExt.SELECTORS.trainList;
+      const labelEl = IRCTCExt.Wait.queryOne(sel.dateLabel, dateCell) || dateCell.querySelector('strong');
+      return (labelEl?.textContent || '').trim();
+    },
+
+    findClassCell(card, travelClass) {
+      for (const classCell of IRCTCExt.NgetTrainList.getClassPickerCells(card)) {
+        if (IRCTCExt.NgetTrainList.classCellMatchesTravelClass(classCell, travelClass)) {
+          return classCell;
+        }
+      }
+      return null;
+    },
+
+    async findClassCellWithScroll(card, travelClass, overlay) {
+      for (let i = 0; i < 8; i += 1) {
+        const classCell = IRCTCExt.NgetTrainList.findClassCell(card, travelClass);
+        if (classCell) {
+          IRCTCExt.NgetTrainList.scrollIntoViewIfNeeded(classCell);
+          return classCell;
+        }
+
+        const scrollHost = card.querySelector('[style*="overflow-x"]') || card.querySelector('table');
+        if (scrollHost && scrollHost.scrollWidth > scrollHost.clientWidth) {
+          IRCTCExt.NgetTrainList.setStatus(overlay, `Scrolling to find class ${travelClass}...`);
+          scrollHost.scrollLeft += Math.min(180, scrollHost.clientWidth);
+          await IRCTCExt.Wait.delay(250);
+          continue;
+        }
+        break;
+      }
+
+      const classCell = IRCTCExt.NgetTrainList.findClassCell(card, travelClass);
+      if (classCell) IRCTCExt.NgetTrainList.scrollIntoViewIfNeeded(classCell);
+      return classCell;
+    },
+
+    findClassRefreshControl(classCell) {
+      if (!classCell) return null;
+
+      const sel = IRCTCExt.SELECTORS.trainList;
+      const links = IRCTCExt.Wait.queryAll(sel.classRefreshLink, classCell);
+      const link = links.find(
+        (el) => /refresh/i.test(el.textContent || '') && IRCTCExt.Wait.isVisible(el)
+      );
+      if (link) return link;
+
+      const icons = IRCTCExt.Wait.queryAll(sel.classRefreshIcon, classCell);
+      const icon = icons.find((el) => IRCTCExt.Wait.isVisible(el));
+      if (icon) return icon;
+
+      return null;
+    },
+
+    async waitForDatePanel(card, overlay) {
+      const loaded = await IRCTCExt.Wait.poll(
+        () => {
+          const panel = IRCTCExt.NgetTrainList.getDatePanel(card);
+          if (!panel || !IRCTCExt.Wait.isVisible(panel)) return null;
+          return IRCTCExt.NgetTrainList.getDateAvailabilityCells(card).length > 0 ? true : null;
+        },
+        { timeout: 10000, interval: 200 }
+      );
+
+      if (!loaded) throw new Error('Date availability panel did not load');
+      return true;
+    },
+
+    parseDateCellStatus(dateCell) {
+      const sel = IRCTCExt.SELECTORS.trainList;
+      const statusEl = IRCTCExt.Wait.queryOne(sel.dateStatus, dateCell);
+      const text = (statusEl?.textContent || dateCell?.textContent || '').replace(/\s+/g, ' ').trim();
+      const status = { type: '', text };
+
+      const upper = text.toUpperCase();
+      if (/high\s*load|please\s*retry/i.test(text)) status.type = 'HIGH_LOAD';
+      else if (statusEl?.classList.contains('AVAILABLE') || upper.includes('AVAILABLE')) status.type = 'AVAILABLE';
+      else if (statusEl?.classList.contains('RAC') || /\bRAC\b/.test(upper)) status.type = 'RAC';
+      else if (statusEl?.classList.contains('WL') || /\bWL\b/.test(upper)) status.type = 'WL';
+      else if (statusEl?.classList.contains('REGRET') || upper.includes('REGRET') || /not available/i.test(text)) {
+        status.type = 'REGRET';
+      }
+
+      return status;
+    },
+
+    findDateCell(card, journeyDate) {
+      if (!journeyDate) return null;
+
+      for (const dateCell of IRCTCExt.NgetTrainList.getDateAvailabilityCells(card)) {
+        const label = IRCTCExt.NgetTrainList.getDateCellLabel(dateCell);
+        if (IRCTCExt.Stations.dateLabelsMatch(journeyDate, label)) return dateCell;
+      }
+
+      return null;
+    },
+
+    classTabMatchesTravelClass(tab, travelClass) {
+      if (!tab || !travelClass) return false;
+      const text = (tab.textContent || '').trim();
+      const normalizedClass = String(travelClass).trim().toUpperCase();
+      const classLabel = IRCTCExt.Stations.getClassLabel(travelClass);
+
+      if (text.includes(classLabel)) return true;
+      if (new RegExp(`\\(\\s*${normalizedClass}\\s*\\)`).test(text)) return true;
+      if (new RegExp(`\\b${normalizedClass}\\b`).test(text.toUpperCase())) return true;
+
+      return false;
+    },
+
+    async ensureClassTabActive(card, travelClass, overlay) {
+      const sel = IRCTCExt.SELECTORS.trainList;
+      const active = IRCTCExt.Wait.queryOne(sel.classTabActive, card);
+      if (active && IRCTCExt.NgetTrainList.classTabMatchesTravelClass(active, travelClass)) return;
+
+      const tabs = IRCTCExt.Wait.queryAll(sel.classTabItem, card);
+      const match = tabs.find((tab) => IRCTCExt.NgetTrainList.classTabMatchesTravelClass(tab, travelClass));
+      if (!match) return;
+
+      IRCTCExt.NgetTrainList.setStatus(overlay, `Selecting class tab ${travelClass}...`);
+      IRCTCExt.Events.click(match.querySelector('a') || match);
+      await IRCTCExt.Wait.delay(300);
+    },
+
+    isHighLoadStatus(status) {
+      const text = String(status?.text || '');
+      return /high\s*load|please\s*retry/i.test(text) || status?.type === 'HIGH_LOAD';
+    },
+
+    isRetryableAvailabilityError(status) {
+      return IRCTCExt.NgetTrainList.isHighLoadStatus(status);
+    },
+
+    isBookableStatus(statusType) {
+      return statusType === 'AVAILABLE' || statusType === 'RAC';
+    },
+
+    async refreshClassAvailability(classPickerCell, card, overlay, travelClass) {
+      IRCTCExt.NgetTrainList.scrollIntoViewIfNeeded(classPickerCell);
+
+      const refresh = IRCTCExt.NgetTrainList.findClassRefreshControl(classPickerCell);
+      if (!refresh) throw new Error(`Refresh control not found for class ${travelClass}`);
+
+      IRCTCExt.NgetTrainList.setStatus(overlay, `Refreshing availability for ${travelClass}...`);
+      IRCTCExt.Events.click(refresh);
+      await IRCTCExt.Wait.delay(500);
+      await IRCTCExt.NgetTrainList.waitForDatePanel(card, overlay);
+      return true;
+    },
+
+    async waitForBookableDate(card, journeyDate, travelClass, classPickerCell, overlay) {
+      let attempt = 0;
+      const dateLabel = IRCTCExt.Stations.formatDateForNgetCard(journeyDate) || journeyDate;
+
+      while (await IRCTCExt.Bot.isRunning()) {
+        const control = await IRCTCExt.Bot.checkControlState();
+        if (control === 'stopped') throw new Error('Booking stopped');
+        if (control === 'paused') {
+          IRCTCExt.NgetTrainList.setStatus(overlay, 'Paused — click Resume to continue...');
+          await IRCTCExt.Bot.waitUntilResumedOrStopped();
+          if (!(await IRCTCExt.Bot.isRunning())) throw new Error('Booking stopped');
+          continue;
+        }
+
+        await IRCTCExt.NgetTrainList.waitForDatePanel(card, overlay);
+        await IRCTCExt.NgetTrainList.ensureClassTabActive(card, travelClass, overlay);
+
+        const dateCell = IRCTCExt.NgetTrainList.findDateCell(card, journeyDate);
+        if (!dateCell) {
+          throw new Error(`Journey date not found in availability (${dateLabel})`);
+        }
+
+        const status = IRCTCExt.NgetTrainList.parseDateCellStatus(dateCell);
+        if (IRCTCExt.NgetTrainList.isBookableStatus(status.type)) {
+          return { dateCell, status };
+        }
+
+        if (!IRCTCExt.NgetTrainList.isRetryableAvailabilityError(status)) {
+          throw new Error(
+            `${dateLabel} shows ${status.text || status.type || 'not available'} — not bookable`
+          );
+        }
+
+        attempt += 1;
+        IRCTCExt.NgetTrainList.setStatus(
+          overlay,
+          `High load on ${dateLabel} — refreshing (attempt ${attempt})...`
+        );
+        await IRCTCExt.NgetTrainList.refreshClassAvailability(
+          classPickerCell,
+          card,
+          overlay,
+          travelClass
+        );
+        await IRCTCExt.Wait.delay(400);
+      }
+
+      throw new Error('Booking stopped');
+    },
+
+    selectDateCell(dateCell) {
+      if (!dateCell) return;
+      IRCTCExt.NgetTrainList.scrollIntoViewIfNeeded(dateCell);
+      IRCTCExt.Events.click(dateCell);
+    },
+
+    findBookNowButton(card) {
+      const sel = IRCTCExt.SELECTORS.trainList;
+      const enabled = IRCTCExt.Wait.queryOne(sel.bookNowEnabled, card);
+      if (enabled && IRCTCExt.Wait.isVisible(enabled)) return enabled;
+
+      const buttons = card.querySelectorAll(sel.bookNowBtn?.[0] || 'button.train_Search');
+      return (
+        [...buttons].find(
+          (btn) =>
+            /book\s*now/i.test(btn.textContent || '') &&
+            !btn.classList.contains('disable-book') &&
+            IRCTCExt.Wait.isVisible(btn)
+        ) || null
+      );
+    },
+
+    async waitForBookNowEnabled(card, overlay, travelClass) {
+      return IRCTCExt.Wait.poll(
+        () => IRCTCExt.NgetTrainList.findBookNowButton(card),
+        { timeout: 15000, interval: 200 }
+      );
+    },
+
+    async confirmBookingAndWait(overlay) {
+      if (location.pathname.includes('psgninput')) return true;
+
+      const deadline = Date.now() + 25000;
+      while (Date.now() < deadline) {
+        if (location.pathname.includes('psgninput')) return true;
+        await IRCTCExt.Wait.delay(100);
+      }
+
+      if (location.pathname.includes('psgninput')) return true;
+      throw new Error('Did not reach passenger input page after booking');
+    },
+
+    async bookTrain(config, overlay) {
+      const { journey } = config;
+
+      overlay?.setStep('Train List');
+      await IRCTCExt.NgetTrainList.waitForTrainListReady(overlay);
+
+      const trainName = String(journey.trainName || '').trim();
+      const trainNo = String(journey.trainNo || '').trim();
+      const searchLabel = trainNo || trainName || 'train';
+      const travelClass = journey.travelClass || 'SL';
+
+      const card = await IRCTCExt.NgetTrainList.findTrainCardWithPoll(journey, searchLabel, overlay);
+
+      const trainNum = IRCTCExt.NgetTrainList.getCardTrainNumber(card) || trainNo || '';
+      const matchedName = IRCTCExt.NgetTrainList.getCardTrainName(card);
+      const foundLabel =
+        trainNum && matchedName
+          ? `Found train ${trainNum} — ${matchedName}`
+          : matchedName
+            ? `Found train ${matchedName}`
+            : `Found train ${trainNum}`;
+      IRCTCExt.NgetTrainList.setStatus(overlay, foundLabel);
+
+      const classPickerCell = await IRCTCExt.NgetTrainList.findClassCellWithScroll(card, travelClass, overlay);
+      if (!classPickerCell) throw new Error(`Class ${travelClass} not found for train ${trainNum}`);
+
+      if (!journey.date) throw new Error('Journey date is required for nget train-list booking');
+
+      await IRCTCExt.NgetTrainList.refreshClassAvailability(
+        classPickerCell,
+        card,
+        overlay,
+        travelClass
+      );
+
+      const { dateCell, status } = await IRCTCExt.NgetTrainList.waitForBookableDate(
+        card,
+        journey.date,
+        travelClass,
+        classPickerCell,
+        overlay
+      );
+
+      const dateLabel =
+        IRCTCExt.NgetTrainList.getDateCellLabel(dateCell) ||
+        IRCTCExt.Stations.formatDateForNgetCard(journey.date);
+      IRCTCExt.NgetTrainList.setStatus(
+        overlay,
+        `Selecting ${dateLabel} (${status.text || status.type})...`
+      );
+      IRCTCExt.NgetTrainList.selectDateCell(dateCell);
+      await IRCTCExt.Wait.delay(300);
+
+      let bookBtn = IRCTCExt.NgetTrainList.findBookNowButton(card);
+      if (!bookBtn) {
+        IRCTCExt.NgetTrainList.setStatus(overlay, 'Waiting for Book Now to enable...');
+        bookBtn = await IRCTCExt.NgetTrainList.waitForBookNowEnabled(card, overlay, travelClass);
+      }
+      if (!bookBtn) throw new Error('Book Now button did not become enabled');
+
+      IRCTCExt.NgetTrainList.setStatus(
+        overlay,
+        `${dateLabel} available (${status.text || status.type}) — clicking Book Now...`
+      );
+      IRCTCExt.NgetTrainList.scrollIntoViewIfNeeded(bookBtn);
+      IRCTCExt.Events.click(bookBtn);
+      await IRCTCExt.Wait.delay(400);
+
+      IRCTCExt.NgetTrainList.setStatus(overlay, 'Book Now clicked — waiting for passenger page...');
+      await IRCTCExt.NgetTrainList.confirmBookingAndWait(overlay);
+      return true;
+    }
+  };
+})(typeof globalThis !== 'undefined' ? globalThis : window);
+
+;
+(function (root) {
+  root.IRCTCExt = root.IRCTCExt || {};
+  if (IRCTCExt.NgetLanguageFlow) return;
+
+  IRCTCExt.NgetLanguageFlow = {
+    isEnglishButton(btn) {
+      if (!btn) return false;
+      const text = (btn.textContent || '').trim();
+      if (/^english$/i.test(text)) return true;
+      const aria = btn.getAttribute('aria-label') || '';
+      return /english/i.test(text) && /welcome to irctc/i.test(aria);
+    },
+
+    getDialogRoot() {
+      const dialog = IRCTCExt.Wait.queryOne(IRCTCExt.NgetSelectors.languageDialog);
+      if (!dialog || !IRCTCExt.Wait.isVisible(dialog)) return null;
+      const text = (dialog.textContent || '').replace(/\s+/g, ' ');
+      if (!/welcome to irctc/i.test(text)) return null;
+      if (!/preferred language/i.test(text)) return null;
+      return dialog;
+    },
+
+    isLanguageModalVisible() {
+      return !!IRCTCExt.NgetLanguageFlow.getDialogRoot();
+    },
+
+    findEnglishButton() {
+      const dialog = IRCTCExt.NgetLanguageFlow.getDialogRoot();
+      if (!dialog) return null;
+
+      const primaryButtons = IRCTCExt.Wait.queryAll(IRCTCExt.NgetSelectors.languageButtons, dialog);
+      const byText = primaryButtons.find((btn) => IRCTCExt.NgetLanguageFlow.isEnglishButton(btn));
+      if (byText) return byText;
+
+      const rows = IRCTCExt.Wait.queryAll(IRCTCExt.NgetSelectors.languageButtonRow, dialog);
+      for (const row of rows) {
+        const submitButtons = IRCTCExt.Wait.queryAll(
+          ['button[type="submit"].btn-primary', 'button.btn-primary'],
+          row
+        );
+        const english = submitButtons.find((btn) => /english/i.test((btn.textContent || '').trim()));
+        if (english) return english;
+      }
+
+      const submitButtons = IRCTCExt.Wait.queryAll(IRCTCExt.NgetSelectors.languageEnglishSubmit, dialog);
+      return submitButtons.find((btn) => IRCTCExt.NgetLanguageFlow.isEnglishButton(btn)) || null;
+    },
+
+    submitEnglishButton(englishBtn) {
+      IRCTCExt.Events.click(englishBtn);
+
+      const form = englishBtn.closest('form');
+      if (!form) return;
+
+      if (typeof form.requestSubmit === 'function') {
+        try {
+          form.requestSubmit(englishBtn);
+        } catch {
+          form.requestSubmit();
+        }
+        return;
+      }
+
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    },
+
+    async clickEnglishAndWaitForClose(englishBtn, overlay) {
+      overlay?.setStatus?.('Selecting English...');
+      IRCTCExt.NgetLanguageFlow.submitEnglishButton(englishBtn);
+      await IRCTCExt.Wait.delay(500);
+
+      if (!IRCTCExt.NgetLanguageFlow.isLanguageModalVisible()) {
+        return true;
+      }
+
+      IRCTCExt.NgetLanguageFlow.submitEnglishButton(englishBtn);
+      await IRCTCExt.Wait.delay(400);
+
+      const closed = await IRCTCExt.Wait.poll(
+        () => (!IRCTCExt.NgetLanguageFlow.isLanguageModalVisible() ? true : null),
+        { timeout: 10000, interval: 200 }
+      );
+
+      return !!closed;
+    },
+
+    async dismissPreferredLanguage(overlay) {
+      overlay?.setStep?.('Language');
+      overlay?.setStatus?.('Waiting for language prompt...');
+
+      const modalShown = await IRCTCExt.Wait.poll(
+        () => (IRCTCExt.NgetLanguageFlow.isLanguageModalVisible() ? true : null),
+        { timeout: 12000, interval: 200 }
+      );
+
+      if (!modalShown) {
+        overlay?.setStatus?.('Language prompt not shown — continuing.');
+        return false;
+      }
+
+      const englishBtn = IRCTCExt.NgetLanguageFlow.findEnglishButton();
+      if (!englishBtn) {
+        throw new Error('English language button not found on IRCTC language prompt.');
+      }
+
+      const closed = await IRCTCExt.NgetLanguageFlow.clickEnglishAndWaitForClose(englishBtn, overlay);
+      if (!closed) {
+        throw new Error('Language prompt did not close after selecting English.');
+      }
+
+      overlay?.setStatus?.('English selected.');
+      await IRCTCExt.Wait.delay(300);
+      return true;
+    },
+
+    async dismissIfPresent(overlay) {
+      return IRCTCExt.NgetLanguageFlow.dismissPreferredLanguage(overlay);
+    }
+  };
+})(typeof globalThis !== 'undefined' ? globalThis : window);
+
+;
+(function (root) {
+  root.IRCTCExt = root.IRCTCExt || {};
+  if (IRCTCExt.NgetLoginFlow) return;
+
+  IRCTCExt.NgetLoginFlow = {
+    NARROW_LOGIN_BREAKPOINT: 1302,
+
+    usesNarrowLoginLayout() {
+      return window.innerWidth < IRCTCExt.NgetLoginFlow.NARROW_LOGIN_BREAKPOINT;
+    },
+
+    isSidebarOpen() {
+      const sidebar = IRCTCExt.Wait.queryOne(IRCTCExt.SELECTORS.hamburgerSidebar);
+      return !!(sidebar && IRCTCExt.Wait.isVisible(sidebar));
+    },
+
+    getLoginModalRoot() {
+      const dialogs = document.querySelectorAll('.ui-dialog-content');
+      for (const dialog of dialogs) {
+        if (!IRCTCExt.Wait.isVisible(dialog)) continue;
+
+        const modal = dialog.querySelector('.irmodal');
+        if (!modal) continue;
+
+        const title = modal.querySelector('.modal-title, #exampleModalLabel');
+        const userInput = modal.querySelector('input[formcontrolname="userid"]');
+        const isLoginTitle = title && /login/i.test(title.textContent || '');
+        const hasLoginForm = !!(userInput && IRCTCExt.Wait.isVisible(userInput));
+
+        if (isLoginTitle || hasLoginForm) return modal;
+      }
+
+      const modal = IRCTCExt.Wait.queryOne(IRCTCExt.SELECTORS.loginModal);
+      if (!modal || !IRCTCExt.Wait.isVisible(modal)) return null;
+
+      const title = modal.querySelector('.modal-title, #exampleModalLabel');
+      if (title && !/login/i.test(title.textContent || '')) return null;
+      return modal;
+    },
+
+    isLoginModalVisible() {
+      const modal = IRCTCExt.NgetLoginFlow.getLoginModalRoot();
+      if (!modal) return false;
+      const userInput = IRCTCExt.Wait.queryOne(IRCTCExt.SELECTORS.loginUsername, modal);
+      const passInput = IRCTCExt.Wait.queryOne(IRCTCExt.SELECTORS.loginPassword, modal);
+      return !!(
+        userInput &&
+        passInput &&
+        IRCTCExt.Wait.isVisible(userInput) &&
+        IRCTCExt.Wait.isVisible(passInput)
+      );
+    },
+
+    isLoginHeaderButton(btn, { visibleOnly = true, allowInSidebar = false } = {}) {
+      if (!btn) return false;
+      if (visibleOnly && !IRCTCExt.Wait.isVisible(btn)) return false;
+      if (btn.closest('.irmodal, .ui-dialog-content .irmodal, .ui-dialog-content')) return false;
+      if (!allowInSidebar && btn.closest('.ui-sidebar')) return false;
+      if (btn.classList.contains('train_Search')) return false;
+
+      const text = (btn.textContent || '').trim();
+      const aria = (btn.getAttribute('aria-label') || '').toLowerCase();
+      return (
+        /login\s*\/\s*register/i.test(text) ||
+        (/\blogin\b/i.test(text) && aria.includes('login'))
+      );
+    },
+
+    findDesktopLoginButton() {
+      const selectors = IRCTCExt.SELECTORS.desktopLoginBtn || IRCTCExt.SELECTORS.loginHeaderBtn || [];
+      for (const selector of selectors) {
+        const candidates = document.querySelectorAll(selector);
+        const match = [...candidates].find((btn) =>
+          IRCTCExt.NgetLoginFlow.isLoginHeaderButton(btn, { visibleOnly: true, allowInSidebar: false })
+        );
+        if (match) return match;
+      }
+      return null;
+    },
+
+    findSidebarLoginButton() {
+      if (!IRCTCExt.NgetLoginFlow.isSidebarOpen()) return null;
+
+      const sidebar = IRCTCExt.Wait.queryOne(IRCTCExt.SELECTORS.hamburgerSidebar);
+      if (!sidebar) return null;
+
+      const selectors = IRCTCExt.SELECTORS.sidebarLoginBtn || [];
+      for (const selector of selectors) {
+        const candidates = sidebar.querySelectorAll(selector);
+        const match = [...candidates].find((btn) =>
+          IRCTCExt.NgetLoginFlow.isLoginHeaderButton(btn, { visibleOnly: true, allowInSidebar: true })
+        );
+        if (match) return match;
+      }
+
+      const buttons = sidebar.querySelectorAll('button.search_btn');
+      return (
+        [...buttons].find((btn) =>
+          IRCTCExt.NgetLoginFlow.isLoginHeaderButton(btn, { visibleOnly: true, allowInSidebar: true })
+        ) || null
+      );
+    },
+
+    findLoginButton({ visibleOnly = true } = {}) {
+      const desktop = IRCTCExt.NgetLoginFlow.findDesktopLoginButton();
+      if (desktop) return desktop;
+
+      const sidebar = IRCTCExt.NgetLoginFlow.findSidebarLoginButton();
+      if (sidebar) return sidebar;
+
+      return null;
+    },
+
+    headerLoginButton() {
+      if (IRCTCExt.NgetLoginFlow.usesNarrowLoginLayout()) {
+        return IRCTCExt.NgetLoginFlow.findSidebarLoginButton();
+      }
+      return IRCTCExt.NgetLoginFlow.findDesktopLoginButton();
+    },
+
+    hamburgerMenuTrigger() {
+      const selectors = IRCTCExt.SELECTORS.hamburgerMenu || [];
+      for (const selector of selectors) {
+        const el = document.querySelector(selector);
+        if (!el) continue;
+        const clickTarget = el.closest('a') || el.closest('.h_menu_drop_button') || el;
+        const container = clickTarget.closest('.h_menu_drop_button') || clickTarget;
+        if (IRCTCExt.Wait.isVisible(container) || IRCTCExt.Wait.isVisible(clickTarget)) {
+          return clickTarget;
+        }
+      }
+      return null;
+    },
+
+    async openSidebarMenu(overlay) {
+      if (IRCTCExt.NgetLoginFlow.isSidebarOpen()) return true;
+
+      const trigger = IRCTCExt.NgetLoginFlow.hamburgerMenuTrigger();
+      if (!trigger) return false;
+
+      overlay?.setStatus('Opening menu...');
+      IRCTCExt.Events.click(trigger);
+
+      const opened = await IRCTCExt.Wait.poll(
+        () => (IRCTCExt.NgetLoginFlow.isSidebarOpen() ? true : null),
+        { timeout: 8000, interval: 200 }
+      );
+      return !!opened;
+    },
+
+    async resolveLoginButton(overlay) {
+      const narrow = IRCTCExt.NgetLoginFlow.usesNarrowLoginLayout();
+      const desktopBtn = IRCTCExt.NgetLoginFlow.findDesktopLoginButton();
+
+      if (!narrow && desktopBtn) return desktopBtn;
+
+      if (narrow || !desktopBtn) {
+        const sidebarBtn = IRCTCExt.NgetLoginFlow.findSidebarLoginButton();
+        if (sidebarBtn) return sidebarBtn;
+
+        const opened = await IRCTCExt.NgetLoginFlow.openSidebarMenu(overlay);
+        if (!opened) {
+          if (desktopBtn) return desktopBtn;
+          return null;
+        }
+
+        overlay?.setStatus('Clicking LOGIN / REGISTER in menu...');
+        const btn = await IRCTCExt.Wait.poll(
+          () => IRCTCExt.NgetLoginFlow.findSidebarLoginButton(),
+          { timeout: 8000, interval: 200 }
+        );
+        if (btn) return btn;
+      }
+
+      return desktopBtn || IRCTCExt.NgetLoginFlow.findLoginButton({ visibleOnly: true });
+    },
+
+    needsLogin() {
+      if (IRCTCExt.NgetLoginFlow.isLoginModalVisible()) return true;
+      if (IRCTCExt.Wait.queryOne(IRCTCExt.SELECTORS.loggedInProfile)) return false;
+
+      if (IRCTCExt.NgetLoginFlow.findDesktopLoginButton()) return true;
+      if (IRCTCExt.NgetLoginFlow.findSidebarLoginButton()) return true;
+
+      const searchInput = IRCTCExt.Wait.queryOne(IRCTCExt.SELECTORS.searchFrom);
+      if (searchInput && IRCTCExt.Wait.isVisible(searchInput)) return false;
+
+      if (IRCTCExt.NgetLoginFlow.usesNarrowLoginLayout()) {
+        return !!IRCTCExt.NgetLoginFlow.hamburgerMenuTrigger();
+      }
+
+      return false;
+    },
+
+    getLoginSubmit(modalRoot) {
+      const root = modalRoot || IRCTCExt.NgetLoginFlow.getLoginModalRoot();
+      if (!root) return null;
+
+      const submit = IRCTCExt.Wait.queryOne(IRCTCExt.SELECTORS.loginSubmit, root);
+      if (submit && IRCTCExt.Wait.isVisible(submit)) return submit;
+
+      const buttons = root.querySelectorAll('button[type="submit"], button.train_Search');
+      return (
+        [...buttons].find(
+          (btn) => /sign\s*in/i.test(btn.textContent || '') && IRCTCExt.Wait.isVisible(btn)
+        ) || null
+      );
+    },
+
+    hasChallenge() {
+      const modal = IRCTCExt.NgetLoginFlow.getLoginModalRoot();
+      if (!modal) return false;
+
+      const captchaInput = modal.querySelector(
+        'input[placeholder*="Captcha" i], input[placeholder*="CAPTCHA" i], input[formcontrolname="captcha"]'
+      );
+      if (
+        captchaInput &&
+        captchaInput.type !== 'checkbox' &&
+        IRCTCExt.Wait.isVisible(captchaInput)
+      ) {
+        return true;
+      }
+
+      const otpInput = modal.querySelector(
+        'input:not([type="checkbox"])[placeholder*="OTP" i], input:not([type="checkbox"])[formcontrolname="otp"]'
+      );
+      if (!otpInput || !IRCTCExt.Wait.isVisible(otpInput)) return false;
+
+      // Accessibility option on nget login — not an OTP entry field.
+      if (otpInput.id === 'otpLogin' || otpInput.name === 'otpLogin') return false;
+
+      return true;
+    },
+
+    async isLoggedIn() {
+      if (IRCTCExt.NgetLoginFlow.isLoginModalVisible()) return false;
+
+      if (IRCTCExt.Wait.queryOne(IRCTCExt.SELECTORS.loggedInProfile)) return true;
+
+      if (IRCTCExt.NgetLoginFlow.findDesktopLoginButton()) return false;
+      if (IRCTCExt.NgetLoginFlow.findSidebarLoginButton()) return false;
+
+      const searchInput = IRCTCExt.Wait.queryOne(IRCTCExt.SELECTORS.searchFrom);
+      return !!(searchInput && IRCTCExt.Wait.isVisible(searchInput));
+    },
+
+    async ensureLoginModal(overlay) {
+      if (IRCTCExt.NgetLoginFlow.isLoginModalVisible()) {
+        return IRCTCExt.NgetLoginFlow.getLoginModalRoot();
+      }
+
+      const shell = IRCTCExt.NgetLoginFlow.getLoginModalRoot();
+      if (shell) {
+        const ready = await IRCTCExt.Wait.poll(
+          () =>
+            IRCTCExt.NgetLoginFlow.isLoginModalVisible()
+              ? IRCTCExt.NgetLoginFlow.getLoginModalRoot()
+              : null,
+          { timeout: 5000, interval: 200 }
+        );
+        if (ready) return ready;
+      }
+
+      overlay?.setStatus('Opening login...');
+      const loginBtn = await IRCTCExt.NgetLoginFlow.resolveLoginButton(overlay);
+      if (!loginBtn) throw new Error('LOGIN / REGISTER button not found');
+
+      IRCTCExt.Events.click(loginBtn);
+      await IRCTCExt.Wait.delay(600);
+
+      const modal = await IRCTCExt.Wait.poll(
+        () =>
+          IRCTCExt.NgetLoginFlow.isLoginModalVisible()
+            ? IRCTCExt.NgetLoginFlow.getLoginModalRoot()
+            : null,
+        { timeout: 10000, interval: 200 }
+      );
+      if (!modal) throw new Error('Login modal did not open');
+      return modal;
+    },
+
+    async waitForEnabledSubmit(modalRoot) {
+      return IRCTCExt.Wait.poll(
+        () => {
+          const submit = IRCTCExt.NgetLoginFlow.getLoginSubmit(modalRoot);
+          if (!submit || !IRCTCExt.Wait.isVisible(submit)) return null;
+          if (submit.disabled) return null;
+          return submit;
+        },
+        { timeout: 8000, interval: 150 }
+      );
+    },
+
+    async waitForCaptchaContinue(overlay, modalRoot) {
+      overlay.setStatus('CAPTCHA or OTP required. Complete it, then click Continue.');
+      await IRCTCExt.Storage.updateState({ currentStep: 'login-captcha', paused: true });
+      await new Promise((resolve) => {
+        overlay.showPause('Complete CAPTCHA or OTP in the login form, then click Continue.', async () => {
+          const submit = IRCTCExt.NgetLoginFlow.getLoginSubmit(modalRoot);
+          if (submit && !submit.disabled) {
+            IRCTCExt.Events.click(submit);
+          }
+          await IRCTCExt.Storage.updateState({ paused: false });
+          await IRCTCExt.Wait.delay(1500);
+          resolve();
+        });
+      });
+    },
+
+    async run(config, overlay) {
+      await IRCTCExt.Wait.poll(
+        () => {
+          if (IRCTCExt.NgetLoginFlow.isLoginModalVisible()) return true;
+          if (IRCTCExt.Wait.queryOne(IRCTCExt.SELECTORS.loggedInProfile)) return true;
+          if (IRCTCExt.Wait.queryOne(IRCTCExt.SELECTORS.searchFrom)) return true;
+          if (IRCTCExt.NgetLoginFlow.findDesktopLoginButton()) return true;
+          if (IRCTCExt.NgetLoginFlow.findSidebarLoginButton()) return true;
+          if (IRCTCExt.NgetLoginFlow.isSidebarOpen()) return true;
+          if (IRCTCExt.NgetLoginFlow.hamburgerMenuTrigger()) return true;
+          return null;
+        },
+        { timeout: 12000, interval: 200 }
+      );
+
+      if (await IRCTCExt.NgetLoginFlow.isLoggedIn()) {
+        overlay.setStatus('Already logged in');
+        return true;
+      }
+
+      overlay.setStep('Login');
+
+      const dialogAlreadyOpen = IRCTCExt.NgetLoginFlow.isLoginModalVisible();
+      overlay.setStatus(
+        dialogAlreadyOpen ? 'Login dialog open — filling credentials...' : 'Opening login...'
+      );
+      const modal = await IRCTCExt.NgetLoginFlow.ensureLoginModal(overlay);
+
+      const userInput = await IRCTCExt.Wait.waitFor(IRCTCExt.SELECTORS.loginUsername, {
+        timeout: 10000,
+        visible: true,
+        root: modal
+      });
+      const passInput = await IRCTCExt.Wait.waitFor(IRCTCExt.SELECTORS.loginPassword, {
+        timeout: 10000,
+        visible: true,
+        root: modal
+      });
+      if (!userInput || !passInput) throw new Error('Login form not found');
+
+      overlay.setStatus('Filling username and password...');
+      IRCTCExt.Events.setInputValue(userInput, config.credentials.username);
+      IRCTCExt.Events.setInputValue(passInput, config.credentials.password);
+
+      if (IRCTCExt.NgetLoginFlow.hasChallenge()) {
+        await IRCTCExt.NgetLoginFlow.waitForCaptchaContinue(overlay, modal);
+      } else {
+        const submit = await IRCTCExt.NgetLoginFlow.waitForEnabledSubmit(modal);
+        if (!submit) throw new Error('SIGN IN button stayed disabled');
+        overlay.setStatus('Submitting login...');
+        IRCTCExt.Events.click(submit);
+        await IRCTCExt.Wait.delay(800);
+
+        if (IRCTCExt.NgetLoginFlow.hasChallenge()) {
+          await IRCTCExt.NgetLoginFlow.waitForCaptchaContinue(overlay, modal);
+        }
+      }
+
+      await IRCTCExt.Wait.poll(() => IRCTCExt.NgetLoginFlow.isLoggedIn(), { timeout: 20000, interval: 400 });
+      if (!(await IRCTCExt.NgetLoginFlow.isLoggedIn())) {
+        throw new Error('Login failed or timed out');
+      }
+
+      overlay.setStatus('Login successful');
+      return true;
+    },
+
+    async runWithRetry(config, overlay, { maxAttempts = 3 } = {}) {
+      await IRCTCExt.NgetLanguageFlow.dismissPreferredLanguage(overlay);
+
+      if (await IRCTCExt.NgetLoginFlow.isLoggedIn()) {
+        overlay.setStatus('Already logged in');
+        return true;
+      }
+
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+          await IRCTCExt.NgetLoginFlow.run(config, overlay);
+          if (await IRCTCExt.NgetLoginFlow.isLoggedIn()) return true;
+        } catch (err) {
+          if (attempt >= maxAttempts) throw err;
+          console.warn(`[IRCTC-Bot] Nget login attempt ${attempt}/${maxAttempts}:`, err);
+          overlay.setStatus(`Login failed, retry ${attempt}/${maxAttempts}...`);
+          await IRCTCExt.Wait.delay(1500);
+        }
+      }
+
+      throw new Error(`Login failed after ${maxAttempts} attempts`);
+    }
+  };
+})(typeof globalThis !== 'undefined' ? globalThis : window);
+
+;
+(function (root) {
+  root.IRCTCExt = root.IRCTCExt || {};
+  if (IRCTCExt.NgetSearchFlow) return;
+
+  IRCTCExt.NgetSearchFlow = {
+    visibleAutocompleteOptions() {
+      const panels = IRCTCExt.Wait.queryAll(IRCTCExt.SELECTORS.autocompletePanel);
+      const visiblePanels = panels.filter((panel) => IRCTCExt.Wait.isVisible(panel));
+      const options = visiblePanels.flatMap((panel) =>
+        Array.from(panel.querySelectorAll('li')).filter((li) => IRCTCExt.Wait.isVisible(li))
+      );
+      if (options.length) return options;
+
+      return IRCTCExt.Wait.queryAll(IRCTCExt.SELECTORS.autocompleteOptions).filter((opt) =>
+        IRCTCExt.Wait.isVisible(opt)
+      );
+    },
+
+    stationOptionsAfterHeader(options) {
+      const stationsIdx = options.findIndex((opt) => /stations/i.test(opt.textContent || ''));
+      if (stationsIdx >= 0) {
+        const after = options.slice(stationsIdx + 1).filter((opt) => {
+          const text = (opt.textContent || '').trim();
+          return text && !/^-+$/.test(text) && !/journeys/i.test(text);
+        });
+        if (after.length) return after;
+      }
+
+      return options.filter((opt) => {
+        const text = (opt.textContent || '').trim();
+        if (!text || /^-+$/.test(text)) return false;
+        if (/journeys/i.test(text)) return false;
+        return !/stations/i.test(text);
+      });
+    },
+
+    async pickStationOption(text) {
+      const options = await IRCTCExt.Wait.poll(
+        () => {
+          const list = IRCTCExt.NgetSearchFlow.visibleAutocompleteOptions();
+          return list.length ? list : null;
+        },
+        { timeout: 8000, interval: 150 }
+      );
+      if (!options?.length) return false;
+
+      const candidates = IRCTCExt.NgetSearchFlow.stationOptionsAfterHeader(options);
+      const match =
+        candidates.find((opt) => IRCTCExt.Events.optionMatches(opt, text)) ||
+        options.find((opt) => IRCTCExt.Events.optionMatches(opt, text));
+
+      if (!match) return false;
+      IRCTCExt.Events.click(match);
+      await IRCTCExt.Wait.delay(300);
+      return true;
+    },
+
+    inputShowsStation(input, text) {
+      const value = (input?.value || '').trim();
+      if (!value) return false;
+      const needles = IRCTCExt.Stations.stationSearchTerms(text).map((term) =>
+        IRCTCExt.Stations.normalizeStationText(term)
+      );
+      const shown = IRCTCExt.Stations.normalizeStationText(value);
+      return needles.some(
+        (needle) =>
+          needle.length >= 2 &&
+          (shown.includes(needle) || needle.includes(shown.split('-')[0]?.trim() || shown))
+      );
+    },
+
+    async fillNgetStation(input, text) {
+      if (!input || !text) return false;
+      if (IRCTCExt.NgetSearchFlow.inputShowsStation(input, text)) return true;
+
+      const terms = IRCTCExt.Stations.stationSearchTerms(text);
+      for (const term of terms) {
+        input.focus();
+        IRCTCExt.Events.click(input);
+        IRCTCExt.Events.setInputValue(input, term, { blur: false });
+        await IRCTCExt.Wait.delay(500);
+
+        if (await IRCTCExt.NgetSearchFlow.pickStationOption(text)) {
+          if (IRCTCExt.NgetSearchFlow.inputShowsStation(input, text)) return true;
+        }
+
+        await IRCTCExt.Events.typeSlowly(input, term, 60);
+        await IRCTCExt.Wait.delay(400);
+        if (await IRCTCExt.NgetSearchFlow.pickStationOption(text)) {
+          if (IRCTCExt.NgetSearchFlow.inputShowsStation(input, text)) return true;
+        }
+      }
+
+      return IRCTCExt.NgetSearchFlow.inputShowsStation(input, text);
+    },
+
+    async selectNgetDropdown(triggerSelectors, labelText) {
+      const trigger = await IRCTCExt.Wait.waitFor(triggerSelectors, { timeout: 5000, visible: true });
+      if (!trigger) return false;
+
+      const shown = (trigger.closest('p-dropdown')?.querySelector('.ui-dropdown-label')?.textContent || '')
+        .trim()
+        .toLowerCase();
+      if (shown && shown === String(labelText).trim().toLowerCase()) return true;
+
+      IRCTCExt.Events.click(trigger);
+      await IRCTCExt.Wait.delay(400);
+
+      const options = await IRCTCExt.Wait.poll(
+        () => {
+          const list = IRCTCExt.Wait.queryAll(IRCTCExt.SELECTORS.dropdownPanel).filter((opt) =>
+            IRCTCExt.Wait.isVisible(opt)
+          );
+          return list.length ? list : null;
+        },
+        { timeout: 8000, interval: 150 }
+      );
+      if (!options?.length) return false;
+
+      const target = String(labelText).trim().toLowerCase();
+      const match =
+        options.find((opt) => (opt.textContent || '').trim().toLowerCase() === target) ||
+        options.find((opt) => IRCTCExt.Events.optionMatches(opt, labelText)) ||
+        options.find((opt) => (opt.textContent || '').toLowerCase().includes(target));
+
+      if (!match) return false;
+      IRCTCExt.Events.click(match);
+      await IRCTCExt.Wait.delay(300);
+      return true;
+    },
+
+    async submitSearchWithRedirect(overlay, { maxAttempts = 3, redirectTimeoutMs = 8000 } = {}) {
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        overlay.setStatus(
+          attempt === 1 ? 'Submitting search...' : `Retrying search (${attempt}/${maxAttempts})...`
+        );
+
+        const searchBtn = await IRCTCExt.Wait.waitFor(IRCTCExt.SELECTORS.searchButton, {
+          timeout: 5000,
+          visible: true
+        });
+        if (!searchBtn) throw new Error('Search Trains button not found');
+
+        IRCTCExt.Events.click(searchBtn);
+
+        const redirected = await IRCTCExt.Wait.poll(
+          () => IRCTCExt.NgetPaths.isTrainListPath(location.pathname),
+          { timeout: redirectTimeoutMs, interval: 200 }
+        );
+
+        if (redirected) {
+          await IRCTCExt.Storage.updateState({
+            currentStep: 'train-list',
+            running: true,
+            status: 'running',
+            message: 'Search submitted — loading train list'
+          });
+          overlay.setStep('train-list');
+          overlay.setStatus('Search submitted — loading train list...');
+          return true;
+        }
+
+        if (attempt < maxAttempts) {
+          overlay.setStatus(`Search did not redirect, retry ${attempt}/${maxAttempts}...`);
+          await IRCTCExt.Wait.delay(500);
+        }
+      }
+
+      throw new Error('Search did not open train list');
+    },
+
+    async run(config, overlay) {
+      overlay.setStep('Search');
+      overlay.setStatus('Filling journey details...');
+      await IRCTCExt.Storage.updateState({ currentStep: 'search' });
+
+      IRCTCExt.Modals.dismissSessionRestore?.();
+      await IRCTCExt.Wait.delay(300);
+
+      const fromInput = await IRCTCExt.Wait.waitFor(IRCTCExt.SELECTORS.searchFrom, {
+        timeout: 20000,
+        visible: true
+      });
+      const toInput = await IRCTCExt.Wait.waitFor(IRCTCExt.SELECTORS.searchTo, {
+        timeout: 15000,
+        visible: true
+      });
+      if (!fromInput || !toInput) throw new Error('Search form not found');
+
+      const fromText = config.journey.from || config.journey.fromCode;
+      const toText = config.journey.to || config.journey.toCode;
+      if (!fromText || !toText) throw new Error('From/To station not configured');
+
+      overlay.setStatus('Selecting From station...');
+      const fromOk = await IRCTCExt.NgetSearchFlow.fillNgetStation(fromInput, fromText);
+      if (!fromOk) throw new Error('Could not select From station');
+
+      overlay.setStatus('Selecting To station...');
+      const toOk = await IRCTCExt.NgetSearchFlow.fillNgetStation(toInput, toText);
+      if (!toOk) throw new Error('Could not select To station');
+
+      const dateInput = await IRCTCExt.Wait.waitFor(IRCTCExt.SELECTORS.searchDate, {
+        timeout: 5000,
+        visible: true
+      });
+      const dateStr = IRCTCExt.Stations.formatDateForIRCTC(config.journey.date);
+      if (dateInput && dateStr) {
+        overlay.setStatus('Selecting travel date...');
+        IRCTCExt.Events.setInputValue(dateInput, dateStr, { blur: true });
+        await IRCTCExt.Wait.delay(200);
+        IRCTCExt.Events.click(dateInput);
+        await IRCTCExt.Wait.delay(300);
+        const picked = await IRCTCExt.Events.pickCustomCalendarDate(dateStr);
+        if (!picked && dateInput.value !== dateStr) {
+          IRCTCExt.Events.setInputValue(dateInput, dateStr, { blur: true });
+        }
+      }
+
+      const travelClass = config.journey?.travelClass || 'SL';
+      overlay.setStatus('Selecting class...');
+      const classLabel = IRCTCExt.Stations.getClassLabel(travelClass);
+      const classOk = await IRCTCExt.NgetSearchFlow.selectNgetDropdown(
+        IRCTCExt.SELECTORS.searchClass,
+        classLabel
+      );
+      if (!classOk) throw new Error(`Could not select class: ${classLabel}`);
+
+      const quota = config.journey?.quota || 'TATKAL';
+      overlay.setStatus('Selecting quota...');
+      const quotaText = IRCTCExt.Stations.quotaOptionText(quota);
+      const quotaOk = await IRCTCExt.NgetSearchFlow.selectNgetDropdown(
+        IRCTCExt.SELECTORS.searchQuota,
+        quotaText
+      );
+      if (!quotaOk) throw new Error(`Could not select quota: ${quotaText}`);
+
+      return IRCTCExt.NgetSearchFlow.submitSearchWithRedirect(overlay);
+    }
+  };
+})(typeof globalThis !== 'undefined' ? globalThis : window);
+
+;
+(function (root) {
+  root.IRCTCExt = root.IRCTCExt || {};
+  if (IRCTCExt.NgetBookingFlow) return;
+
+  function activateSharedBookingSelectors() {
+    const eticketSelectors = IRCTCExt.EticketSelectors;
+    if (!eticketSelectors) {
+      throw new Error('Eticket selectors not loaded. Reload the extension.');
+    }
+    IRCTCExt.SELECTORS = {
+      ...IRCTCExt.NgetSelectors,
+      passengers: eticketSelectors.passengers,
+      psgnPreferences: eticketSelectors.psgnPreferences,
+      payment: eticketSelectors.payment
+    };
+  }
+
+  IRCTCExt.NgetBookingFlow = {
+    async fillPassengers(config, overlay) {
+      if (!location.pathname.includes('psgninput')) {
+        throw new Error('Not on passenger input page');
+      }
+      activateSharedBookingSelectors();
+      return IRCTCExt.Passengers.addPassengers(config, overlay);
+    },
+
+    async configurePsgninputOptions(config, overlay) {
+      if (!location.pathname.includes('psgninput')) {
+        throw new Error('Not on passenger input page');
+      }
+      activateSharedBookingSelectors();
+      return IRCTCExt.PsgnPreferences.configure(config, overlay);
+    },
+
+    async clickContinueToPayment(overlay) {
+      if (!location.pathname.includes('reviewBooking') && !location.pathname.includes('review')) {
+        throw new Error('Not on review booking page');
+      }
+      activateSharedBookingSelectors();
+      return IRCTCExt.PsgnPreferences.clickContinueToPayment(overlay);
+    },
+
+    async showPaymentReview(overlay) {
+      activateSharedBookingSelectors();
+      overlay.setStep('Payment');
+      const message = 'Complete payment manually on IRCTC.';
+      if (IRCTCExt.PaymentReviewOverlay?.show) {
+        await IRCTCExt.PaymentReviewOverlay.show();
+        overlay.showPause(message);
+      } else {
+        overlay.setStatus(message);
+        overlay.showPause?.(message);
+      }
+      await IRCTCExt.Storage.updateState({ status: 'done', running: false, currentStep: 'done' });
+      return true;
+    }
+  };
+})(typeof globalThis !== 'undefined' ? globalThis : window);
+
+;
+(function (root) {
+  root.IRCTCExt = root.IRCTCExt || {};
+
+  IRCTCExt.NgetSite = {
+    ...IRCTCExt.NgetConfig,
+    selectors: IRCTCExt.NgetSelectors,
+    syncStepFromPath: IRCTCExt.NgetPaths.syncStepFromPath.bind(IRCTCExt.NgetPaths),
+    isErrorPage: IRCTCExt.NgetPaths.isErrorPage.bind(IRCTCExt.NgetPaths),
+    isTrainListPath: IRCTCExt.NgetPaths.isTrainListPath.bind(IRCTCExt.NgetPaths),
+    isTrainSearchPath: IRCTCExt.NgetPaths.isTrainSearchPath.bind(IRCTCExt.NgetPaths),
+    isPaymentPath: IRCTCExt.NgetPaths.isPaymentPath.bind(IRCTCExt.NgetPaths),
+    isReviewPath: IRCTCExt.NgetPaths.isReviewPath.bind(IRCTCExt.NgetPaths),
+    isPassengerPath: IRCTCExt.NgetPaths.isPassengerPath.bind(IRCTCExt.NgetPaths),
+    flows: {
+      LoginFlow: IRCTCExt.NgetLoginFlow,
+      SearchFlow: IRCTCExt.NgetSearchFlow,
+      BookingFlow: IRCTCExt.NgetBookingFlow
+    },
+    TrainList: IRCTCExt.NgetTrainList
+  };
+
+  IRCTCExt.SiteRegistry?.register(IRCTCExt.NgetSite);
+})(typeof globalThis !== 'undefined' ? globalThis : window);
+
+;
 window.IRCTCExt = window.IRCTCExt || {};
 
 IRCTCExt.Wait = {
