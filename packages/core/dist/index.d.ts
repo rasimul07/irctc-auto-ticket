@@ -1,0 +1,14 @@
+export { DEFAULT_CONFIG, STORAGE_KEY, cloneDefaultConfig, mergeConfig } from './config/schema.js';
+export { createStorage } from './storage/createStorage.js';
+export { createAccessApi } from './api/accessApi.js';
+export { ACCESS_DEFAULTS, CLIENT_TYPES, getApiBase } from './api/accessConfig.js';
+export { isMobileClient, checkMobileBookingAllowed, buildMobileBookingMessage } from './api/accessApi.js';
+export * as network from './api/network.js';
+export { validateBookingConfig } from './validation/bookingValidation.js';
+export { getSetupSteps, getSetupCompletion } from './validation/setupProgress.js';
+export type { SetupStep, SetupStepId, SetupCompletion } from './validation/setupProgress.js';
+export type { IrctcConfig } from './types/config.js';
+export { createPlatformBridge, createChromeBridge, createWebViewBridge } from './platform/bridge.js';
+export { createChromeExtensionCore } from './adapters/chrome.js';
+export { createCapacitorCore, resolveMobileClientType } from './adapters/capacitor.js';
+//# sourceMappingURL=index.d.ts.map

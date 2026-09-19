@@ -1,3 +1,4 @@
+"use strict";
 (() => {
   // dist/extension-gateway.raw.js
   window.IRCTCExt = window.IRCTCExt || {};

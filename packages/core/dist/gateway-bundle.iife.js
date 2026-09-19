@@ -1,3 +1,4 @@
+"use strict";
 (() => {
   // dist/gateway-bundle.raw.js
   (function(root) {

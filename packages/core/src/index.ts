@@ -6,6 +6,8 @@ export { isMobileClient, checkMobileBookingAllowed, buildMobileBookingMessage } 
 export * as network from './api/network.js';
 export { validateBookingConfig } from './validation/bookingValidation.js';
 export { getSetupSteps, getSetupCompletion } from './validation/setupProgress.js';
+export type { SetupStep, SetupStepId, SetupCompletion } from './validation/setupProgress.js';
+export type { IrctcConfig } from './types/config.js';
 export { createPlatformBridge, createChromeBridge, createWebViewBridge } from './platform/bridge.js';
 export { createChromeExtensionCore } from './adapters/chrome.js';
 export { createCapacitorCore, resolveMobileClientType } from './adapters/capacitor.js';

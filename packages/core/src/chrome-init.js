@@ -12,7 +12,7 @@ import {
   renameSet,
   deleteSet
 } from './config/sets.js';
-import { getSetupSteps, getSetupCompletion } from './validation/setupProgress.js';
+import { getSetupSteps, getSetupCompletion } from './validation/setupProgress.ts';
 
 (function (root) {
   root.IRCTCExt = root.IRCTCExt || {};
