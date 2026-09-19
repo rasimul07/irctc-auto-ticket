@@ -343,7 +343,7 @@ function createPassengerRow(passenger = {}, index = 0) {
   card.dataset.index = index;
   card.innerHTML = `
     <h3>Passenger ${index + 1} ${index > 0 ? '<button type="button" class="remove-passenger">Remove</button>' : ''}</h3>
-    <label>Name <input type="text" class="p-name" value="${passenger.name || ''}"></label>
+    <label>Name (as per Govt. ID) <input type="text" class="p-name" placeholder="Full Name as per Govt. ID" value="${passenger.name || ''}"></label>
     <label>Age <input type="number" class="p-age" min="1" max="120" value="${passenger.age || ''}"></label>
     <label>Gender
       <select class="p-gender">
@@ -579,8 +579,12 @@ async function armScheduleIfEnabled(schedule) {
   await chrome.runtime.sendMessage({ type: 'RESCHEDULE_ALARMS', schedule }).catch(() => null);
 }
 
-function updateRunControls(running) {
-  setsLocked = !!running;
+function isBookingActive(config) {
+  return !!config?.state?.running && config.state.status !== 'stopped';
+}
+
+function updateRunControls(active) {
+  setsLocked = !!active;
   if (els.startBtn) els.startBtn.hidden = setsLocked;
   if (els.stopBtn) els.stopBtn.hidden = !setsLocked;
   if (els.bookingSetSelect) els.bookingSetSelect.disabled = setsLocked;
@@ -607,7 +611,7 @@ async function renderSetSelector() {
     if (set.id === activeSetId) option.selected = true;
     els.bookingSetSelect.appendChild(option);
   });
-  updateRunControls(config.state?.running);
+  updateRunControls(isBookingActive(config));
 }
 
 async function persistFormToActiveSet() {
@@ -713,7 +717,7 @@ async function load() {
     const latest = await Storage.get();
     activeSetName = latest.activeSetName || activeSetName;
     updateStatusBadge(latest.state?.status || 'idle', activeSetName);
-    updateRunControls(latest.state?.running);
+    updateRunControls(isBookingActive(latest));
   }, 2000);
 }
 
@@ -846,7 +850,7 @@ async function stopBooking() {
     }
     const latest = await Storage.get();
     activeSetName = latest.activeSetName || activeSetName;
-    updateStatusBadge('stopped', activeSetName);
+    updateStatusBadge(latest.state?.status || 'stopped', activeSetName);
     updateRunControls(false);
     showToast('Booking stopped.');
   } catch (err) {

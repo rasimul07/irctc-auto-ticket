@@ -1,6 +1,49 @@
 window.IRCTCExt = window.IRCTCExt || {};
 
 IRCTCExt.Events = {
+  mouseEventOpts(el) {
+    const rect = el.getBoundingClientRect();
+    return {
+      bubbles: true,
+      cancelable: true,
+      view: window,
+      clientX: rect.left + rect.width / 2,
+      clientY: rect.top + rect.height / 2,
+      buttons: 1
+    };
+  },
+
+  clickWithMouse(el) {
+    if (!el) return;
+    el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    const opts = IRCTCExt.Events.mouseEventOpts(el);
+    el.dispatchEvent(new MouseEvent('mousedown', opts));
+    el.dispatchEvent(new MouseEvent('mouseup', opts));
+    el.dispatchEvent(new MouseEvent('click', opts));
+  },
+
+  clickPrimeDropdownItem(option) {
+    if (!option) return false;
+
+    const li =
+      option.matches?.('li[role="option"], li.ui-dropdown-item')
+        ? option
+        : option.closest?.('li[role="option"], li.ui-dropdown-item');
+    const span = li?.querySelector('span') || option.querySelector?.('span');
+    const host = li?.closest?.('p-dropdownitem') || option.closest?.('p-dropdownitem');
+
+    const targets = [li, span, host, option].filter(Boolean);
+    for (const target of targets) {
+      target.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      const opts = IRCTCExt.Events.mouseEventOpts(target);
+      target.dispatchEvent(new MouseEvent('mousedown', opts));
+      target.dispatchEvent(new MouseEvent('mouseup', opts));
+      target.dispatchEvent(new MouseEvent('click', opts));
+    }
+
+    return true;
+  },
+
   click(el) {
     if (!el) return;
     el.scrollIntoView({ block: 'center', inline: 'nearest' });
@@ -11,18 +54,7 @@ IRCTCExt.Events = {
       return;
     }
 
-    const rect = el.getBoundingClientRect();
-    const opts = {
-      bubbles: true,
-      cancelable: true,
-      view: window,
-      clientX: rect.left + Math.min(24, Math.max(8, rect.width / 5)),
-      clientY: rect.top + rect.height / 2,
-      buttons: 1
-    };
-    el.dispatchEvent(new MouseEvent('mousedown', opts));
-    el.dispatchEvent(new MouseEvent('mouseup', opts));
-    el.dispatchEvent(new MouseEvent('click', opts));
+    IRCTCExt.Events.clickWithMouse(el);
   },
 
   setNativeValue(el, value) {
@@ -42,15 +74,35 @@ IRCTCExt.Events = {
     if (blur) el.dispatchEvent(new Event('blur', { bubbles: true }));
   },
 
+  keyCodeFor(key) {
+    const map = {
+      Enter: 'Enter',
+      Home: 'Home',
+      ArrowDown: 'ArrowDown',
+      ArrowUp: 'ArrowUp',
+      Escape: 'Escape',
+      Tab: 'Tab',
+      ' ': 'Space'
+    };
+    if (map[key]) return map[key];
+    if (key.length === 1) return `Key${key.toUpperCase()}`;
+    return key;
+  },
+
   keyEvent(el, type, key) {
     el.dispatchEvent(
       new KeyboardEvent(type, {
         key,
-        code: key.length === 1 ? `Key${key.toUpperCase()}` : key,
+        code: IRCTCExt.Events.keyCodeFor(key),
         bubbles: true,
         cancelable: true
       })
     );
+  },
+
+  pressKey(el, key) {
+    IRCTCExt.Events.keyEvent(el, 'keydown', key);
+    IRCTCExt.Events.keyEvent(el, 'keyup', key);
   },
 
   async typeSlowly(el, text, delayMs = 80) {

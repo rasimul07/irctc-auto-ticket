@@ -222,7 +222,10 @@ async function stopAllBooking() {
     currentStep: 'init',
     awaitingGateway: false,
     paymentPhase: null,
-    paymentGateway: null
+    paymentGateway: null,
+    passengersDone: false,
+    paymentDone: false,
+    autoRestartCount: 0
   });
 
   const tabs = await chrome.tabs.query({

@@ -216,10 +216,12 @@ IRCTCExt.EticketSelectors = {
     ],
     newPassengerAge: ['input[formcontrolname="passengerAge"]'],
     newPassengerGender: [
+      'p-dropdown[formcontrolname="passengerGender"] .ui-dropdown-trigger-icon',
       'p-dropdown[formcontrolname="passengerGender"] .ui-dropdown-trigger',
       'p-dropdown[formcontrolname="passengerGender"]'
     ],
     newPassengerBerth: [
+      'p-dropdown[formcontrolname="passengerBerthChoice"] .ui-dropdown-trigger-icon',
       'p-dropdown[formcontrolname="passengerBerthChoice"] .ui-dropdown-trigger',
       'p-dropdown[formcontrolname="passengerBerthChoice"]'
     ],
@@ -237,7 +239,17 @@ IRCTCExt.EticketSelectors = {
       '.ui-dropdown-panel .ui-dropdown-item',
       '.ui-dropdown-panel li.ui-dropdown-item'
     ],
-    newPassengerAddBtn: ['button.ap-add-btn.app-modal-button--primary', 'button.ap-add-btn'],
+    newPassengerAutocompletePanel: [
+      '.ui-autocomplete-panel li',
+      'ul.ui-autocomplete-items li',
+      '.p-autocomplete-panel li'
+    ],
+    newPassengerValidationError: ['.ap-validation-messages small'],
+    newPassengerAddBtn: [
+      '.ap-dialog-actions button.ap-add-btn',
+      'button.ap-add-btn.app-modal-button--primary',
+      'button.ap-add-btn'
+    ],
     newPassengerCancelBtn: ['.ap-dialog-actions button.app-modal-button--cancel']
   },
   psgnPreferences: {
