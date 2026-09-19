@@ -141,5 +141,57 @@ IRCTCExt.NgetSelectors = {
       'button.train_Search:not(.disable-book)',
       'button.btnDefault.train_Search:not(.disable-book)'
     ]
+  },
+  passengers: {
+    passengerPanel: ['p-panel .ui-panel-title', '.ui-panel-title.p-heading'],
+    passengerRow: ['app-passenger'],
+    addPassengerLink: ['a span.prenext'],
+    deletePassengerBtn: ['a.fa.fa-remove.fa-lg', 'a.fa-remove'],
+    passengerName: [
+      'p-autocomplete[formcontrolname="passengerName"] input',
+      'input[formcontrolname="passengerName"]'
+    ],
+    passengerAge: ['input[formcontrolname="passengerAge"]'],
+    passengerGender: [
+      'select[formcontrolname="passengerGender"]',
+      'input[formcontrolname="passengerGender"]',
+      'p-dropdown[formcontrolname="passengerGender"] .ui-dropdown-trigger',
+      'p-dropdown[formcontrolname="passengerGender"]'
+    ],
+    passengerBerth: ['select[formcontrolname="passengerBerthChoice"]'],
+    autocompleteOptions: [
+      '.ui-autocomplete-panel li.ui-autocomplete-list-item',
+      'ul.ui-autocomplete-items li'
+    ],
+    validationError: ['app-control-messages small', '.ui-messages-error']
+  },
+  psgnPreferences: {
+    paymentPanelTitle: ['.ui-panel-title.p-heading', 'p-panel .ui-panel-title'],
+    paymentTypeCards: ['input[name="paymentType"][value="3"]'],
+    paymentTypeUpi: ['input[name="paymentType"][value="2"]'],
+    paymentTypeRadio: ['p-radiobutton[formcontrolname="paymentType"]', 'input[name="paymentType"]'],
+    continueBtn: [
+      'button.train_Search.btnDefault[type="submit"]',
+      'button.train_Search.btnDefault'
+    ]
+  },
+  review: {
+    passengerDetailHost: ['app-psgn-detail'],
+    passengerDetailContent: [
+      'app-psgn-detail .ui-panel-content',
+      'app-psgn-detail p-panel .ui-panel-content'
+    ],
+    continueBtn: [
+      'button.train_Search.btnDefault[type="submit"]',
+      'button.btnDefault.train_Search'
+    ]
+  },
+  payment: {
+    payTypeMenu: ['#pay-type'],
+    bankTypeItem: ['#pay-type .bank-type', '.bank-type'],
+    bankTypeActive: ['.bank-type-active'],
+    bankOptionRow: ['.bank-text', '.border-all.link .bank-text'],
+    bankOptionClickable: ['.border-all.link', 'td .border-all.link'],
+    payAndBookBtn: ['button.btn.btn-primary', 'button.btn-primary']
   }
 };

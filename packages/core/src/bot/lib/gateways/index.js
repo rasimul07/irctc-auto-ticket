@@ -1,6 +1,10 @@
 window.IRCTCExt = window.IRCTCExt || {};
 
 IRCTCExt.Gateways = {
+  isIrctcPaymentsHost() {
+    return location.hostname.includes('irctcpayments.com');
+  },
+
   isIrctcIpayHost() {
     return location.hostname.includes('irctcipay.com');
   },
@@ -37,6 +41,10 @@ IRCTCExt.Gateways = {
   async run(config, overlay) {
     const gateway = config.state?.paymentGateway;
     const provider = IRCTCExt.BkgPayment.getPaymentProvider(config);
+
+    if (IRCTCExt.Gateways.isIrctcPaymentsHost()) {
+      return IRCTCExt.IrctcPaymentsGateway.handle(config, overlay);
+    }
 
     if (IRCTCExt.Gateways.isPhonePeHost() && IRCTCExt.Gateways.isPhonePeGateway(config)) {
       return IRCTCExt.PhonePeGateway.handle(config, overlay);

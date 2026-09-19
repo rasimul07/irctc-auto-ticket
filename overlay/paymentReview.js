@@ -3,13 +3,23 @@ window.IRCTCExt = window.IRCTCExt || {};
 IRCTCExt.PaymentReviewOverlay = {
   el: null,
   contentEl: null,
+  headerTitleEl: null,
   _refreshTimer: null,
   _observer: null,
   _unwatchPath: null,
   _initialized: false,
+  _mode: null,
 
   isPaymentPage() {
     return location.pathname.includes('bkgPaymentOptions');
+  },
+
+  isNgetReviewPage() {
+    return location.pathname.includes('reviewBooking');
+  },
+
+  getReviewSelectors() {
+    return IRCTCExt.SELECTORS?.review || IRCTCExt.NgetSelectors?.review || {};
   },
 
   async ensureBody() {
@@ -27,6 +37,7 @@ IRCTCExt.PaymentReviewOverlay = {
     if (document.getElementById('irctc-ext-payment-review')) {
       this.el = document.getElementById('irctc-ext-payment-review');
       this.contentEl = this.el.querySelector('.irctc-ext-payment-review__content');
+      this.headerTitleEl = this.el.querySelector('.irctc-ext-payment-review__header span');
       this.bindEvents();
       return this;
     }
@@ -44,6 +55,7 @@ IRCTCExt.PaymentReviewOverlay = {
     document.body.appendChild(root);
     this.el = root;
     this.contentEl = root.querySelector('.irctc-ext-payment-review__content');
+    this.headerTitleEl = root.querySelector('.irctc-ext-payment-review__header span');
     this.bindEvents();
 
     return this;
@@ -67,13 +79,19 @@ IRCTCExt.PaymentReviewOverlay = {
     }
   },
 
+  setHeaderTitle(title) {
+    if (this.headerTitleEl) this.headerTitleEl.textContent = title;
+  },
+
   sanitizeClone(clone) {
-    const sel = IRCTCExt.SELECTORS.payment;
-    for (const selector of sel.excludeFromClone) {
-      clone.querySelectorAll(selector).forEach((el) => el.remove());
+    if (IRCTCExt.SELECTORS?.payment?.excludeFromClone) {
+      for (const selector of IRCTCExt.SELECTORS.payment.excludeFromClone) {
+        clone.querySelectorAll(selector).forEach((el) => el.remove());
+      }
     }
     clone.querySelectorAll('[role="button"]').forEach((el) => el.remove());
     clone.querySelectorAll('button, a.cancellation-link').forEach((el) => el.remove());
+    clone.querySelectorAll('a.ui-panel-titlebar-icon, .ui-panel-titlebar-icon').forEach((el) => el.remove());
   },
 
   async cloneReviewBlock() {
@@ -88,22 +106,50 @@ IRCTCExt.PaymentReviewOverlay = {
     this.sanitizeClone(clone);
     this.contentEl.innerHTML = '';
     this.contentEl.appendChild(clone);
+    this._mode = 'payment';
+    this.setHeaderTitle('Booking Review');
+    return true;
+  },
+
+  async clonePassengerDetailBlock() {
+    const sel = this.getReviewSelectors();
+    const block = await IRCTCExt.Wait.poll(
+      () => {
+        const host = IRCTCExt.Wait.queryOne(sel.passengerDetailHost);
+        if (!host || !IRCTCExt.Wait.isVisible(host)) return null;
+        const content = IRCTCExt.Wait.queryOne(sel.passengerDetailContent, host) || host;
+        return content && IRCTCExt.Wait.isVisible(content) ? content : null;
+      },
+      { timeout: 15000, interval: 250 }
+    );
+    if (!block || !this.contentEl) return false;
+
+    const clone = block.cloneNode(true);
+    this.sanitizeClone(clone);
+    this.contentEl.innerHTML = '';
+    this.contentEl.appendChild(clone);
+    this._mode = 'passenger';
+    this.setHeaderTitle('Passenger Details');
     return true;
   },
 
   scheduleRefresh() {
-    if (!this.isPaymentPage()) return;
     if (this._refreshTimer) return;
     this._refreshTimer = setTimeout(async () => {
       this._refreshTimer = null;
-      if (!this.isPaymentPage() || this.el?.classList.contains('irctc-ext-payment-review--hidden')) return;
-      await this.cloneReviewBlock();
+      if (this.el?.classList.contains('irctc-ext-payment-review--hidden')) return;
+      if (this.isNgetReviewPage()) {
+        await this.clonePassengerDetailBlock();
+      } else if (this.isPaymentPage()) {
+        await this.cloneReviewBlock();
+      }
     }, 300);
   },
 
   async refresh() {
-    if (!this.isPaymentPage()) return false;
-    return this.cloneReviewBlock();
+    if (this.isNgetReviewPage()) return this.clonePassengerDetailBlock();
+    if (this.isPaymentPage()) return this.cloneReviewBlock();
+    return false;
   },
 
   async show() {
@@ -117,13 +163,29 @@ IRCTCExt.PaymentReviewOverlay = {
     return this;
   },
 
+  async showPassengerReview() {
+    await this.init();
+    if (!this.el) return this;
+
+    const cloned = await this.clonePassengerDetailBlock();
+    if (cloned) {
+      this.el.classList.remove('irctc-ext-payment-review--hidden');
+    }
+    return this;
+  },
+
   hide() {
     if (this.el) this.el.classList.add('irctc-ext-payment-review--hidden');
     if (this.contentEl) this.contentEl.innerHTML = '';
+    this._mode = null;
   },
 
   syncWithPage() {
-    if (this.isPaymentPage()) {
+    if (this.isNgetReviewPage()) {
+      this.showPassengerReview().catch((err) =>
+        console.warn('[IRCTC-Bot] Passenger review overlay:', err)
+      );
+    } else if (this.isPaymentPage()) {
       this.show().catch((err) => console.warn('[IRCTC-Bot] Payment review overlay:', err));
     } else {
       this.hide();

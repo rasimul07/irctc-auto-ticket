@@ -670,6 +670,7 @@ var IRCTCCoreInit = (() => {
   function createChromeBridge() {
     const bridge = createPlatformBridge();
     bridge.sendMessage = async (type, payload = {}) => {
+      if (!chrome?.runtime?.sendMessage) return null;
       return chrome.runtime.sendMessage({ type, ...payload }).catch(() => null);
     };
     bridge.install = () => {

@@ -92,3 +92,25 @@
   max-width: 100%;
   height: auto;
 }
+
+#irctc-ext-payment-review app-psgn-detail .col-xs-12,
+#irctc-ext-payment-review .ui-panel-content .col-xs-12 {
+  padding: 6px 0;
+  border-bottom: 1px solid #e8ecf2;
+}
+
+#irctc-ext-payment-review app-psgn-detail .col-xs-12:last-child,
+#irctc-ext-payment-review .ui-panel-content .col-xs-12:last-child {
+  border-bottom: none;
+}
+
+#irctc-ext-payment-review app-psgn-detail strong,
+#irctc-ext-payment-review .ui-panel-content strong {
+  color: #213d77;
+}
+
+#irctc-ext-payment-review app-psgn-detail .t_2,
+#irctc-ext-payment-review .ui-panel-content .t_2 {
+  color: #555;
+  font-size: 12px;
+}
