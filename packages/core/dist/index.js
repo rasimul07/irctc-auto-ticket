@@ -709,15 +709,15 @@ function validateBookingConfig(config) {
   return null;
 }
 
-// src/validation/setupProgress.js
+// src/validation/setupProgress.ts
 function isCardComplete2(card) {
   return !!(card?.name && card?.number && card?.expiry && card?.cvv);
 }
 function getSetupSteps(config) {
-  const credentials = config?.credentials || {};
-  const journey = config?.journey || {};
-  const passengers = config?.passengers || [];
-  const preferences = config?.preferences || {};
+  const credentials = config.credentials || {};
+  const journey = config.journey || {};
+  const passengers = config.passengers || [];
+  const preferences = config.preferences || {};
   const loginDone = !!(credentials.username?.trim() && credentials.password);
   const journeyDone = !!(journey.from?.trim() && journey.to?.trim() && journey.date && (journey.trainNo?.trim() || journey.trainName?.trim()));
   const passengersDone = passengers.some((p) => (p.name || "").trim() && (p.age || "").trim() && p.gender);

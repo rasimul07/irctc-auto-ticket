@@ -2,10 +2,12 @@ import * as esbuild from 'esbuild';
 import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
+import { spawnSync } from 'child_process';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const dist = join(__dirname, 'dist');
 mkdirSync(dist, { recursive: true });
+mkdirSync(join(dist, 'validation'), { recursive: true });
 
 const sharedBotLibs = [
   'src/bot/lib/wait.js',
@@ -56,8 +58,17 @@ function writeConcatBundle(name, files) {
 }
 
 await esbuild.build({
-  entryPoints: [join(__dirname, 'src/index.js')],
+  entryPoints: [join(__dirname, 'src/index.ts')],
   outfile: join(dist, 'index.js'),
+  bundle: true,
+  format: 'esm',
+  platform: 'neutral',
+  target: ['es2020']
+});
+
+await esbuild.build({
+  entryPoints: [join(__dirname, 'src/validation/setupProgress.ts')],
+  outfile: join(dist, 'validation/setupProgress.js'),
   bundle: true,
   format: 'esm',
   platform: 'neutral',
@@ -90,4 +101,13 @@ for (const name of ['bot-bundle', 'extension-bot', 'gateway-bundle', 'extension-
   });
 }
 
-console.log('Built @rail-ticket/core');
+const tsc = spawnSync('npx', ['tsc', '-p', 'tsconfig.json'], {
+  cwd: __dirname,
+  stdio: 'inherit',
+  shell: true
+});
+if (tsc.status !== 0) {
+  process.exit(tsc.status ?? 1);
+}
+
+console.log('Built @rasimul07/core');

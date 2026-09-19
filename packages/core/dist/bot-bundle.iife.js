@@ -1,3 +1,4 @@
+"use strict";
 (() => {
   // dist/bot-bundle.raw.js
   (function(root) {

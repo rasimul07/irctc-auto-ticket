@@ -1,12 +1,30 @@
-function isCardComplete(card) {
+import type { CardDetails, IrctcConfig } from '../types/config.js';
+
+export type SetupStepId = 'login' | 'journey' | 'passengers' | 'payment';
+
+export type SetupStep = {
+  id: SetupStepId;
+  label: string;
+  done: boolean;
+  hint: string;
+};
+
+export type SetupCompletion = {
+  done: number;
+  total: number;
+  ready: boolean;
+  steps: SetupStep[];
+};
+
+function isCardComplete(card?: CardDetails): boolean {
   return !!(card?.name && card?.number && card?.expiry && card?.cvv);
 }
 
-export function getSetupSteps(config) {
-  const credentials = config?.credentials || {};
-  const journey = config?.journey || {};
-  const passengers = config?.passengers || [];
-  const preferences = config?.preferences || {};
+export function getSetupSteps(config: IrctcConfig): SetupStep[] {
+  const credentials = config.credentials || {};
+  const journey = config.journey || {};
+  const passengers = config.passengers || [];
+  const preferences = config.preferences || {};
 
   const loginDone = !!(credentials.username?.trim() && credentials.password);
   const journeyDone = !!(
@@ -53,7 +71,7 @@ export function getSetupSteps(config) {
   ];
 }
 
-export function getSetupCompletion(config) {
+export function getSetupCompletion(config: IrctcConfig): SetupCompletion {
   const steps = getSetupSteps(config);
   const done = steps.filter((step) => step.done).length;
   const ready = steps.filter((step) => step.id !== 'payment').every((step) => step.done);

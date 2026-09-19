@@ -1,3 +1,4 @@
+"use strict";
 (() => {
   // dist/extension-bot.raw.js
   (function(root) {
