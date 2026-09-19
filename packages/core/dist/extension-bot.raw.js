@@ -324,10 +324,12 @@ IRCTCExt.EticketSelectors = {
     ],
     newPassengerAge: ['input[formcontrolname="passengerAge"]'],
     newPassengerGender: [
+      'p-dropdown[formcontrolname="passengerGender"] .ui-dropdown-trigger-icon',
       'p-dropdown[formcontrolname="passengerGender"] .ui-dropdown-trigger',
       'p-dropdown[formcontrolname="passengerGender"]'
     ],
     newPassengerBerth: [
+      'p-dropdown[formcontrolname="passengerBerthChoice"] .ui-dropdown-trigger-icon',
       'p-dropdown[formcontrolname="passengerBerthChoice"] .ui-dropdown-trigger',
       'p-dropdown[formcontrolname="passengerBerthChoice"]'
     ],
@@ -345,7 +347,17 @@ IRCTCExt.EticketSelectors = {
       '.ui-dropdown-panel .ui-dropdown-item',
       '.ui-dropdown-panel li.ui-dropdown-item'
     ],
-    newPassengerAddBtn: ['button.ap-add-btn.app-modal-button--primary', 'button.ap-add-btn'],
+    newPassengerAutocompletePanel: [
+      '.ui-autocomplete-panel li',
+      'ul.ui-autocomplete-items li',
+      '.p-autocomplete-panel li'
+    ],
+    newPassengerValidationError: ['.ap-validation-messages small'],
+    newPassengerAddBtn: [
+      '.ap-dialog-actions button.ap-add-btn',
+      'button.ap-add-btn.app-modal-button--primary',
+      'button.ap-add-btn'
+    ],
     newPassengerCancelBtn: ['.ap-dialog-actions button.app-modal-button--cancel']
   },
   psgnPreferences: {
@@ -1652,6 +1664,49 @@ IRCTCExt.Modals.init();
 window.IRCTCExt = window.IRCTCExt || {};
 
 IRCTCExt.Events = {
+  mouseEventOpts(el) {
+    const rect = el.getBoundingClientRect();
+    return {
+      bubbles: true,
+      cancelable: true,
+      view: window,
+      clientX: rect.left + rect.width / 2,
+      clientY: rect.top + rect.height / 2,
+      buttons: 1
+    };
+  },
+
+  clickWithMouse(el) {
+    if (!el) return;
+    el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    const opts = IRCTCExt.Events.mouseEventOpts(el);
+    el.dispatchEvent(new MouseEvent('mousedown', opts));
+    el.dispatchEvent(new MouseEvent('mouseup', opts));
+    el.dispatchEvent(new MouseEvent('click', opts));
+  },
+
+  clickPrimeDropdownItem(option) {
+    if (!option) return false;
+
+    const li =
+      option.matches?.('li[role="option"], li.ui-dropdown-item')
+        ? option
+        : option.closest?.('li[role="option"], li.ui-dropdown-item');
+    const span = li?.querySelector('span') || option.querySelector?.('span');
+    const host = li?.closest?.('p-dropdownitem') || option.closest?.('p-dropdownitem');
+
+    const targets = [li, span, host, option].filter(Boolean);
+    for (const target of targets) {
+      target.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      const opts = IRCTCExt.Events.mouseEventOpts(target);
+      target.dispatchEvent(new MouseEvent('mousedown', opts));
+      target.dispatchEvent(new MouseEvent('mouseup', opts));
+      target.dispatchEvent(new MouseEvent('click', opts));
+    }
+
+    return true;
+  },
+
   click(el) {
     if (!el) return;
     el.scrollIntoView({ block: 'center', inline: 'nearest' });
@@ -1662,18 +1717,7 @@ IRCTCExt.Events = {
       return;
     }
 
-    const rect = el.getBoundingClientRect();
-    const opts = {
-      bubbles: true,
-      cancelable: true,
-      view: window,
-      clientX: rect.left + Math.min(24, Math.max(8, rect.width / 5)),
-      clientY: rect.top + rect.height / 2,
-      buttons: 1
-    };
-    el.dispatchEvent(new MouseEvent('mousedown', opts));
-    el.dispatchEvent(new MouseEvent('mouseup', opts));
-    el.dispatchEvent(new MouseEvent('click', opts));
+    IRCTCExt.Events.clickWithMouse(el);
   },
 
   setNativeValue(el, value) {
@@ -1693,15 +1737,35 @@ IRCTCExt.Events = {
     if (blur) el.dispatchEvent(new Event('blur', { bubbles: true }));
   },
 
+  keyCodeFor(key) {
+    const map = {
+      Enter: 'Enter',
+      Home: 'Home',
+      ArrowDown: 'ArrowDown',
+      ArrowUp: 'ArrowUp',
+      Escape: 'Escape',
+      Tab: 'Tab',
+      ' ': 'Space'
+    };
+    if (map[key]) return map[key];
+    if (key.length === 1) return `Key${key.toUpperCase()}`;
+    return key;
+  },
+
   keyEvent(el, type, key) {
     el.dispatchEvent(
       new KeyboardEvent(type, {
         key,
-        code: key.length === 1 ? `Key${key.toUpperCase()}` : key,
+        code: IRCTCExt.Events.keyCodeFor(key),
         bubbles: true,
         cancelable: true
       })
     );
+  },
+
+  pressKey(el, key) {
+    IRCTCExt.Events.keyEvent(el, 'keydown', key);
+    IRCTCExt.Events.keyEvent(el, 'keyup', key);
   },
 
   async typeSlowly(el, text, delayMs = 80) {
@@ -2275,10 +2339,23 @@ IRCTCExt.Passengers = {
       Lower: 'lower',
       Middle: 'middle',
       'Window Side': 'window side',
-      'Side Lower': 'window side',
+      'Side Lower': 'side lower',
       'Side Upper': 'side upper'
     };
     return (map[berth] || berth || '').toLowerCase();
+  },
+
+  berthLabel(berth) {
+    const value = String(berth || '').trim();
+    if (!value || value === 'No Preference') return '';
+    return value;
+  },
+
+  berthLabelsToTry(berth) {
+    const label = IRCTCExt.Passengers.berthLabel(berth);
+    if (!label) return [];
+    if (label === 'Window Side') return ['Window Side', 'Side Lower'];
+    return [label];
   },
 
   segmentMatches(actual, expected) {
@@ -2292,6 +2369,34 @@ IRCTCExt.Passengers = {
     const rowName = IRCTCExt.Passengers.normalizeName(IRCTCExt.Passengers.extractRowName(row));
     const configName = IRCTCExt.Passengers.normalizeName(passenger.name);
     return rowName === configName;
+  },
+
+  rowMatchesPassengerStrict(row, passenger) {
+    if (!IRCTCExt.Passengers.nameMatchesRow(row, passenger)) return false;
+
+    const details = IRCTCExt.Passengers.parseRowDetails(row);
+    if (passenger.age && String(details.age).trim() !== String(passenger.age).trim()) {
+      return false;
+    }
+    if (
+      passenger.gender &&
+      (!details.gender ||
+        !IRCTCExt.Passengers.segmentMatches(
+          details.gender,
+          IRCTCExt.Passengers.genderToken(passenger.gender)
+        ))
+    ) {
+      return false;
+    }
+
+    return true;
+  },
+
+  findExistingRowStrict(rows, passenger, usedRows = new Set()) {
+    const candidates = rows.filter(
+      (row) => !usedRows.has(row) && IRCTCExt.Passengers.rowMatchesPassengerStrict(row, passenger)
+    );
+    return candidates[0] || null;
   },
 
   scoreRowMatch(row, passenger) {
@@ -2424,6 +2529,43 @@ IRCTCExt.Passengers = {
     );
   },
 
+  listCardMatchesPassengerStrict(card, passenger) {
+    const details = IRCTCExt.Passengers.parsePassengerListCard(card);
+    if (
+      IRCTCExt.Passengers.normalizeName(details.name) !==
+      IRCTCExt.Passengers.normalizeName(passenger.name)
+    ) {
+      return false;
+    }
+    if (passenger.age && String(details.age).trim() !== String(passenger.age).trim()) {
+      return false;
+    }
+    if (
+      passenger.gender &&
+      (!details.gender ||
+        !IRCTCExt.Passengers.segmentMatches(
+          details.gender,
+          IRCTCExt.Passengers.genderToken(passenger.gender)
+        ))
+    ) {
+      return false;
+    }
+    return true;
+  },
+
+  findListCardStrict(cards, passenger, usedCards = new Set()) {
+    return (
+      cards.find(
+        (card) => !usedCards.has(card) && IRCTCExt.Passengers.listCardMatchesPassengerStrict(card, passenger)
+      ) || null
+    );
+  },
+
+  passengerAlreadyOnList(passenger, usedCards = new Set()) {
+    const cards = IRCTCExt.Passengers.getPassengerListCards();
+    return !!IRCTCExt.Passengers.findListCardStrict(cards, passenger, usedCards);
+  },
+
   scoreListCardMatch(card, passenger) {
     if (!IRCTCExt.Passengers.nameMatchesListCard(card, passenger)) return -1;
 
@@ -2487,7 +2629,7 @@ IRCTCExt.Passengers = {
     const usedCards = new Set();
 
     for (const passenger of passengers) {
-      const card = IRCTCExt.Passengers.findListCardForPassenger(cards, passenger, usedCards);
+      const card = IRCTCExt.Passengers.findListCardStrict(cards, passenger, usedCards);
       if (card) {
         matched.push({ passenger, card });
         usedCards.add(card);
@@ -2534,6 +2676,10 @@ IRCTCExt.Passengers = {
 
   cardMatchesPassenger(card, passenger) {
     return IRCTCExt.Passengers.getMismatchType(card, passenger) === null;
+  },
+
+  isIdentityMismatch(mismatchType) {
+    return mismatchType === 'name' || mismatchType === 'age' || mismatchType === 'gender';
   },
 
   isEditPassengerModalOpen() {
@@ -2620,13 +2766,11 @@ IRCTCExt.Passengers = {
       if (!genderOk) throw new Error(`Could not set gender for ${passenger.name}`);
     }
 
-    const berth = (passenger.berth || '').trim();
-    if (berth && berth !== 'No Preference') {
-      const berthDropdown = IRCTCExt.Wait.queryOne(sel.newPassengerBerth, modal);
-      if (berthDropdown && IRCTCExt.Wait.isVisible(berthDropdown)) {
-        const berthOk = await IRCTCExt.Passengers.selectDropdownIn(modal, sel.newPassengerBerth, berth);
-        if (!berthOk) throw new Error(`Could not set berth for ${passenger.name}`);
-      }
+    const berthOk = await IRCTCExt.Passengers.selectBerthPreference(modal, passenger);
+    if (!berthOk) {
+      throw new Error(
+        `Could not set berth for ${passenger.name}: ${IRCTCExt.Passengers.berthLabel(passenger.berth)}`
+      );
     }
 
     const foodLabel = IRCTCExt.Passengers.foodLabel(passenger.food);
@@ -2669,6 +2813,8 @@ IRCTCExt.Passengers = {
       );
 
       for (const card of extraCards) {
+        const parsed = IRCTCExt.Passengers.parsePassengerListCard(card);
+        overlay.setStatus(`Removing extra passenger: ${parsed.name || 'unknown'}...`);
         await IRCTCExt.Passengers.deletePassengerCard(card, overlay);
         changed = true;
       }
@@ -2681,14 +2827,19 @@ IRCTCExt.Passengers = {
         ));
       }
 
-      for (const { passenger, card } of matched) {
+      for (let i = 0; i < matched.length; i += 1) {
+        const { passenger, card } = matched[i];
+        overlay.setStatus(
+          `Verifying passenger ${i + 1}/${passengers.length}: ${passenger.name}...`
+        );
         const mismatch = IRCTCExt.Passengers.getMismatchType(card, passenger);
         if (!mismatch) continue;
 
-        if (mismatch === 'name' || mismatch === 'age') {
+        if (IRCTCExt.Passengers.isIdentityMismatch(mismatch)) {
           await IRCTCExt.Passengers.deletePassengerCard(card, overlay);
           const expectedCount = IRCTCExt.Passengers.countPassengerListCards() + 1;
-          await IRCTCExt.Passengers.addNewPassenger(passenger, overlay, expectedCount);
+          overlay.setStatus(`Re-adding missing: ${passenger.name}...`);
+          await IRCTCExt.Passengers.addOnePassenger(passenger, overlay, expectedCount);
         } else {
           await IRCTCExt.Passengers.editPassengerCard(card, passenger, overlay);
         }
@@ -2697,7 +2848,8 @@ IRCTCExt.Passengers = {
 
       for (const passenger of unmatchedPassengers) {
         const expectedCount = IRCTCExt.Passengers.countPassengerListCards() + 1;
-        await IRCTCExt.Passengers.addNewPassenger(passenger, overlay, expectedCount);
+        overlay.setStatus(`Re-adding missing: ${passenger.name}...`);
+        await IRCTCExt.Passengers.addOnePassenger(passenger, overlay, expectedCount);
         changed = true;
       }
 
@@ -2711,12 +2863,11 @@ IRCTCExt.Passengers = {
 
         const usedCards = new Set();
         const allMatch = passengers.every((passenger) => {
-          const card = IRCTCExt.Passengers.findListCardForPassenger(
-            finalCards,
-            passenger,
-            usedCards
-          );
-          if (!card || !IRCTCExt.Passengers.cardMatchesPassenger(card, passenger)) {
+          const card = IRCTCExt.Passengers.findListCardStrict(finalCards, passenger, usedCards);
+          if (!card || !IRCTCExt.Passengers.listCardMatchesPassengerStrict(card, passenger)) {
+            return false;
+          }
+          if (!IRCTCExt.Passengers.cardMatchesPassenger(card, passenger)) {
             return false;
           }
           usedCards.add(card);
@@ -2725,12 +2876,12 @@ IRCTCExt.Passengers = {
 
         if (!allMatch) {
           const failing = passengers.find((passenger) => {
-            const card = IRCTCExt.Passengers.findListCardForPassenger(
-              finalCards,
-              passenger,
-              new Set()
+            const card = IRCTCExt.Passengers.findListCardStrict(finalCards, passenger, new Set());
+            return (
+              !card ||
+              !IRCTCExt.Passengers.listCardMatchesPassengerStrict(card, passenger) ||
+              !IRCTCExt.Passengers.cardMatchesPassenger(card, passenger)
             );
-            return !card || !IRCTCExt.Passengers.cardMatchesPassenger(card, passenger);
           });
           if (pass === maxPasses) {
             throw new Error(`Could not verify passenger: ${failing?.name || 'unknown'}`);
@@ -2856,6 +3007,10 @@ IRCTCExt.Passengers = {
   },
 
   getDropdownShownValue(dropdownEl) {
+    const hidden = dropdownEl?.querySelector('.ui-helper-hidden-accessible input[role="listbox"]');
+    const ariaValue = (hidden?.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim();
+    if (ariaValue && !/^(select|choose)$/i.test(ariaValue)) return ariaValue;
+
     const label = dropdownEl?.querySelector('.ui-dropdown-label');
     const text = (label?.textContent || '').replace(/\s+/g, ' ').trim();
     if (!text || /^(select|choose)$/i.test(text)) return '';
@@ -2869,17 +3024,74 @@ IRCTCExt.Passengers = {
     return a === b || a.includes(b) || b.includes(a);
   },
 
-  visiblePassengerDropdownOptions() {
+  isDropdownOpen(dropdown) {
+    return !!dropdown?.querySelector('.ui-dropdown-open');
+  },
+
+  getDropdownHostClass(dropdown) {
+    if (!dropdown) return '';
+    const fromHost = [...dropdown.classList].find((cls) => /^ng-tns-c\d+-\d+$/.test(cls));
+    if (fromHost) return fromHost;
+
+    const inner = dropdown.querySelector('[class*="ng-tns-c"]');
+    if (!inner) return '';
+    return [...inner.classList].find((cls) => /^ng-tns-c\d+-\d+$/.test(cls)) || '';
+  },
+
+  getDropdownPanel(dropdown) {
+    const inner = dropdown?.querySelector('.ap-dropdown-panel, .ui-dropdown-panel');
+    if (inner && IRCTCExt.Wait.isVisible(inner)) return inner;
+
+    if (!IRCTCExt.Passengers.isDropdownOpen(dropdown)) return null;
+
+    const hostClass = IRCTCExt.Passengers.getDropdownHostClass(dropdown);
+    if (hostClass) {
+      const linkedPanels = [...IRCTCExt.Wait.queryAll('.ap-dropdown-panel'), ...IRCTCExt.Wait.queryAll('.ui-dropdown-panel')].filter(
+        (panel) => panel.classList.contains(hostClass) && IRCTCExt.Wait.isVisible(panel)
+      );
+      if (linkedPanels.length === 1) return linkedPanels[0];
+      if (linkedPanels.length > 1) {
+        const dropdownRect = dropdown.getBoundingClientRect();
+        const nearest = linkedPanels.reduce((best, panel) => {
+          const rect = panel.getBoundingClientRect();
+          const dist =
+            Math.abs(rect.left - dropdownRect.left) + Math.max(0, rect.top - dropdownRect.bottom);
+          return !best || dist < best.dist ? { panel, dist } : best;
+        }, null);
+        if (nearest) return nearest.panel;
+      }
+    }
+
+    const panels = [...IRCTCExt.Wait.queryAll('.ap-dropdown-panel'), ...IRCTCExt.Wait.queryAll('.ui-dropdown-panel')].filter(
+      (panel) => IRCTCExt.Wait.isVisible(panel)
+    );
+    if (!panels.length) return null;
+    if (panels.length === 1) return panels[0];
+
+    const dropdownRect = dropdown.getBoundingClientRect();
+    return (
+      panels.find((panel) => {
+        const rect = panel.getBoundingClientRect();
+        return Math.abs(rect.left - dropdownRect.left) < 24 && rect.top >= dropdownRect.top - 8;
+      }) || panels[0]
+    );
+  },
+
+  dropdownOptionsInPanel(panel) {
+    return Array.from(
+      panel.querySelectorAll('li[role="option"], li.ui-dropdown-item, .ui-dropdown-item')
+    ).filter((item) => IRCTCExt.Wait.isVisible(item));
+  },
+
+  visiblePassengerDropdownOptions(panel = null) {
+    if (panel) return IRCTCExt.Passengers.dropdownOptionsInPanel(panel);
+
     const panels = [
       ...IRCTCExt.Wait.queryAll('.ap-dropdown-panel'),
       ...IRCTCExt.Wait.queryAll('.ui-dropdown-panel')
-    ].filter((panel) => IRCTCExt.Wait.isVisible(panel));
+    ].filter((item) => IRCTCExt.Wait.isVisible(item));
 
-    const items = panels.flatMap((panel) =>
-      Array.from(
-        panel.querySelectorAll('li.ui-dropdown-item, .ui-dropdown-item, li[role="option"]')
-      ).filter((item) => IRCTCExt.Wait.isVisible(item))
-    );
+    const items = panels.flatMap((item) => IRCTCExt.Passengers.dropdownOptionsInPanel(item));
 
     if (items.length) return items;
     return IRCTCExt.Wait.queryAll(IRCTCExt.SELECTORS.passengers.passengerDropdownItem).filter((item) =>
@@ -2889,7 +3101,11 @@ IRCTCExt.Passengers = {
 
   findDropdownOption(options, labelText) {
     const target = IRCTCExt.Passengers.normalizeDropdownText(labelText);
+    const token = IRCTCExt.Passengers.berthToken(labelText);
     return (
+      options.find(
+        (opt) => IRCTCExt.Passengers.normalizeDropdownText(opt.getAttribute('aria-label')) === target
+      ) ||
       options.find(
         (opt) => IRCTCExt.Passengers.normalizeDropdownText(opt.textContent) === target
       ) ||
@@ -2897,8 +3113,121 @@ IRCTCExt.Passengers = {
         const text = IRCTCExt.Passengers.normalizeDropdownText(opt.textContent);
         return text === target || text.startsWith(`${target} `) || text.endsWith(` ${target}`);
       }) ||
+      options.find((opt) =>
+        IRCTCExt.Passengers.segmentMatches(opt.textContent, token)
+      ) ||
       options.find((opt) => IRCTCExt.Events.optionMatches(opt, labelText))
     );
+  },
+
+  findDropdownOptionInPanel(panel, labelText) {
+    if (!panel) return null;
+    return IRCTCExt.Passengers.findDropdownOption(
+      IRCTCExt.Passengers.dropdownOptionsInPanel(panel),
+      labelText
+    );
+  },
+
+  clickDropdownOption(option) {
+    IRCTCExt.Events.clickPrimeDropdownItem(option);
+  },
+
+  getDropdownOpenTrigger(dropdown) {
+    return (
+      dropdown?.querySelector('.ui-dropdown-trigger-icon.pi-chevron-down') ||
+      dropdown?.querySelector('.ui-dropdown-trigger-icon') ||
+      dropdown?.querySelector('.ui-dropdown-trigger') ||
+      dropdown
+    );
+  },
+
+  async waitForDropdownValue(dropdown, labelText, timeout = 2000) {
+    const matched = await IRCTCExt.Wait.poll(
+      () => {
+        const shown = IRCTCExt.Passengers.getDropdownShownValue(dropdown);
+        return IRCTCExt.Passengers.dropdownValueMatches(shown, labelText) ? shown : null;
+      },
+      { timeout, interval: 100 }
+    );
+    return !!matched;
+  },
+
+  async ensureDropdownOpen(dropdown) {
+    if (IRCTCExt.Passengers.isDropdownOpen(dropdown)) return true;
+
+    const clickTarget = IRCTCExt.Passengers.getDropdownOpenTrigger(dropdown);
+    IRCTCExt.Events.clickWithMouse(clickTarget);
+    await IRCTCExt.Wait.delay(400);
+    return IRCTCExt.Passengers.isDropdownOpen(dropdown);
+  },
+
+  async selectDropdownOptionFromPanel(dropdown, panel, labelText) {
+    const match = IRCTCExt.Passengers.findDropdownOptionInPanel(panel, labelText);
+    if (!match) return false;
+
+    const hiddenInput = dropdown.querySelector('.ui-helper-hidden-accessible input, input[role="listbox"]');
+    hiddenInput?.focus();
+
+    IRCTCExt.Passengers.clickDropdownOption(match);
+    if (await IRCTCExt.Passengers.waitForDropdownValue(dropdown, labelText)) return true;
+
+    IRCTCExt.Passengers.clickDropdownOption(match);
+    if (await IRCTCExt.Passengers.waitForDropdownValue(dropdown, labelText)) return true;
+
+    return await IRCTCExt.Passengers.selectDropdownViaKeyboard(dropdown, labelText);
+  },
+
+  async selectDropdownViaKeyboard(dropdown, labelText) {
+    const input = dropdown.querySelector('.ui-helper-hidden-accessible input, input[role="listbox"]');
+    if (!input) return false;
+
+    if (!(await IRCTCExt.Passengers.ensureDropdownOpen(dropdown))) return false;
+
+    const panel = IRCTCExt.Passengers.getDropdownPanel(dropdown);
+    const options = panel ? IRCTCExt.Passengers.dropdownOptionsInPanel(panel) : [];
+    const target = IRCTCExt.Passengers.normalizeDropdownText(labelText);
+    const targetIndex = options.findIndex((opt) => {
+      const aria = IRCTCExt.Passengers.normalizeDropdownText(opt.getAttribute('aria-label'));
+      const text = IRCTCExt.Passengers.normalizeDropdownText(opt.textContent);
+      return aria === target || text === target;
+    });
+    if (targetIndex < 0) return false;
+
+    input.focus();
+    IRCTCExt.Events.pressKey(input, 'Home');
+    await IRCTCExt.Wait.delay(80);
+
+    for (let i = 0; i <= targetIndex; i += 1) {
+      if (i > 0) {
+        IRCTCExt.Events.pressKey(input, 'ArrowDown');
+        await IRCTCExt.Wait.delay(80);
+      }
+    }
+
+    IRCTCExt.Events.pressKey(input, 'Enter');
+    return await IRCTCExt.Passengers.waitForDropdownValue(dropdown, labelText);
+  },
+
+  async selectBerthPreference(root, passenger) {
+    const labels = IRCTCExt.Passengers.berthLabelsToTry(passenger?.berth);
+    if (!labels.length) return true;
+
+    const sel = IRCTCExt.SELECTORS.passengers;
+    const berthTrigger = IRCTCExt.Wait.queryOne(sel.newPassengerBerth, root);
+    if (!berthTrigger || !IRCTCExt.Wait.isVisible(berthTrigger)) return false;
+
+    const dropdown = berthTrigger.closest('p-dropdown') || berthTrigger;
+    const current = IRCTCExt.Passengers.getDropdownShownValue(dropdown);
+    if (labels.some((label) => IRCTCExt.Passengers.dropdownValueMatches(current, label))) {
+      return true;
+    }
+
+    for (const label of labels) {
+      const selected = await IRCTCExt.Passengers.selectDropdownIn(root, sel.newPassengerBerth, label);
+      if (selected) return true;
+    }
+
+    return false;
   },
 
   async selectDropdownIn(root, triggerSelectors, labelText) {
@@ -2909,59 +3238,267 @@ IRCTCExt.Passengers = {
     const shown = IRCTCExt.Passengers.getDropdownShownValue(dropdown);
     if (IRCTCExt.Passengers.dropdownValueMatches(shown, labelText)) return true;
 
-    const clickTarget = dropdown.querySelector('.ui-dropdown-trigger') || trigger;
-    IRCTCExt.Events.click(clickTarget);
-    await IRCTCExt.Wait.delay(400);
+    const trySelect = async () => {
+      if (!(await IRCTCExt.Passengers.ensureDropdownOpen(dropdown))) return false;
 
-    const options = await IRCTCExt.Wait.poll(
-      () => {
-        const list = IRCTCExt.Passengers.visiblePassengerDropdownOptions();
-        return list.length ? list : null;
-      },
-      { timeout: 8000, interval: 150 }
+      const panel = await IRCTCExt.Wait.poll(
+        () => IRCTCExt.Passengers.getDropdownPanel(dropdown),
+        { timeout: 8000, interval: 150 }
+      );
+      if (!panel) return false;
+
+      return IRCTCExt.Passengers.selectDropdownOptionFromPanel(dropdown, panel, labelText);
+    };
+
+    if (await trySelect()) return true;
+    if (await IRCTCExt.Passengers.selectDropdownViaKeyboard(dropdown, labelText)) return true;
+
+    const clickTarget = IRCTCExt.Passengers.getDropdownOpenTrigger(dropdown) || trigger;
+    if (IRCTCExt.Passengers.isDropdownOpen(dropdown)) {
+      IRCTCExt.Events.clickWithMouse(clickTarget);
+      await IRCTCExt.Wait.delay(250);
+    }
+
+    if (await trySelect()) return true;
+    if (await IRCTCExt.Passengers.selectDropdownViaKeyboard(dropdown, labelText)) return true;
+
+    return IRCTCExt.Passengers.dropdownValueMatches(
+      IRCTCExt.Passengers.getDropdownShownValue(dropdown),
+      labelText
     );
-    if (!options?.length) return false;
+  },
 
-    const match = IRCTCExt.Passengers.findDropdownOption(options, labelText);
+  visiblePassengerAutocompleteOptions() {
+    const sel = IRCTCExt.SELECTORS.passengers;
+    const panels = IRCTCExt.Wait.queryAll(sel.newPassengerAutocompletePanel).filter((item) =>
+      IRCTCExt.Wait.isVisible(item)
+    );
+    if (panels.length) return panels;
+
+    return IRCTCExt.Wait.queryAll(IRCTCExt.SELECTORS.autocompletePanel).filter((item) =>
+      IRCTCExt.Wait.isVisible(item)
+    );
+  },
+
+  nameInputMatches(nameInput, passengerName) {
+    const actual = IRCTCExt.Passengers.normalizeName(nameInput?.value || '');
+    const expected = IRCTCExt.Passengers.normalizeName(passengerName);
+    return actual === expected;
+  },
+
+  async pickPassengerNameAutocomplete(nameInput, passengerName) {
+    const options = IRCTCExt.Passengers.visiblePassengerAutocompleteOptions();
+    if (!options.length) return false;
+
+    const match =
+      options.find((opt) =>
+        IRCTCExt.Passengers.normalizeName(opt.textContent) ===
+        IRCTCExt.Passengers.normalizeName(passengerName)
+      ) || options.find((opt) => IRCTCExt.Events.optionMatches(opt, passengerName));
+
     if (!match) return false;
 
     IRCTCExt.Events.click(match.querySelector('span') || match);
-    await IRCTCExt.Wait.delay(300);
-
-    let updated = IRCTCExt.Passengers.getDropdownShownValue(dropdown);
-    if (IRCTCExt.Passengers.dropdownValueMatches(updated, labelText)) return true;
-
-    IRCTCExt.Events.click(clickTarget);
-    await IRCTCExt.Wait.delay(300);
-    const retryOptions = IRCTCExt.Passengers.visiblePassengerDropdownOptions();
-    const retryMatch = IRCTCExt.Passengers.findDropdownOption(retryOptions, labelText);
-    if (!retryMatch) return false;
-    IRCTCExt.Events.click(retryMatch.querySelector('span') || retryMatch);
-    await IRCTCExt.Wait.delay(300);
-
-    updated = IRCTCExt.Passengers.getDropdownShownValue(dropdown);
-    return IRCTCExt.Passengers.dropdownValueMatches(updated, labelText);
+    await IRCTCExt.Wait.delay(200);
+    return IRCTCExt.Passengers.nameInputMatches(nameInput, passengerName);
   },
 
-  async fillNewPassengerForm(passenger, modalRoot) {
+  async fillPassengerNameAutocomplete(nameInput, passengerName) {
+    const name = String(passengerName || '').trim();
+    if (!name) return false;
+
+    nameInput.focus();
+    IRCTCExt.Events.setInputValue(nameInput, name, { blur: false });
+    await IRCTCExt.Wait.delay(200);
+
+    if (IRCTCExt.Passengers.nameInputMatches(nameInput, name)) return true;
+
+    const pickedAfterSet = await IRCTCExt.Wait.poll(
+      async () => {
+        if (await IRCTCExt.Passengers.pickPassengerNameAutocomplete(nameInput, name)) return true;
+        return null;
+      },
+      { timeout: 2000, interval: 150 }
+    );
+    if (pickedAfterSet) return true;
+
+    const prefix = name.slice(0, Math.min(4, name.length));
+    if (prefix) {
+      IRCTCExt.Events.setInputValue(nameInput, '', { blur: false });
+      await IRCTCExt.Events.typeSlowly(nameInput, prefix, 25);
+      await IRCTCExt.Wait.delay(250);
+      if (await IRCTCExt.Passengers.pickPassengerNameAutocomplete(nameInput, name)) return true;
+    }
+
+    IRCTCExt.Events.setInputValue(nameInput, name, { blur: false });
+    await IRCTCExt.Wait.delay(200);
+    if (IRCTCExt.Passengers.nameInputMatches(nameInput, name)) return true;
+
+    return await IRCTCExt.Passengers.pickPassengerNameAutocomplete(nameInput, name);
+  },
+
+  readNewPassengerForm(modalRoot) {
     const sel = IRCTCExt.SELECTORS.passengers;
-
     const nameInput = IRCTCExt.Wait.queryOne(sel.newPassengerName, modalRoot);
-    if (!nameInput) throw new Error('Passenger name field not found');
-    await IRCTCExt.Events.typeSlowly(nameInput, passenger.name.trim(), 40);
-    await IRCTCExt.Wait.delay(300);
-
     const ageInput = IRCTCExt.Wait.queryOne(sel.newPassengerAge, modalRoot);
-    if (!ageInput) throw new Error('Passenger age field not found');
-    IRCTCExt.Events.setInputValue(ageInput, String(passenger.age || '').trim());
+
+    const genderTrigger = IRCTCExt.Wait.queryOne(sel.newPassengerGender, modalRoot);
+    const berthTrigger = IRCTCExt.Wait.queryOne(sel.newPassengerBerth, modalRoot);
+    const foodTrigger = IRCTCExt.Wait.queryOne(sel.newPassengerFood, modalRoot);
+
+    const genderDropdown = genderTrigger?.closest('p-dropdown') || genderTrigger;
+    const berthDropdown = berthTrigger?.closest('p-dropdown') || berthTrigger;
+    const foodDropdown = foodTrigger?.closest('p-dropdown') || foodTrigger;
+
+    return {
+      name: (nameInput?.value || '').replace(/\s+/g, ' ').trim(),
+      age: String(ageInput?.value || '').trim(),
+      gender: genderDropdown ? IRCTCExt.Passengers.getDropdownShownValue(genderDropdown) : '',
+      berth: berthDropdown ? IRCTCExt.Passengers.getDropdownShownValue(berthDropdown) : '',
+      food: foodDropdown ? IRCTCExt.Passengers.getDropdownShownValue(foodDropdown) : ''
+    };
+  },
+
+  verifyNewPassengerForm(passenger, modalRoot) {
+    const form = IRCTCExt.Passengers.readNewPassengerForm(modalRoot);
+    const mismatches = [];
+
+    if (
+      IRCTCExt.Passengers.normalizeName(form.name) !==
+      IRCTCExt.Passengers.normalizeName(passenger.name)
+    ) {
+      mismatches.push(`name (expected "${passenger.name}", got "${form.name}")`);
+    }
+
+    if (passenger.age && String(form.age).trim() !== String(passenger.age).trim()) {
+      mismatches.push(`age (expected "${passenger.age}", got "${form.age}")`);
+    }
 
     const genderLabel = IRCTCExt.Passengers.genderLabel(passenger.gender);
-    const genderOk = await IRCTCExt.Passengers.selectDropdownIn(
-      modalRoot,
-      sel.newPassengerGender,
-      genderLabel
+    if (
+      passenger.gender &&
+      form.gender &&
+      !IRCTCExt.Passengers.segmentMatches(form.gender, IRCTCExt.Passengers.genderToken(passenger.gender)) &&
+      !IRCTCExt.Passengers.dropdownValueMatches(form.gender, genderLabel)
+    ) {
+      mismatches.push(`gender (expected "${genderLabel}", got "${form.gender}")`);
+    }
+
+    const berthLabel = IRCTCExt.Passengers.berthLabel(passenger.berth);
+    if (berthLabel) {
+      const berthMatches =
+        IRCTCExt.Passengers.segmentMatches(form.berth, IRCTCExt.Passengers.berthToken(passenger.berth)) ||
+        IRCTCExt.Passengers.berthLabelsToTry(passenger.berth).some((label) =>
+          IRCTCExt.Passengers.dropdownValueMatches(form.berth, label)
+        );
+      if (!berthMatches) {
+        mismatches.push(`berth (expected "${berthLabel}", got "${form.berth || 'Select'}")`);
+      }
+    }
+
+    const foodLabel = IRCTCExt.Passengers.foodLabel(passenger.food);
+    if (foodLabel && form.food) {
+      if (
+        !IRCTCExt.Passengers.segmentMatches(form.food, IRCTCExt.Passengers.foodToken(passenger.food)) &&
+        !IRCTCExt.Passengers.dropdownValueMatches(form.food, foodLabel)
+      ) {
+        mismatches.push(`food (expected "${foodLabel}", got "${form.food}")`);
+      }
+    }
+
+    return { ok: mismatches.length === 0, mismatches, form };
+  },
+
+  hasNewPassengerValidationErrors(modalRoot) {
+    const sel = IRCTCExt.SELECTORS.passengers;
+    const errors = IRCTCExt.Wait.queryAll(sel.newPassengerValidationError, modalRoot).filter((el) => {
+      if (!IRCTCExt.Wait.isVisible(el)) return false;
+      const text = (el.textContent || '').replace(/\s+/g, ' ').trim();
+      return text.length > 0;
+    });
+    return errors.length > 0;
+  },
+
+  async waitForNewPassengerFormReady(modalRoot) {
+    const sel = IRCTCExt.SELECTORS.passengers;
+    const ready = await IRCTCExt.Wait.poll(
+      () => {
+        const addBtn = IRCTCExt.Wait.queryOne(sel.newPassengerAddBtn, modalRoot);
+        if (!addBtn || !IRCTCExt.Wait.isVisible(addBtn) || addBtn.disabled) return null;
+        if (IRCTCExt.Passengers.hasNewPassengerValidationErrors(modalRoot)) return null;
+        return addBtn;
+      },
+      { timeout: 5000, interval: 150 }
     );
-    if (!genderOk) throw new Error(`Could not select gender: ${genderLabel}`);
+    return !!ready;
+  },
+
+  async refillNewPassengerFields(passenger, modalRoot, fields) {
+    const sel = IRCTCExt.SELECTORS.passengers;
+
+    if (fields.includes('name')) {
+      const nameInput = IRCTCExt.Wait.queryOne(sel.newPassengerName, modalRoot);
+      if (!nameInput) throw new Error('Passenger name field not found');
+      const nameOk = await IRCTCExt.Passengers.fillPassengerNameAutocomplete(nameInput, passenger.name);
+      if (!nameOk) throw new Error(`Could not set passenger name: ${passenger.name}`);
+    }
+
+    if (fields.includes('age')) {
+      const ageInput = IRCTCExt.Wait.queryOne(sel.newPassengerAge, modalRoot);
+      if (!ageInput) throw new Error('Passenger age field not found');
+      IRCTCExt.Events.setInputValue(ageInput, String(passenger.age || '').trim());
+    }
+
+    if (fields.includes('gender')) {
+      const genderLabel = IRCTCExt.Passengers.genderLabel(passenger.gender);
+      const genderOk = await IRCTCExt.Passengers.selectDropdownIn(
+        modalRoot,
+        sel.newPassengerGender,
+        genderLabel
+      );
+      if (!genderOk) throw new Error(`Could not select gender: ${genderLabel}`);
+    }
+
+    if (fields.includes('berth')) {
+      const berthOk = await IRCTCExt.Passengers.selectBerthPreference(modalRoot, passenger);
+      if (!berthOk) {
+        throw new Error(`Could not select berth: ${IRCTCExt.Passengers.berthLabel(passenger.berth)}`);
+      }
+    }
+
+    if (fields.includes('food')) {
+      const foodLabel = IRCTCExt.Passengers.foodLabel(passenger.food);
+      if (foodLabel) {
+        const foodDropdown = IRCTCExt.Wait.queryOne(sel.newPassengerFood, modalRoot);
+        if (foodDropdown && IRCTCExt.Wait.isVisible(foodDropdown)) {
+          const foodOk = await IRCTCExt.Passengers.selectDropdownIn(modalRoot, sel.newPassengerFood, foodLabel);
+          if (!foodOk) throw new Error(`Could not select food: ${foodLabel}`);
+        }
+      }
+    }
+  },
+
+  mismatchFieldsFromVerification(mismatches) {
+    const fields = new Set();
+    for (const item of mismatches) {
+      if (item.startsWith('name')) fields.add('name');
+      else if (item.startsWith('age')) fields.add('age');
+      else if (item.startsWith('gender')) fields.add('gender');
+      else if (item.startsWith('berth')) fields.add('berth');
+      else if (item.startsWith('food')) fields.add('food');
+    }
+    return [...fields];
+  },
+
+  async fillNewPassengerForm(passenger, modalRoot, overlay) {
+    const sel = IRCTCExt.SELECTORS.passengers;
+
+    await IRCTCExt.Passengers.refillNewPassengerFields(passenger, modalRoot, [
+      'name',
+      'age',
+      'gender',
+      'berth'
+    ]);
 
     const nationalityDropdown = IRCTCExt.Wait.queryOne(sel.newPassengerNationality, modalRoot);
     if (nationalityDropdown && IRCTCExt.Wait.isVisible(nationalityDropdown)) {
@@ -2969,14 +3506,6 @@ IRCTCExt.Passengers = {
       const current = IRCTCExt.Passengers.getDropdownShownValue(dropdown);
       if (!IRCTCExt.Passengers.dropdownValueMatches(current, 'India')) {
         await IRCTCExt.Passengers.selectDropdownIn(modalRoot, sel.newPassengerNationality, 'India');
-      }
-    }
-
-    const berth = (passenger.berth || '').trim();
-    if (berth && berth !== 'No Preference') {
-      const berthDropdown = IRCTCExt.Wait.queryOne(sel.newPassengerBerth, modalRoot);
-      if (berthDropdown && IRCTCExt.Wait.isVisible(berthDropdown)) {
-        await IRCTCExt.Passengers.selectDropdownIn(modalRoot, sel.newPassengerBerth, berth);
       }
     }
 
@@ -2988,11 +3517,36 @@ IRCTCExt.Passengers = {
       }
     }
 
+    let verification = IRCTCExt.Passengers.verifyNewPassengerForm(passenger, modalRoot);
+    if (!verification.ok) {
+      overlay?.setStatus(`Re-checking passenger details for ${passenger.name}...`);
+      const retryFields = IRCTCExt.Passengers.mismatchFieldsFromVerification(verification.mismatches);
+      if (retryFields.length) {
+        await IRCTCExt.Passengers.refillNewPassengerFields(passenger, modalRoot, retryFields);
+      }
+      verification = IRCTCExt.Passengers.verifyNewPassengerForm(passenger, modalRoot);
+    }
+
+    if (!verification.ok) {
+      throw new Error(`Passenger form mismatch: ${verification.mismatches.join('; ')}`);
+    }
+
     return true;
   },
 
-  async submitNewPassenger(modalRoot, expectedMinCount) {
+  async submitNewPassenger(passenger, modalRoot, expectedMinCount) {
     const sel = IRCTCExt.SELECTORS.passengers;
+
+    const verification = IRCTCExt.Passengers.verifyNewPassengerForm(passenger, modalRoot);
+    if (!verification.ok) {
+      throw new Error(`Cannot add passenger — form mismatch: ${verification.mismatches.join('; ')}`);
+    }
+
+    const formReady = await IRCTCExt.Passengers.waitForNewPassengerFormReady(modalRoot);
+    if (!formReady) {
+      throw new Error('Add Passenger form still has validation errors');
+    }
+
     const addBtn = IRCTCExt.Wait.queryOne(sel.newPassengerAddBtn, modalRoot);
     if (!addBtn) throw new Error('Add button not found in new passenger modal');
 
@@ -3009,30 +3563,35 @@ IRCTCExt.Passengers = {
   async addNewPassenger(passenger, overlay, expectedMinCount) {
     overlay.setStatus(`Adding new passenger: ${passenger.name}...`);
     const modal = await IRCTCExt.Passengers.openNewPassengerModal(overlay);
-    await IRCTCExt.Passengers.fillNewPassengerForm(passenger, modal);
-    return IRCTCExt.Passengers.submitNewPassenger(modal, expectedMinCount);
+    await IRCTCExt.Passengers.fillNewPassengerForm(passenger, modal, overlay);
+    return IRCTCExt.Passengers.submitNewPassenger(passenger, modal, expectedMinCount);
   },
 
-  async addPassengers(config, overlay) {
+  async addOneFromExistingModal(passenger, overlay, expectedMinCount) {
     const sel = IRCTCExt.SELECTORS.passengers;
-    overlay.setStep('Passengers');
-    await IRCTCExt.Storage.updateState({ currentStep: 'passengers' });
+    const modal = await IRCTCExt.Passengers.openExistingPassengerModal(overlay);
+    const rows = IRCTCExt.Wait.queryAll(sel.existingPassengerRow, modal);
+    const row = IRCTCExt.Passengers.findExistingRowStrict(rows, passenger);
 
-    const passengers = (config.passengers || []).filter((p) => p.name && String(p.name).trim());
-    if (!passengers.length) throw new Error('No passengers configured with names');
-
-    const startCount = IRCTCExt.Passengers.countPassengerListCards();
-    let expectedCount = startCount;
-
-    overlay.setStatus(`Matching ${passengers.length} passenger(s) in existing list...`);
-    const existingModal = await IRCTCExt.Passengers.openExistingPassengerModal(overlay);
-    const rows = IRCTCExt.Wait.queryAll(sel.existingPassengerRow, existingModal);
-    const { matched, unmatched } = IRCTCExt.Passengers.partitionPassengers(rows, passengers);
-
-    if (matched.length) {
-      expectedCount += matched.length;
-      await IRCTCExt.Passengers.addMatchedFromExisting(existingModal, matched, overlay, expectedCount);
+    if (!row) {
+      if (IRCTCExt.Passengers.isExistingModalOpen()) {
+        await IRCTCExt.Passengers.closeModalCancel(
+          sel.existingPassengerCancelBtn,
+          IRCTCExt.Passengers.isExistingModalOpen
+        );
+      }
+      return false;
     }
+
+    overlay.setStatus(`Adding ${passenger.name} from existing list...`);
+    IRCTCExt.Passengers.toggleRowCheckbox(row);
+    await IRCTCExt.Wait.delay(200);
+
+    const addBtn = IRCTCExt.Wait.queryOne(sel.existingPassengerAddBtn, modal);
+    if (!addBtn) throw new Error('Existing passenger Add button not found');
+    IRCTCExt.Events.click(addBtn);
+
+    await IRCTCExt.Passengers.waitForPassengerCount(expectedMinCount);
 
     if (IRCTCExt.Passengers.isExistingModalOpen()) {
       await IRCTCExt.Passengers.closeModalCancel(
@@ -3041,14 +3600,37 @@ IRCTCExt.Passengers = {
       );
     }
 
-    for (const passenger of unmatched) {
-      expectedCount += 1;
-      await IRCTCExt.Passengers.addNewPassenger(passenger, overlay, expectedCount);
+    return true;
+  },
+
+  async addOnePassenger(passenger, overlay, expectedMinCount) {
+    if (IRCTCExt.Passengers.passengerAlreadyOnList(passenger)) {
+      return 'skipped';
     }
 
-    const finalCount = IRCTCExt.Passengers.countPassengerListCards();
-    if (finalCount < startCount + passengers.length) {
-      throw new Error(`Expected ${passengers.length} passenger(s), found ${finalCount - startCount}`);
+    const fromExisting = await IRCTCExt.Passengers.addOneFromExistingModal(
+      passenger,
+      overlay,
+      expectedMinCount
+    );
+    if (fromExisting) return 'existing';
+
+    await IRCTCExt.Passengers.addNewPassenger(passenger, overlay, expectedMinCount);
+    return 'new';
+  },
+
+  async addPassengers(config, overlay) {
+    overlay.setStep('Passengers');
+    await IRCTCExt.Storage.updateState({ currentStep: 'passengers' });
+
+    const passengers = (config.passengers || []).filter((p) => p.name && String(p.name).trim());
+    if (!passengers.length) throw new Error('No passengers configured with names');
+
+    for (let i = 0; i < passengers.length; i += 1) {
+      const passenger = passengers[i];
+      overlay.setStatus(`Adding passenger ${i + 1}/${passengers.length}: ${passenger.name}...`);
+      const expectedCount = IRCTCExt.Passengers.countPassengerListCards() + 1;
+      await IRCTCExt.Passengers.addOnePassenger(passenger, overlay, expectedCount);
     }
 
     await IRCTCExt.Passengers.verifyAndReconcilePassengerList(config, overlay);
@@ -4255,7 +4837,12 @@ IRCTCExt.Bot = {
 
   async isRunning() {
     const config = await IRCTCExt.Storage.get();
-    return !!config.state.running;
+    return !!config.state.running && config.state.status !== 'stopped';
+  },
+
+  async wasStopped() {
+    const config = await IRCTCExt.Storage.get();
+    return !config.state.running || config.state.status === 'stopped';
   },
 
   async checkControlState() {
@@ -4434,7 +5021,10 @@ IRCTCExt.Bot = {
     if (this.running) return;
 
     const config = await IRCTCExt.Storage.get();
+    if (await IRCTCExt.Bot.wasStopped()) return;
+
     await IRCTCExt.Bot.waitForSiteReady(config);
+    if (await IRCTCExt.Bot.wasStopped()) return;
 
     const access = await IRCTCExt.PlatformBridge
       .sendMessage('CHECK_ACCESS', { forceRefresh: false })
@@ -4453,6 +5043,8 @@ IRCTCExt.Bot = {
       return;
     }
 
+    if (await IRCTCExt.Bot.wasStopped()) return;
+
     this.running = true;
 
     const overlay = await IRCTCExt.Overlay.show();
@@ -4465,6 +5057,11 @@ IRCTCExt.Bot = {
     overlay.setStep('Starting');
 
     IRCTCExt.Modals.dismissSessionRestore();
+
+    if (await IRCTCExt.Bot.wasStopped()) {
+      this.running = false;
+      return;
+    }
 
     await IRCTCExt.Storage.updateState({
       running: true,
@@ -4536,7 +5133,7 @@ IRCTCExt.Bot = {
     if (await IRCTCExt.Bot.handleErrorPageIfNeeded(overlay)) return;
 
     const config = await IRCTCExt.Storage.get();
-    if (!config.state.running || config.state.paused || this.running) return;
+    if (!config.state.running || config.state.paused || config.state.status === 'stopped' || this.running) return;
     try {
       await IRCTCExt.Bot.start();
     } catch (err) {
@@ -4610,21 +5207,14 @@ IRCTCExt.Bot = {
       if (msg.type === 'START_BOOKING') {
         (async () => {
           const config = await IRCTCExt.Storage.get();
+          if (await IRCTCExt.Bot.wasStopped()) return;
+
           await IRCTCExt.Bot.waitForSiteReady(config);
-          await IRCTCExt.Storage.updateState({
-            currentStep: 'init',
-            running: true,
-            paused: false,
-            status: 'running',
-            passengersDone: false,
-            paymentDone: false,
-            autoRestartCount: 0,
-            paymentPhase: null,
-            paymentGateway: null,
-            awaitingGateway: false
-          });
-          IRCTCExt.Bot.running = false;
-          await IRCTCExt.Bot.start();
+          if (await IRCTCExt.Bot.wasStopped()) return;
+
+          if (!IRCTCExt.Bot.running) {
+            await IRCTCExt.Bot.start();
+          }
         })().catch((err) => console.error('[IRCTC-Bot] Start failed:', err));
         sendResponse({ ok: true });
         return true;

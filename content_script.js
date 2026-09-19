@@ -513,8 +513,9 @@ IRCTCExt.Bot = {
             paymentGateway: null,
             awaitingGateway: false
           });
-          IRCTCExt.Bot.running = false;
-          await IRCTCExt.Bot.start();
+          if (!IRCTCExt.Bot.running) {
+            await IRCTCExt.Bot.start();
+          }
         })().catch(async (err) => {
           if (IRCTCExt.Bot.isExtensionInvalidated(err)) {
             const overlay = await IRCTCExt.Overlay.show().catch(() => null);

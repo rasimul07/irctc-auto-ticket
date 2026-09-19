@@ -18,36 +18,15 @@
 
   <div id="popupBody" class="popup-body">
   <div id="toast" class="toast toast--hidden" role="alert" aria-live="polite"></div>
-  <section id="profileBar" class="profile-bar" aria-label="Booking sets">
-    <div class="profile-bar__row">
-      <label class="profile-bar__label" for="bookingSetSelect">Active set</label>
-      <select id="bookingSetSelect" class="profile-bar__select"></select>
-    </div>
-    <div class="profile-bar__actions">
-      <button type="button" id="addSetBtn" class="btn-secondary btn-compact" title="Add set">+</button>
-      <button type="button" id="duplicateSetBtn" class="btn-secondary btn-compact" title="Duplicate set">Copy</button>
-      <button type="button" id="renameSetBtn" class="btn-secondary btn-compact" title="Rename set">Rename</button>
-      <button type="button" id="deleteSetBtn" class="btn-secondary btn-compact" title="Delete set">Delete</button>
-    </div>
-  </section>
   <div class="tabs-scroll">
     <nav class="tabs">
-      <button class="tab active" data-tab="access">Access</button>
-      <button class="tab" data-tab="credentials">Login</button>
-      <button class="tab" data-tab="journey">Journey</button>
-      <button class="tab" data-tab="passengers">Passengers</button>
-      <button class="tab" data-tab="schedule">Timer</button>
-      <button class="tab" data-tab="payment">Payment</button>
+      <button class="tab" data-tab="access" title="Subscription and license">Access</button>
+      <button class="tab active" data-tab="sets" title="Booking profiles">Active set</button>
     </nav>
-  </div>
-  <div id="setupProgress" class="setup-progress" aria-label="Setup progress">
-    <div class="setup-progress__bar" aria-hidden="true"><span id="setupProgressFill" style="width:0%"></span></div>
-    <div id="setupProgressSteps" class="setup-progress__steps"></div>
-    <span id="setupProgressLabel" class="setup-progress__label">0/4</span>
   </div>
 
   <main>
-    <section id="access" class="panel active">
+    <section id="access" class="panel">
       <p id="accessStatusText" class="access-status">Checking access...</p>
       <dl class="access-details">
         <div class="access-detail-row">
@@ -69,14 +48,6 @@
         <p>Login, journey, passenger, and payment details are saved only in this browser on your local machine. They are not uploaded or stored on any remote server.</p>
         <p>Uninstalling or removing the extension automatically deletes all saved booking data.</p>
       </section>
-
-      <label>IRCTC website version
-        <select id="bookingSite">
-          <option value="eticket" selected>Beta — eticket</option>
-          <option value="nget">Classic — nget</option>
-        </select>
-      </label>
-      <p class="journey-hint">Classic (nget) automation coming soon. Beta (eticket) is fully supported.</p>
 
       <section class="access-plans" aria-label="Subscription plans">
         <h3 class="access-plans__title">Subscription plans</h3>
@@ -150,8 +121,51 @@
       <button type="button" id="linkAccessEmailBtn" class="btn-secondary">Link email &amp; refresh</button>
     </section>
 
-    <section id="credentials" class="panel">
-      <p class="pre-start-note">Review Login, Journey, Passengers, Timer, and Payment tabs before starting auto-booking.</p>
+    <section id="sets" class="panel active">
+      <div id="setsPanel" class="sets-panel">
+        <div class="sets-toolbar">
+          <select id="bookingSetSelect" class="sets-toolbar__select" aria-label="Active booking set"></select>
+          <div class="sets-toolbar__actions">
+            <button type="button" id="addSetBtn" class="icon-btn--toolbar" title="Add set" aria-label="Add set">
+              <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+            </button>
+            <button type="button" id="duplicateSetBtn" class="icon-btn--toolbar" title="Duplicate set" aria-label="Duplicate set">
+              <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>
+            </button>
+            <button type="button" id="renameSetBtn" class="icon-btn--toolbar" title="Rename set" aria-label="Rename set">
+              <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1.003 1.003 0 0 0 0-1.42l-2.34-2.34a1.003 1.003 0 0 0-1.42 0l-1.83 1.83 3.75 3.75 1.84-1.82z"/></svg>
+            </button>
+            <button type="button" id="deleteSetBtn" class="icon-btn--toolbar icon-btn--danger" title="Delete set" aria-label="Delete set">
+              <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <div id="setupProgress" class="setup-progress setup-progress--inline" aria-label="Setup progress">
+          <div class="setup-progress__bar" aria-hidden="true"><span id="setupProgressFill" style="width:0%"></span></div>
+          <span id="setupProgressLabel" class="setup-progress__label">0/4 ready</span>
+        </div>
+
+        <label class="sets-site-label">IRCTC website version
+          <select id="bookingSite">
+            <option value="eticket" selected>Beta — eticket</option>
+            <option value="nget">Classic — nget</option>
+          </select>
+        </label>
+        <p class="journey-hint sets-site-hint">Classic (nget) automation coming soon. Beta (eticket) is fully supported.</p>
+
+        <div class="set-subtabs-scroll">
+          <nav class="set-subtabs" aria-label="Booking set sections">
+            <button type="button" class="set-subtab active" data-set-section="credentials" data-step="login">Login</button>
+            <button type="button" class="set-subtab" data-set-section="journey" data-step="journey">Journey</button>
+            <button type="button" class="set-subtab" data-set-section="passengers" data-step="passengers">Passengers</button>
+            <button type="button" class="set-subtab" data-set-section="payment" data-step="payment">Payment</button>
+            <button type="button" class="set-subtab" data-set-section="schedule">Timer</button>
+          </nav>
+        </div>
+
+        <div class="set-subpanels">
+          <div id="credentials" class="set-subpanel active">
       <label>Username <input type="text" id="username" autocomplete="username"></label>
       <label>Password
         <div class="password-field">
@@ -166,9 +180,9 @@
           </button>
         </div>
       </label>
-    </section>
+          </div>
 
-    <section id="journey" class="panel">
+          <div id="journey" class="set-subpanel">
       <label>From station code (preferred) or station name <input type="text" id="fromStation" placeholder="e.g. MLDT or MALDA TOWN"></label>
       <label>To station code (preferred) or station name <input type="text" id="toStation" placeholder="e.g. SDAH or SEALDAH"></label>
       <label>Journey Date <input type="date" id="journeyDate" required></label>
@@ -195,14 +209,14 @@
           <option value="LADIES">LADIES</option>
         </select>
       </label>
-    </section>
+          </div>
 
-    <section id="passengers" class="panel">
+          <div id="passengers" class="set-subpanel">
       <div id="passengerList"></div>
       <button type="button" id="addPassenger" class="btn-secondary">+ Add Passenger</button>
-    </section>
+          </div>
 
-    <section id="schedule" class="panel">
+          <div id="schedule" class="set-subpanel">
       <label class="checkbox-row">
         <input type="checkbox" id="scheduleEnabled"> Enable Tatkal scheduler
       </label>
@@ -213,9 +227,9 @@
         </select>
       </label>
       <p id="scheduleStatus" class="journey-hint">Scheduler status unavailable.</p>
-    </section>
+          </div>
 
-    <section id="payment" class="panel">
+          <div id="payment" class="set-subpanel">
       <label>Payment Method
         <select id="paymentMethod">
           <option value="cards">Cards / Net Banking / Wallets / EMI / UPI_CC / Others</option>
@@ -279,6 +293,9 @@
           </select>
         </label>
       </div>
+          </div>
+        </div>
+      </div>
     </section>
   </main>
 
@@ -286,6 +303,7 @@
     <div class="actions__row actions__row--primary">
       <button type="button" id="saveBtn" class="btn-primary btn-compact">Save</button>
       <button type="button" id="startBtn" class="btn-accent btn-compact" title="Start Auto-Booking">Start</button>
+      <button type="button" id="stopBtn" class="btn-danger btn-compact" title="Stop booking" hidden>Stop</button>
     </div>
     <button type="button" id="clearBtn" class="btn-danger btn-compact btn-compact--ghost">Clear all</button>
   </footer>

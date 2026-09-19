@@ -214,6 +214,39 @@ async function resetRunningState() {
   await updateStoreState({ running: false, status: 'idle', currentStep: 'init' });
 }
 
+async function stopAllBooking() {
+  await updateStoreState({
+    running: false,
+    paused: false,
+    status: 'stopped',
+    currentStep: 'init',
+    awaitingGateway: false,
+    paymentPhase: null,
+    paymentGateway: null,
+    passengersDone: false,
+    paymentDone: false,
+    autoRestartCount: 0
+  });
+
+  const tabs = await chrome.tabs.query({
+    url: [
+      'https://www.irctc.co.in/*',
+      'https://www.irctcipay.com/*',
+      'https://mercury-t2.phonepe.com/*',
+      'https://mercury.phonepe.com/*'
+    ]
+  });
+
+  for (const tab of tabs) {
+    if (!tab.id) continue;
+    try {
+      await chrome.tabs.sendMessage(tab.id, { type: 'STOP_BOOKING' });
+    } catch {
+      // Tab may not have a content script loaded.
+    }
+  }
+}
+
 async function openIrctcTab({ skipAccessCheck = false } = {}) {
   const config = await getActiveConfig();
 
@@ -336,6 +369,15 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
 });
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg.type === 'STOP_FROM_POPUP') {
+    stopAllBooking()
+      .then(() => sendResponse({ ok: true }))
+      .catch((err) => {
+        console.error('[IRCTC-Bot] STOP_FROM_POPUP failed:', err);
+        sendResponse({ ok: false, error: err.message || 'stop_failed' });
+      });
+    return true;
+  }
   if (msg.type === 'START_FROM_POPUP') {
     (async () => {
       try {

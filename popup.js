@@ -5,6 +5,8 @@ const AccessApi = window.IRCTCExt?.AccessApi;
 const els = {
   tabs: document.querySelectorAll('.tab'),
   panels: document.querySelectorAll('.panel'),
+  setSubtabs: document.querySelectorAll('.set-subtab'),
+  setSubpanels: document.querySelectorAll('.set-subpanel'),
   accessStatusText: document.getElementById('accessStatusText'),
   accessTier: document.getElementById('accessTier'),
   accessValidUntil: document.getElementById('accessValidUntil'),
@@ -47,12 +49,12 @@ const els = {
   scheduleStatus: document.getElementById('scheduleStatus'),
   saveBtn: document.getElementById('saveBtn'),
   startBtn: document.getElementById('startBtn'),
+  stopBtn: document.getElementById('stopBtn'),
   clearBtn: document.getElementById('clearBtn'),
   statusBadge: document.getElementById('statusBadge'),
-  profileBar: document.getElementById('profileBar'),
+  setsPanel: document.getElementById('setsPanel'),
   setupProgressFill: document.getElementById('setupProgressFill'),
   setupProgressLabel: document.getElementById('setupProgressLabel'),
-  setupProgressSteps: document.getElementById('setupProgressSteps'),
   toggleMinimizeBtn: document.getElementById('toggleMinimizeBtn'),
   popupBody: document.getElementById('popupBody'),
   toast: document.getElementById('toast'),
@@ -67,13 +69,12 @@ let activeSetId = null;
 let setsLocked = false;
 
 const POPUP_MINIMIZED_KEY = 'irctcPopupMinimized';
+const POPUP_TAB_KEY = 'irctcPopupTab';
+const POPUP_SET_SECTION_KEY = 'irctcPopupSetSection';
 const LINK_ACCESS_EMAIL_BTN_LABEL = 'Link email & refresh';
-const SETUP_STEP_TABS = {
-  login: 'credentials',
-  journey: 'journey',
-  passengers: 'passengers',
-  payment: 'payment'
-};
+const SET_SECTIONS = ['credentials', 'journey', 'passengers', 'payment', 'schedule'];
+const LEGACY_SECTION_TABS = new Set(SET_SECTIONS);
+const TOP_TABS = new Set(['access', 'sets']);
 let toastTimer = null;
 let activeSetName = 'Set 1';
 
@@ -249,10 +250,41 @@ async function linkAccessEmail() {
   }
 }
 
-function switchTab(tabId, focusTarget) {
-  els.tabs.forEach((t) => t.classList.toggle('active', t.dataset.tab === tabId));
-  els.panels.forEach((p) => p.classList.toggle('active', p.id === tabId));
+function switchSetSection(sectionId, focusTarget) {
+  if (!SET_SECTIONS.includes(sectionId)) return;
+  els.setSubtabs.forEach((tab) => {
+    tab.classList.toggle('active', tab.dataset.setSection === sectionId);
+  });
+  els.setSubpanels.forEach((panel) => {
+    panel.classList.toggle('active', panel.id === sectionId);
+  });
   if (focusTarget) focusField(focusTarget);
+  chrome.storage.local.set({ [POPUP_SET_SECTION_KEY]: sectionId });
+}
+
+function switchTab(tabId, focusTarget) {
+  let topTab = tabId;
+  let sectionId = null;
+
+  if (LEGACY_SECTION_TABS.has(tabId)) {
+    topTab = 'sets';
+    sectionId = tabId;
+  }
+
+  if (!TOP_TABS.has(topTab)) topTab = 'sets';
+
+  els.tabs.forEach((t) => t.classList.toggle('active', t.dataset.tab === topTab));
+  els.panels.forEach((p) => p.classList.toggle('active', p.id === topTab));
+
+  if (topTab === 'sets') {
+    const activePanel = Array.from(els.setSubpanels).find((panel) => panel.classList.contains('active'));
+    const activeSection = sectionId || activePanel?.id || 'credentials';
+    switchSetSection(activeSection, focusTarget);
+  } else if (focusTarget) {
+    focusField(focusTarget);
+  }
+
+  chrome.storage.local.set({ [POPUP_TAB_KEY]: topTab });
 }
 
 function getSelectedAutoPayType() {
@@ -311,7 +343,7 @@ function createPassengerRow(passenger = {}, index = 0) {
   card.dataset.index = index;
   card.innerHTML = `
     <h3>Passenger ${index + 1} ${index > 0 ? '<button type="button" class="remove-passenger">Remove</button>' : ''}</h3>
-    <label>Name <input type="text" class="p-name" value="${passenger.name || ''}"></label>
+    <label>Name (as per Govt. ID) <input type="text" class="p-name" placeholder="Full Name as per Govt. ID" value="${passenger.name || ''}"></label>
     <label>Age <input type="number" class="p-age" min="1" max="120" value="${passenger.age || ''}"></label>
     <label>Gender
       <select class="p-gender">
@@ -479,22 +511,38 @@ function updateSetupProgress(config) {
   const completion = progressApi.getSetupCompletion(config);
   const percent = completion.total ? Math.round((completion.done / completion.total) * 100) : 0;
   els.setupProgressFill.style.width = `${percent}%`;
-  els.setupProgressLabel.textContent = `${completion.done}/${completion.total}`;
+  els.setupProgressLabel.textContent = `${completion.done}/${completion.total} ready`;
 
-  if (!els.setupProgressSteps) return;
-  els.setupProgressSteps.innerHTML = '';
-  completion.steps.forEach((step) => {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = `setup-progress__step${step.done ? ' setup-progress__step--done' : ''}`;
-    btn.title = `${step.label}: ${step.hint}`;
-    btn.textContent = step.label.charAt(0);
-    btn.addEventListener('click', () => {
-      const tabId = SETUP_STEP_TABS[step.id];
-      if (tabId) switchTab(tabId);
-    });
-    els.setupProgressSteps.appendChild(btn);
+  els.setSubtabs.forEach((tab) => {
+    const stepId = tab.dataset.step;
+    if (!stepId) return;
+    const step = completion.steps.find((item) => item.id === stepId);
+    tab.classList.toggle('set-subtab--done', !!step?.done);
   });
+}
+
+async function loadInitialTab(config) {
+  const progressApi = window.IRCTCExt?.SetupProgress;
+  const ready = progressApi?.getSetupCompletion(config)?.ready;
+  const data = await chrome.storage.local.get([POPUP_TAB_KEY, POPUP_SET_SECTION_KEY]);
+  const savedTab = data[POPUP_TAB_KEY];
+  const savedSection = data[POPUP_SET_SECTION_KEY];
+
+  let topTab = 'sets';
+  if (TOP_TABS.has(savedTab)) topTab = savedTab;
+  else if (LEGACY_SECTION_TABS.has(savedTab)) topTab = 'sets';
+
+  let sectionId = 'credentials';
+  if (!ready) {
+    sectionId = 'credentials';
+  } else if (LEGACY_SECTION_TABS.has(savedTab)) {
+    sectionId = savedTab;
+  } else if (SET_SECTIONS.includes(savedSection)) {
+    sectionId = savedSection;
+  }
+
+  switchTab(topTab);
+  if (topTab === 'sets') switchSetSection(sectionId);
 }
 
 function readScheduleForm() {
@@ -531,14 +579,23 @@ async function armScheduleIfEnabled(schedule) {
   await chrome.runtime.sendMessage({ type: 'RESCHEDULE_ALARMS', schedule }).catch(() => null);
 }
 
-function updateSetControlsLocked(running) {
-  setsLocked = !!running;
+function isBookingActive(config) {
+  return !!config?.state?.running && config.state.status !== 'stopped';
+}
+
+function updateRunControls(active) {
+  setsLocked = !!active;
+  if (els.startBtn) els.startBtn.hidden = setsLocked;
+  if (els.stopBtn) els.stopBtn.hidden = !setsLocked;
   if (els.bookingSetSelect) els.bookingSetSelect.disabled = setsLocked;
   if (els.addSetBtn) els.addSetBtn.disabled = setsLocked;
   if (els.duplicateSetBtn) els.duplicateSetBtn.disabled = setsLocked;
   if (els.renameSetBtn) els.renameSetBtn.disabled = setsLocked;
   if (els.deleteSetBtn) els.deleteSetBtn.disabled = setsLocked;
-  els.profileBar?.classList.toggle('profile-bar--locked', setsLocked);
+  els.setSubtabs.forEach((tab) => {
+    tab.disabled = setsLocked;
+  });
+  els.setsPanel?.classList.toggle('sets-panel--locked', setsLocked);
 }
 
 async function renderSetSelector() {
@@ -554,7 +611,7 @@ async function renderSetSelector() {
     if (set.id === activeSetId) option.selected = true;
     els.bookingSetSelect.appendChild(option);
   });
-  updateSetControlsLocked(config.state?.running);
+  updateRunControls(isBookingActive(config));
 }
 
 async function persistFormToActiveSet() {
@@ -649,6 +706,7 @@ async function load() {
   await armScheduleIfEnabled(config.schedule);
   await updateScheduleStatus(config.schedule);
   await refreshAccess();
+  await loadInitialTab(config);
 
   IRCTCExt?.Network?.watchOnlineStatus(
     () => refreshAccess(),
@@ -659,7 +717,7 @@ async function load() {
     const latest = await Storage.get();
     activeSetName = latest.activeSetName || activeSetName;
     updateStatusBadge(latest.state?.status || 'idle', activeSetName);
-    updateSetControlsLocked(latest.state?.running);
+    updateRunControls(isBookingActive(latest));
   }, 2000);
 }
 
@@ -699,13 +757,14 @@ async function save() {
 
 function handleValidationFailure(err) {
   showToast(err.message, true);
+  switchTab('sets');
   if (err.focusId) {
-    switchTab(err.tab, err.focusId);
+    switchSetSection(err.tab, err.focusId);
   } else if (err.focusSelector) {
-    switchTab(err.tab);
+    switchSetSection(err.tab);
     focusField(err.focusSelector);
   } else {
-    switchTab(err.tab);
+    switchSetSection(err.tab);
   }
 }
 
@@ -745,12 +804,14 @@ async function startBooking() {
     tokenConsumed: false
   });
   updateStatusBadge('running', activeSetName);
+  updateRunControls(true);
   els.startBtn.disabled = true;
   chrome.runtime.sendMessage({ type: 'START_FROM_POPUP', skipAccessCheck: true }, async (response) => {
     els.startBtn.disabled = false;
     if (chrome.runtime.lastError) {
       await Storage.updateState({ running: false, status: 'idle', currentStep: 'init' });
       updateStatusBadge('idle', activeSetName);
+      updateRunControls(false);
       showToast(chrome.runtime.lastError.message || 'Could not start booking.', true);
       return;
     }
@@ -759,6 +820,7 @@ async function startBooking() {
     if (!response.ok) {
       await Storage.updateState({ running: false, status: 'idle', currentStep: 'init' });
       updateStatusBadge('idle', activeSetName);
+      updateRunControls(false);
       if (response.error === 'validation_failed') {
         handleValidationFailure(response);
       } else if (response.error === 'access_denied') {
@@ -779,6 +841,25 @@ async function startBooking() {
   });
 }
 
+async function stopBooking() {
+  if (els.stopBtn) els.stopBtn.disabled = true;
+  try {
+    const response = await chrome.runtime.sendMessage({ type: 'STOP_FROM_POPUP' });
+    if (response?.ok === false) {
+      throw new Error(response.error || 'Could not stop booking.');
+    }
+    const latest = await Storage.get();
+    activeSetName = latest.activeSetName || activeSetName;
+    updateStatusBadge(latest.state?.status || 'stopped', activeSetName);
+    updateRunControls(false);
+    showToast('Booking stopped.');
+  } catch (err) {
+    showToast(err.message || 'Could not stop booking.', true);
+  } finally {
+    if (els.stopBtn) els.stopBtn.disabled = false;
+  }
+}
+
 async function clearAll() {
   await Storage.clear();
   const config = await Storage.get();
@@ -790,6 +871,13 @@ async function clearAll() {
 
 els.tabs.forEach((tab) => {
   tab.addEventListener('click', () => switchTab(tab.dataset.tab));
+});
+
+els.setSubtabs.forEach((tab) => {
+  tab.addEventListener('click', () => {
+    switchTab('sets');
+    switchSetSection(tab.dataset.setSection);
+  });
 });
 
 els.addPassenger.addEventListener('click', () => {
@@ -834,6 +922,7 @@ els.deleteSetBtn?.addEventListener('click', () => {
 
 els.saveBtn.addEventListener('click', save);
 els.startBtn.addEventListener('click', startBooking);
+els.stopBtn?.addEventListener('click', stopBooking);
 els.clearBtn.addEventListener('click', clearAll);
 els.linkAccessEmailBtn?.addEventListener('click', linkAccessEmail);
 els.togglePasswordBtn?.addEventListener('click', togglePasswordVisibility);

@@ -87,7 +87,12 @@ IRCTCExt.Bot = {
 
   async isRunning() {
     const config = await IRCTCExt.Storage.get();
-    return !!config.state.running;
+    return !!config.state.running && config.state.status !== 'stopped';
+  },
+
+  async wasStopped() {
+    const config = await IRCTCExt.Storage.get();
+    return !config.state.running || config.state.status === 'stopped';
   },
 
   async checkControlState() {
@@ -266,7 +271,10 @@ IRCTCExt.Bot = {
     if (this.running) return;
 
     const config = await IRCTCExt.Storage.get();
+    if (await IRCTCExt.Bot.wasStopped()) return;
+
     await IRCTCExt.Bot.waitForSiteReady(config);
+    if (await IRCTCExt.Bot.wasStopped()) return;
 
     const access = await IRCTCExt.PlatformBridge
       .sendMessage('CHECK_ACCESS', { forceRefresh: false })
@@ -285,6 +293,8 @@ IRCTCExt.Bot = {
       return;
     }
 
+    if (await IRCTCExt.Bot.wasStopped()) return;
+
     this.running = true;
 
     const overlay = await IRCTCExt.Overlay.show();
@@ -297,6 +307,11 @@ IRCTCExt.Bot = {
     overlay.setStep('Starting');
 
     IRCTCExt.Modals.dismissSessionRestore();
+
+    if (await IRCTCExt.Bot.wasStopped()) {
+      this.running = false;
+      return;
+    }
 
     await IRCTCExt.Storage.updateState({
       running: true,
@@ -368,7 +383,7 @@ IRCTCExt.Bot = {
     if (await IRCTCExt.Bot.handleErrorPageIfNeeded(overlay)) return;
 
     const config = await IRCTCExt.Storage.get();
-    if (!config.state.running || config.state.paused || this.running) return;
+    if (!config.state.running || config.state.paused || config.state.status === 'stopped' || this.running) return;
     try {
       await IRCTCExt.Bot.start();
     } catch (err) {
@@ -442,21 +457,14 @@ IRCTCExt.Bot = {
       if (msg.type === 'START_BOOKING') {
         (async () => {
           const config = await IRCTCExt.Storage.get();
+          if (await IRCTCExt.Bot.wasStopped()) return;
+
           await IRCTCExt.Bot.waitForSiteReady(config);
-          await IRCTCExt.Storage.updateState({
-            currentStep: 'init',
-            running: true,
-            paused: false,
-            status: 'running',
-            passengersDone: false,
-            paymentDone: false,
-            autoRestartCount: 0,
-            paymentPhase: null,
-            paymentGateway: null,
-            awaitingGateway: false
-          });
-          IRCTCExt.Bot.running = false;
-          await IRCTCExt.Bot.start();
+          if (await IRCTCExt.Bot.wasStopped()) return;
+
+          if (!IRCTCExt.Bot.running) {
+            await IRCTCExt.Bot.start();
+          }
         })().catch((err) => console.error('[IRCTC-Bot] Start failed:', err));
         sendResponse({ ok: true });
         return true;
