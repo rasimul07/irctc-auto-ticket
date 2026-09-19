@@ -4623,8 +4623,9 @@ IRCTCExt.Bot = {
             paymentGateway: null,
             awaitingGateway: false
           });
-          IRCTCExt.Bot.running = false;
-          await IRCTCExt.Bot.start();
+          if (!IRCTCExt.Bot.running) {
+            await IRCTCExt.Bot.start();
+          }
         })().catch((err) => console.error('[IRCTC-Bot] Start failed:', err));
         sendResponse({ ok: true });
         return true;
