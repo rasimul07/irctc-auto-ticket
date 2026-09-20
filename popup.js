@@ -75,8 +75,36 @@ const LINK_ACCESS_EMAIL_BTN_LABEL = 'Link email & refresh';
 const SET_SECTIONS = ['credentials', 'journey', 'passengers', 'payment', 'schedule'];
 const LEGACY_SECTION_TABS = new Set(SET_SECTIONS);
 const TOP_TABS = new Set(['access', 'sets']);
+const CARDS_PROVIDERS_BY_SITE = {
+  eticket: [
+    { value: 'IRCTC iPay', label: 'IRCTC iPay' },
+    { value: 'IRCTC E-Wallet', label: 'IRCTC E-Wallet' },
+    { value: 'PhonePe', label: 'PhonePe', default: true }
+  ],
+  nget: [{ value: 'IRCTC iPay', label: 'IRCTC iPay', default: true }]
+};
 let toastTimer = null;
 let activeSetName = 'Set 1';
+
+function syncCardsProviderOptions(bookingSite, preferredValue = null) {
+  if (!els.cardsProvider) return;
+  const site = bookingSite === 'nget' ? 'nget' : 'eticket';
+  const providers = CARDS_PROVIDERS_BY_SITE[site];
+  const previous = preferredValue || els.cardsProvider.value;
+
+  els.cardsProvider.innerHTML = providers
+    .map((provider) => `<option value="${provider.value}">${provider.label}</option>`)
+    .join('');
+
+  const stillValid = providers.some((provider) => provider.value === previous);
+  if (stillValid) {
+    els.cardsProvider.value = previous;
+    return;
+  }
+
+  const fallback = providers.find((provider) => provider.default) || providers[0];
+  els.cardsProvider.value = fallback.value;
+}
 
 function setPasswordVisible(visible) {
   if (!els.password || !els.togglePasswordBtn) return;
@@ -318,10 +346,15 @@ function togglePaymentFields() {
 
 function readCardDetails(prefix) {
   const name = document.getElementById(`${prefix}CardName`).value.trim();
-  const number = document.getElementById(`${prefix}CardNumber`).value.replace(/\s+/g, '');
-  const expiry = document.getElementById(`${prefix}CardExpiry`).value.trim();
+  const number = document.getElementById(`${prefix}CardNumber`).value.replace(/\D/g, '');
+  const expiry = formatCardExpiry(document.getElementById(`${prefix}CardExpiry`).value);
   const cvv = document.getElementById(`${prefix}CardCvv`).value.trim();
   return { name, number, expiry, cvv };
+}
+
+function formatCardNumber(value) {
+  const digits = String(value || '').replace(/\D/g, '').slice(0, 16);
+  return digits.replace(/(\d{4})(?=\d)/g, '$1-');
 }
 
 function formatCardExpiry(value) {
@@ -332,8 +365,8 @@ function formatCardExpiry(value) {
 
 function fillCardDetails(prefix, card = {}) {
   document.getElementById(`${prefix}CardName`).value = card.name || '';
-  document.getElementById(`${prefix}CardNumber`).value = card.number || '';
-  document.getElementById(`${prefix}CardExpiry`).value = card.expiry || '';
+  document.getElementById(`${prefix}CardNumber`).value = formatCardNumber(card.number || '');
+  document.getElementById(`${prefix}CardExpiry`).value = formatCardExpiry(card.expiry || '');
   document.getElementById(`${prefix}CardCvv`).value = card.cvv || '';
 }
 
@@ -467,9 +500,10 @@ function fillForm(config) {
   els.trainName.value = config.journey?.trainName || '';
   els.travelClass.value = config.journey?.travelClass || 'SL';
   els.quota.value = config.journey?.quota || 'TATKAL';
-  if (els.bookingSite) els.bookingSite.value = config.preferences?.bookingSite || 'eticket';
+  const bookingSite = config.preferences?.bookingSite || 'eticket';
+  if (els.bookingSite) els.bookingSite.value = bookingSite;
   els.paymentMethod.value = config.preferences?.paymentMethod || 'cards';
-  els.cardsProvider.value = config.preferences?.cardsProvider || 'PhonePe';
+  syncCardsProviderOptions(bookingSite, config.preferences?.cardsProvider || 'PhonePe');
   els.upiProvider.value = config.preferences?.upiProvider || 'IRCTC iPay';
   els.autoPayEnabled.checked = !!config.preferences?.autoPayEnabled;
   const autoPayType = config.preferences?.autoPayType || 'debit';
@@ -893,14 +927,25 @@ els.scheduleEnabled?.addEventListener('change', () => updateScheduleStatus());
 els.scheduleType?.addEventListener('change', () => updateScheduleStatus());
 
 els.paymentMethod.addEventListener('change', togglePaymentFields);
+els.bookingSite?.addEventListener('change', () => {
+  syncCardsProviderOptions(els.bookingSite.value);
+});
 els.autoPayEnabled.addEventListener('change', toggleAutoPayFields);
 document.querySelectorAll('input[name="autoPayType"]').forEach((radio) => {
   radio.addEventListener('change', toggleAutoPayFields);
 });
 
+['debitCardNumber', 'creditCardNumber'].forEach((id) => {
+  document.getElementById(id)?.addEventListener('input', (e) => {
+    const formatted = formatCardNumber(e.target.value);
+    if (e.target.value !== formatted) e.target.value = formatted;
+  });
+});
+
 ['debitCardExpiry', 'creditCardExpiry'].forEach((id) => {
-  document.getElementById(id)?.addEventListener('blur', (e) => {
-    e.target.value = formatCardExpiry(e.target.value);
+  document.getElementById(id)?.addEventListener('input', (e) => {
+    const formatted = formatCardExpiry(e.target.value);
+    if (e.target.value !== formatted) e.target.value = formatted;
   });
 });
 

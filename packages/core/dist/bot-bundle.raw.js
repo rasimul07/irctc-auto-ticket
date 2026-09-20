@@ -1617,11 +1617,19 @@ IRCTCExt.NgetPaths = {
     return path.includes(authPath) || path.includes('/authRedirect');
   },
 
+  isPaymentPath(path = location.pathname) {
+    return path.includes('bkgPaymentOptions') || /\/payment(?:\/|$)/i.test(path);
+  },
+
+  isReviewPath(path = location.pathname) {
+    return path.includes('reviewBooking') || /\/review(?:\/|$)/i.test(path);
+  },
+
   syncStepFromPath(path, state = {}) {
     if (IRCTCExt.NgetPaths.isGatewayPath(path)) return 'gateway';
     if (state.awaitingGateway && state.paymentPhase === 'gateway') return 'gateway';
-    if (path.includes('payment')) return 'payment';
-    if (path.includes('review')) return 'review';
+    if (IRCTCExt.NgetPaths.isPaymentPath(path)) return 'payment';
+    if (IRCTCExt.NgetPaths.isReviewPath(path)) return 'review';
     if (path.includes('psgninput')) return state.passengersDone ? 'review' : 'passengers';
     if (path.includes('train-list')) return 'train-list';
     if (path.includes('train-search')) {
@@ -1642,14 +1650,6 @@ IRCTCExt.NgetPaths = {
 
   isTrainSearchPath(path = location.pathname) {
     return path.includes('train-search');
-  },
-
-  isPaymentPath(path = location.pathname) {
-    return path.includes('payment');
-  },
-
-  isReviewPath(path = location.pathname) {
-    return path.includes('review');
   },
 
   isPassengerPath(path = location.pathname) {
@@ -3279,7 +3279,7 @@ IRCTCExt.NgetSelectors = {
     },
 
     hasReachedPayment() {
-      return location.pathname.includes('payment');
+      return IRCTCExt.NgetPaths.isPaymentPath(location.pathname);
     },
 
     async clickContinue(overlay) {
@@ -3365,21 +3365,78 @@ IRCTCExt.NgetSelectors = {
 
   const sharedPrefs = () => IRCTCExt.PsgnPreferences;
 
-  const PROVIDER_MAP = {
+  // Must not use /upi/i alone — "IRCTC iPay (Credit Card/Debit Card/UPI)" also matches.
+  const BHIM_UPI_USSD_SIDEBAR = /bhim\s*\/\s*upi/i;
+
+  const CARDS_PROVIDER_MAP = {
     'irctc ipay': {
       sideMenuPattern: /irctc\s*ipay\s*\(credit/i,
       subOptionPattern: /irctc\s*ipay\s*new/i,
+      sideMenuLabel: 'IRCTC iPay (credit) sidebar',
+      tileLabel: 'IRCTC iPay New tile',
       gateway: 'irctcIpay'
     },
     ipay: {
       sideMenuPattern: /irctc\s*ipay\s*\(credit/i,
       subOptionPattern: /irctc\s*ipay\s*new/i,
+      sideMenuLabel: 'IRCTC iPay (credit) sidebar',
+      tileLabel: 'IRCTC iPay New tile',
       gateway: 'irctcIpay'
     },
     phonepe: {
       sideMenuPattern: /multiple\s*payment\s*service/i,
       subOptionPattern: /phonepe/i,
+      sideMenuLabel: 'Multiple Payment Service sidebar',
+      tileLabel: 'PhonePe tile',
       gateway: 'phonepe'
+    }
+  };
+
+  const UPI_PROVIDER_MAP = {
+    'irctc ipay': {
+      sideMenuPattern: BHIM_UPI_USSD_SIDEBAR,
+      subOptionPattern: /irctc\s*ipay\s*new/i,
+      sideMenuLabel: 'BHIM/UPI/USSD sidebar',
+      tileLabel: 'IRCTC iPay New tile',
+      gateway: 'irctcIpay'
+    },
+    ipay: {
+      sideMenuPattern: BHIM_UPI_USSD_SIDEBAR,
+      subOptionPattern: /irctc\s*ipay\s*new/i,
+      sideMenuLabel: 'BHIM/UPI/USSD sidebar',
+      tileLabel: 'IRCTC iPay New tile',
+      gateway: 'irctcIpay'
+    },
+    phonepe: {
+      sideMenuPattern: /multiple\s*payment\s*service/i,
+      subOptionPattern: /phonepe/i,
+      sideMenuLabel: 'Multiple Payment Service sidebar',
+      tileLabel: 'PhonePe tile',
+      gateway: 'phonepe'
+    },
+    razorpay: {
+      sideMenuPattern: /multiple\s*payment\s*service/i,
+      subOptionPattern: /razorpay/i,
+      sideMenuLabel: 'Multiple Payment Service sidebar',
+      tileLabel: 'Razorpay tile',
+      gateway: 'razorpay',
+      manualGateway: true
+    },
+    payu: {
+      sideMenuPattern: /multiple\s*payment\s*service/i,
+      subOptionPattern: /payu/i,
+      sideMenuLabel: 'Multiple Payment Service sidebar',
+      tileLabel: 'PayU tile',
+      gateway: 'payu',
+      manualGateway: true
+    },
+    'amazon pay': {
+      sideMenuPattern: BHIM_UPI_USSD_SIDEBAR,
+      subOptionPattern: /amazon\s*pay/i,
+      sideMenuLabel: 'BHIM/UPI/USSD sidebar',
+      tileLabel: 'Amazon Pay tile',
+      gateway: 'amazonpay',
+      manualGateway: true
     }
   };
 
@@ -3394,14 +3451,8 @@ IRCTCExt.NgetSelectors = {
 
     getProviderConfig(method, providerName) {
       const normalized = IRCTCExt.NgetPaymentFlow.normalizeProviderName(providerName);
-      if (method === 'upi' && (normalized === 'irctc ipay' || normalized === 'ipay')) {
-        return {
-          sideMenuPattern: /bhim|upi|irctc\s*ipay/i,
-          subOptionPattern: /irctc\s*ipay\s*new|bhim/i,
-          gateway: 'irctcIpay'
-        };
-      }
-      const config = PROVIDER_MAP[normalized];
+      const map = method === 'upi' ? UPI_PROVIDER_MAP : CARDS_PROVIDER_MAP;
+      const config = map[normalized];
       if (!config) {
         throw new Error(`Unsupported NGET payment provider: ${providerName || '(empty)'}`);
       }
@@ -3436,19 +3487,43 @@ IRCTCExt.NgetSelectors = {
       return !!(item && item.classList.contains('bank-type-active'));
     },
 
+    getPayTypeMenuRoot() {
+      const sel = IRCTCExt.NgetPaymentFlow.getSelectors();
+      const menu = IRCTCExt.Wait.queryOne(sel.payTypeMenu);
+      return menu && IRCTCExt.Wait.isVisible(menu) ? menu : null;
+    },
+
     findBankTypeItem(pattern) {
       const sel = IRCTCExt.NgetPaymentFlow.getSelectors();
-      const items = IRCTCExt.Wait.queryAll(sel.bankTypeItem);
+      const root = IRCTCExt.NgetPaymentFlow.getPayTypeMenuRoot() || document;
+      const items = IRCTCExt.Wait.queryAll(sel.bankTypeItem, root);
+      let fallback = null;
+
       for (const item of items) {
         if (!IRCTCExt.Wait.isVisible(item)) continue;
         const label = IRCTCExt.NgetPaymentFlow.getBankTypeLabel(item);
-        if (pattern.test(label)) return item;
+        if (!pattern.test(label)) continue;
+        // Prefer the BHIM/UPI/USSD row over any accidental partial match.
+        if (/bhim\s*\/\s*upi/i.test(label)) return item;
+        if (!fallback) fallback = item;
       }
-      return null;
+
+      return fallback;
     },
 
-    async selectBankType(pattern, overlay, maxAttempts = 6) {
-      overlay?.setStatus('Selecting payment category...');
+    formatStepStatus(providerName, message) {
+      const who = String(providerName || '').trim();
+      return who ? `${who}: ${message}` : message;
+    },
+
+    async selectBankType(pattern, overlay, options = {}) {
+      const { providerName, menuLabel, maxAttempts = 6 } = options;
+      overlay?.setStatus(
+        IRCTCExt.NgetPaymentFlow.formatStepStatus(
+          providerName,
+          `selecting ${menuLabel || 'payment category'}...`
+        )
+      );
 
       const item = await IRCTCExt.Wait.poll(
         () => IRCTCExt.NgetPaymentFlow.findBankTypeItem(pattern),
@@ -3459,11 +3534,12 @@ IRCTCExt.NgetSelectors = {
       for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
         if (IRCTCExt.NgetPaymentFlow.isBankTypeActive(item)) return true;
         IRCTCExt.NgetPaymentFlow.clickTarget(item);
-        await IRCTCExt.Wait.delay(350);
+        await IRCTCExt.Wait.delay(500);
         if (IRCTCExt.NgetPaymentFlow.isBankTypeActive(item)) return true;
       }
 
-      throw new Error('Could not select payment category on NGET payment page');
+      const label = IRCTCExt.NgetPaymentFlow.getBankTypeLabel(item);
+      throw new Error(`Could not select payment category on NGET payment page: ${label}`);
     },
 
     getBankOptionLabel(row) {
@@ -3502,14 +3578,24 @@ IRCTCExt.NgetSelectors = {
       return null;
     },
 
-    async selectBankOption(pattern, overlay, maxAttempts = 6) {
-      overlay?.setStatus('Selecting payment option...');
+    async selectBankOption(pattern, overlay, options = {}) {
+      const { providerName, tileLabel, maxAttempts = 6 } = options;
+      overlay?.setStatus(
+        IRCTCExt.NgetPaymentFlow.formatStepStatus(
+          providerName,
+          `selecting ${tileLabel || 'payment option'}...`
+        )
+      );
 
       const option = await IRCTCExt.Wait.poll(
         () => IRCTCExt.NgetPaymentFlow.findBankOption(pattern),
         { timeout: 15000, interval: 250 }
       );
-      if (!option) throw new Error('Payment option not found on NGET payment page');
+      if (!option) {
+        throw new Error(
+          `Payment option not found on NGET payment page${tileLabel ? `: ${tileLabel}` : ''}`
+        );
+      }
 
       for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
         IRCTCExt.NgetPaymentFlow.clickTarget(option);
@@ -3553,8 +3639,10 @@ IRCTCExt.NgetSelectors = {
       return null;
     },
 
-    async clickPayAndBook(overlay) {
-      overlay?.setStatus('Clicking Pay & Book...');
+    async clickPayAndBook(overlay, providerName = '') {
+      overlay?.setStatus(
+        IRCTCExt.NgetPaymentFlow.formatStepStatus(providerName, 'clicking Pay & Book...')
+      );
 
       const payBtn = await IRCTCExt.Wait.poll(
         () => IRCTCExt.NgetPaymentFlow.findPayAndBookButton(document),
@@ -3579,14 +3667,30 @@ IRCTCExt.NgetSelectors = {
       const providerName = IRCTCExt.NgetPaymentFlow.getPaymentProvider(config, method);
       const providerConfig = IRCTCExt.NgetPaymentFlow.getProviderConfig(method, providerName);
 
-      overlay?.setStatus(`Selecting ${providerName}...`);
       await IRCTCExt.NgetPaymentFlow.waitForPaymentPage();
       await IRCTCExt.Wait.delay(400);
 
-      await IRCTCExt.NgetPaymentFlow.selectBankType(providerConfig.sideMenuPattern, overlay);
+      const stepContext = {
+        providerName,
+        menuLabel: providerConfig.sideMenuLabel,
+        tileLabel: providerConfig.tileLabel
+      };
+
+      await IRCTCExt.NgetPaymentFlow.selectBankType(providerConfig.sideMenuPattern, overlay, stepContext);
+      await IRCTCExt.Wait.delay(600);
+      await IRCTCExt.NgetPaymentFlow.selectBankOption(providerConfig.subOptionPattern, overlay, stepContext);
       await IRCTCExt.Wait.delay(400);
-      await IRCTCExt.NgetPaymentFlow.selectBankOption(providerConfig.subOptionPattern, overlay);
-      await IRCTCExt.Wait.delay(400);
+
+      if (providerConfig.manualGateway) {
+        await IRCTCExt.NgetPaymentFlow.clickPayAndBook(overlay, providerName);
+        overlay?.setStatus(
+          IRCTCExt.NgetPaymentFlow.formatStepStatus(
+            providerName,
+            'complete payment on gateway manually'
+          )
+        );
+        return { awaitingGateway: false };
+      }
 
       await IRCTCExt.Storage.updateState({
         running: true,
@@ -3598,8 +3702,10 @@ IRCTCExt.NgetSelectors = {
         currentStep: 'gateway'
       });
 
-      await IRCTCExt.NgetPaymentFlow.clickPayAndBook(overlay);
-      overlay?.setStatus('Redirecting to payment gateway...');
+      await IRCTCExt.NgetPaymentFlow.clickPayAndBook(overlay, providerName);
+      overlay?.setStatus(
+        IRCTCExt.NgetPaymentFlow.formatStepStatus(providerName, 'redirecting to payment gateway...')
+      );
 
       return {
         awaitingGateway: true,
@@ -3654,7 +3760,7 @@ IRCTCExt.NgetSelectors = {
     },
 
     async handlePayment(config, overlay) {
-      if (!location.pathname.includes('bkgPaymentOptions') && !location.pathname.includes('payment')) {
+      if (!IRCTCExt.NgetPaths.isPaymentPath(location.pathname)) {
         throw new Error('Not on NGET payment page');
       }
       activateSharedBookingSelectors();
@@ -6867,8 +6973,8 @@ IRCTCExt.Passengers = {
     hasLeftPsgninput() {
       const path = location.pathname;
       if (!path.includes('psgninput')) return true;
-      if (path.includes('review')) return true;
-      if (path.includes('payment')) return true;
+      if (IRCTCExt.NgetPaths.isReviewPath(path)) return true;
+      if (IRCTCExt.NgetPaths.isPaymentPath(path)) return true;
       return false;
     },
 

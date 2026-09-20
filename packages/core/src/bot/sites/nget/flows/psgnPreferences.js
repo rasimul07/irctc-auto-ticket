@@ -120,8 +120,8 @@
     hasLeftPsgninput() {
       const path = location.pathname;
       if (!path.includes('psgninput')) return true;
-      if (path.includes('review')) return true;
-      if (path.includes('payment')) return true;
+      if (IRCTCExt.NgetPaths.isReviewPath(path)) return true;
+      if (IRCTCExt.NgetPaths.isPaymentPath(path)) return true;
       return false;
     },
 

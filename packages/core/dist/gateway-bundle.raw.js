@@ -227,11 +227,19 @@ IRCTCExt.NgetPaths = {
     return path.includes(authPath) || path.includes('/authRedirect');
   },
 
+  isPaymentPath(path = location.pathname) {
+    return path.includes('bkgPaymentOptions') || /\/payment(?:\/|$)/i.test(path);
+  },
+
+  isReviewPath(path = location.pathname) {
+    return path.includes('reviewBooking') || /\/review(?:\/|$)/i.test(path);
+  },
+
   syncStepFromPath(path, state = {}) {
     if (IRCTCExt.NgetPaths.isGatewayPath(path)) return 'gateway';
     if (state.awaitingGateway && state.paymentPhase === 'gateway') return 'gateway';
-    if (path.includes('payment')) return 'payment';
-    if (path.includes('review')) return 'review';
+    if (IRCTCExt.NgetPaths.isPaymentPath(path)) return 'payment';
+    if (IRCTCExt.NgetPaths.isReviewPath(path)) return 'review';
     if (path.includes('psgninput')) return state.passengersDone ? 'review' : 'passengers';
     if (path.includes('train-list')) return 'train-list';
     if (path.includes('train-search')) {
@@ -252,14 +260,6 @@ IRCTCExt.NgetPaths = {
 
   isTrainSearchPath(path = location.pathname) {
     return path.includes('train-search');
-  },
-
-  isPaymentPath(path = location.pathname) {
-    return path.includes('payment');
-  },
-
-  isReviewPath(path = location.pathname) {
-    return path.includes('review');
   },
 
   isPassengerPath(path = location.pathname) {

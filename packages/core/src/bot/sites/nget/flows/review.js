@@ -84,7 +84,7 @@
     },
 
     hasReachedPayment() {
-      return location.pathname.includes('payment');
+      return IRCTCExt.NgetPaths.isPaymentPath(location.pathname);
     },
 
     async clickContinue(overlay) {

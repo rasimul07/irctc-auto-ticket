@@ -7,7 +7,7 @@ Chrome extension (Manifest V3) that automates the live IRCTC e-ticket flow from 
 1. **Load extension** — `chrome://extensions` → Developer mode → Load unpacked → this repo root
 2. **Run API locally** (or point at prod — see [Access and API](#access-and-api))
 3. **Popup** — Access tab: link BMC email → Login / Journey / Passengers / Payment tabs → **Save Details**
-4. **Start** — **Start Auto-Booking** opens `irctc.co.in/eticket/train-search` and runs the flow below
+4. **Start** — **Start Auto-Booking** opens train-search for your chosen site (`/eticket` or `/nget`) and runs the flow below
 
 Reload the extension after changing JS, CSS, or `lib/accessConfig.js`.
 
@@ -23,11 +23,11 @@ Booking is blocked until the access API returns `allowed: true`. The popup **Acc
 | Plan | Extension | Tokens |
 |------|-----------|--------|
 | **Trial** | Unlimited | — (`FREE_TRIAL_DAYS` after BMC recurring signup) |
-| **Coffee** | Allowed while tokens remain | 10 per 30 days; 1 consumed at payment page |
+| **Coffee** | Allowed while tokens remain | 5 per 30 days for 12 months per purchase; 1 consumed at payment page |
 | **Basic** | Unlimited | — (BMC Basic membership) |
 | **Pro** | Unlimited | — (extension + planned mobile apps) |
 
-Coffee tokens renew monthly via backend cron when `coffee_donations_count >= 1`. Details: [`backend/README.md`](backend/README.md).
+Coffee tokens renew monthly for up to 12 months per purchase (`COFFEE_RENEWAL_MONTHS`); after that, renewals stop until the next coffee purchase. Details: [`backend/README.md`](backend/README.md).
 
 ### API target
 
@@ -74,10 +74,12 @@ Verify: `curl http://localhost:3000/health`
 
 ## Payment options
 
-Settings on the popup **Payment** tab are used in two places:
+Settings on the popup **Payment** tab are shared by both site versions. Where they apply depends on the active site:
 
-1. **`psgninput`** — **Payment method** picks the IRCTC radio (Cards/Net Banking vs BHIM/UPI) before Calculate Fare
-2. **`bkgPaymentOptions`** — **Enable auto pay**, **provider**, and gateway auto-fill run after you reach the payment page (coffee token consumed here)
+| Site | Payment method (step 1) | Auto pay / provider (step 2; token consumed) |
+|------|-------------------------|-----------------------------------------------|
+| **eticket** | `psgninput` — radio before **Calculate Fare** | `bkgPaymentOptions` |
+| **nget** | `psgninput` — **Payment Mode** radio before **Continue** | `/nget/payment` |
 
 ### Payment method
 
@@ -99,7 +101,9 @@ OTP, 3-D Secure, and UPI approval are always manual.
 
 ### Payment provider
 
-Which bank/gateway tile the bot clicks on `bkgPaymentOptions`.
+Which bank/gateway option the bot selects on the payment page.
+
+**nget (classic)** — Cards: **IRCTC iPay** and **PhonePe**. BHIM/UPI: **IRCTC iPay**, **PhonePe**, **Razorpay**, **PayU**, and **Amazon Pay** (two-level side menu). E-Wallet and other eticket-only tiles are not used on nget.
 
 **Cards payment method**
 
@@ -151,6 +155,8 @@ If auto pay is on but card details are missing for debit/credit, the gateway ste
 
 ### Payment decision summary
 
+#### eticket (beta)
+
 ```
 bkgPaymentOptions (token consumed)
 │
@@ -171,6 +177,67 @@ bkgPaymentOptions (token consumed)
             │                    ├─ Debit / Credit → card form → Proceed → manual OTP
             │                    └─ QR (UPI)       → UPI/QR view → manual scan
             └─ E-Wallet        → select tile → Pay & Book → manual on gateway
+```
+
+#### nget (classic)
+
+NGET uses a two-level payment UI (`#pay-type` side menu → bank sub-option) instead of flat provider tiles. UPI always goes through **Pay & Book** (no separate “Click to pay” step).
+
+```
+/nget/payment (token consumed)
+│
+├─ Enable auto pay OFF
+│     → pause + booking-review overlay; pay manually on IRCTC
+│
+└─ Enable auto pay ON
+      │
+      ├─ Payment method: BHIM / UPI
+      │     ├─ IRCTC iPay    → BHIM/UPI/USSD → IRCTC iPay New → Pay & Book → pg.irctcpayments.com
+      │     │                    └─ QR            → UPI accordion → Show QR → manual scan
+      │     ├─ PhonePe       → Multiple Payment Service → PhonePe → Pay & Book → mercury.phonepe.com
+      │     ├─ Razorpay      → Multiple Payment Service → Razorpay → Pay & Book → manual on gateway
+      │     ├─ PayU          → Multiple Payment Service → PayU → Pay & Book → manual on gateway
+      │     └─ Amazon Pay    → BHIM/UPI/USSD → Amazon Pay → Pay & Book → manual on gateway
+      │
+      └─ Payment method: Cards
+            ├─ IRCTC iPay    → side menu IRCTC iPay (credit) → IRCTC iPay New → Pay & Book → pg.irctcpayments.com
+            │                    ├─ Debit / Credit → Cards accordion → fill saved card → Pay Now → manual OTP
+            │                    └─ QR (UPI)       → UPI accordion → Show QR → manual scan
+            └─ PhonePe         → side menu Multiple Payment Service → PhonePe → Pay & Book → mercury.phonepe.com
+                                 ├─ Debit / Credit → card form → Proceed → manual OTP
+                                 └─ QR (UPI)       → UPI/QR view → manual scan
+```
+
+Gateway scripting on nget runs on **`pg.irctcpayments.com`** (IRCTC iPay / IRCTC Payments) and **`mercury-t2.phonepe.com`** / **`mercury.phonepe.com`** (PhonePe). If iPay redirects to **`irctcipay.com`**, the same iPay auto-fill handlers as eticket are used.
+
+**nget BHIM/UPI — sidebar vs tile (step 1 and step 2)**
+
+| UPI Provider | Sidebar (step 1) | Tile (step 2) |
+|--------------|------------------|---------------|
+| IRCTC iPay | BHIM/ UPI/ USSD | IRCTC iPay New |
+| Amazon Pay | BHIM/ UPI/ USSD | Amazon Pay |
+| PhonePe | Multiple Payment Service | PhonePe |
+| Razorpay | Multiple Payment Service | Razorpay |
+| PayU | Multiple Payment Service | PayU |
+
+IRCTC iPay and Amazon Pay share the same sidebar category; the bot picks the correct tile from your popup **UPI Provider** setting.
+
+**Example: Amazon Pay (BHIM/UPI, auto pay ON)**
+
+Popup: **Payment method** = BHIM/UPI, **UPI Provider** = Amazon Pay
+
+```
+Step 1 — Sidebar (#pay-type)
+  Click: div.bank-type  →  label "BHIM/ UPI/ USSD"
+  Active state: .bank-type-active
+
+Step 2 — Provider tile (main panel)
+  Click: div.border-all.link  →  span.col-pad "Amazon Pay"
+
+Step 3 — Submit
+  Click: button.btn.btn-primary  →  "Pay & Book"
+
+Step 4 — Complete payment on the Amazon Pay gateway manually
 ```
 
 ---
@@ -204,6 +271,33 @@ Start / Tatkal alarm
   bkgPaymentOptions ── consume token → see Payment options (auto pay / provider / type)
 ```
 
+**nget (classic)** — same popup settings; path names differ:
+
+```
+Start / Tatkal alarm
+       │
+       ▼
+  Access check
+       │
+       ▼
+  train-search ── Language (if modal) → Login (pause for CAPTCHA/OTP)
+       │
+       ▼
+  Search → train-list
+       │
+       ▼
+  Match train → Check Availability → Book (AVAILABLE or RAC only)
+       │
+       ▼
+  psgninput ── Inline passengers → payment mode → Continue
+       │
+       ▼
+  review ── Passenger review popup → Continue To Payment
+       │
+       ▼
+  payment ── consume token → see Payment options (auto pay / provider / type)
+```
+
 ### Site versions
 
 Choose **IRCTC website version** on the popup **Access** tab (`preferences.bookingSite`).
@@ -211,7 +305,7 @@ Choose **IRCTC website version** on the popup **Access** tab (`preferences.booki
 | Site | Base path | Start URL | Status |
 |------|-----------|-----------|--------|
 | **eticket** (beta) | `/eticket` | `https://www.irctc.co.in/eticket/train-search` | Fully automated |
-| **nget** (classic) | `/nget` | `https://www.irctc.co.in/nget/train-search` | Stub only — coming soon |
+| **nget** (classic) | `/nget` | `https://www.irctc.co.in/nget/train-search` | Fully automated |
 
 Site-specific automation lives under [`packages/core/src/bot/sites/eticket/`](packages/core/src/bot/sites/eticket/) and [`packages/core/src/bot/sites/nget/`](packages/core/src/bot/sites/nget/). Shared DOM helpers are in [`packages/core/src/bot/lib/`](packages/core/src/bot/lib/). The active site is resolved by [`packages/core/src/bot/sites/registry.js`](packages/core/src/bot/sites/registry.js) (also loaded at `document_start` via [`sites/registry.js`](sites/registry.js)).
 
@@ -230,6 +324,20 @@ To add a step for a site: implement it in `packages/core/src/bot/sites/<site>/fl
 | `mercury-t2.phonepe.com` | PhonePe gateway (cards + auto pay) |
 | `/eticket/error` | Auto-restart from train-search (max 3) |
 
+### IRCTC pages (nget / classic)
+
+| Path | Step |
+|------|------|
+| `/nget/train-search` | Language modal (if shown), login, search |
+| `/nget/train-list` | Pick train, availability, Book |
+| `/nget/psgninput` | Passengers, payment mode, Continue |
+| `/nget/review` | Passenger review popup, Continue to payment |
+| `/nget/payment` | Side menu + provider, Pay & Book, token consume |
+| `pg.irctcpayments.com` | IRCTC Payments gateway (iPay cards + QR; primary nget gateway) |
+| `irctcipay.com` | IRCTC iPay gateway (if redirected from nget) |
+| `mercury-t2.phonepe.com` | PhonePe gateway (cards + auto pay) |
+| `/nget/error` | Auto-restart from train-search (max 3) |
+
 ### Step details
 
 **Login** — Opens USER tab, fills credentials. CAPTCHA/OTP shows overlay **Continue**; you solve on IRCTC first. Session-restore modals are dismissed automatically.
@@ -244,7 +352,9 @@ To add a step for a site: implement it in `packages/core/src/bot/sites/<site>/fl
 
 **Review** — Continue To Payment; handles IRCTC confirmation popup.
 
-**Payment** — Coffee plan: one token per `bookingSessionId` when `bkgPaymentOptions` loads (idempotent). Behavior depends on [Payment options](#payment-options): auto pay off = manual on IRCTC; auto pay on = provider selection + optional iPay gateway fill (debit/credit/QR).
+**Payment** — Coffee plan: one token per `bookingSessionId` when the payment page loads (`bkgPaymentOptions` on eticket, `/nget/payment` on nget; idempotent). Behavior depends on [Payment options](#payment-options): auto pay off = manual on IRCTC; auto pay on = provider selection + gateway auto-fill (debit/credit/QR).
+
+**nget passengers** — Fills passenger rows inline on `psgninput` (name autocomplete, age, gender, berth); does not use the eticket “Existing Passenger” modal.
 
 ### Overlay controls
 
@@ -282,7 +392,9 @@ On IRCTC pages: **Pause**, **Restart** (train-search), **Stop**, and **Continue*
 | Module | Role |
 |--------|------|
 | `packages/core/src/bot/sites/eticket/trainList.js` | Train match, availability, Book (eticket) |
-| `packages/core/src/bot/sites/nget/` | Classic IRCTC flow (language, login, search, booking) |
+| `packages/core/src/bot/sites/nget/flows/payment.js` | NGET side-menu provider selection, Pay & Book |
+| `packages/core/src/bot/sites/nget/` | Classic IRCTC flow (language, login, search, booking, payment) |
+| `lib/gateways/irctcPayments.js` | `pg.irctcpayments.com` auto-fill (nget iPay cards + QR) |
 | `packages/core/src/bot/lib/passengers.js` | Passenger add/reconcile |
 | `packages/core/src/bot/lib/psgnPreferences.js` | Loyalty, payment method, fare, review |
 | `packages/core/src/bot/lib/bkgPayment.js` | Provider selection, Pay & Book |
@@ -291,7 +403,7 @@ On IRCTC pages: **Pause**, **Restart** (train-search), **Stop**, and **Continue*
 | `lib/storage.js` | `chrome.storage.local` → `irctcConfig` |
 | `lib/api.js` | Register, status, link email, consume token |
 
-Host permissions: `irctc.co.in`, `irctcipay.com`, `mercury-t2.phonepe.com`, `mercury.phonepe.com`, `localhost:3000`, and `api.yourdomain.com` (update `manifest.json` if you use a custom API host).
+Host permissions: `irctc.co.in`, `irctcipay.com`, `pg.irctcpayments.com`, `mercury-t2.phonepe.com`, `mercury.phonepe.com`, `localhost:3000`, and `api.yourdomain.com` (update `manifest.json` if you use a custom API host).
 
 ---
 
@@ -306,7 +418,7 @@ Credentials, card numbers, and journey data stay in **browser extension storage*
 | Issue | Check |
 |-------|--------|
 | “Access not active” | Access tab → link BMC email; backend running for local dev |
-| “No booking tokens” | Coffee plan — donate or wait for monthly renewal |
+| “No booking tokens” | Coffee plan — buy another coffee or wait for monthly renewal (if within 12-month window) |
 | “Saved passenger not found” | Name must match IRCTC profile exactly |
 | “Class not available” | Tatkal may be WL/REGRET; bot does not book waitlist |
 | Bot idle after navigation | Overlay **Restart** or popup **Start** again; confirm `running` in storage |

@@ -34,7 +34,7 @@
     },
 
     async handlePayment(config, overlay) {
-      if (!location.pathname.includes('bkgPaymentOptions') && !location.pathname.includes('payment')) {
+      if (!IRCTCExt.NgetPaths.isPaymentPath(location.pathname)) {
         throw new Error('Not on NGET payment page');
       }
       activateSharedBookingSelectors();

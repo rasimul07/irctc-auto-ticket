@@ -17,6 +17,7 @@ const config = {
   freeTrialDays: Number(process.env.FREE_TRIAL_DAYS || 7),
   coffeeTokensPerMonth: Number(process.env.COFFEE_TOKENS_PER_MONTH || 10),
   coffeeTokenPeriodDays: Number(process.env.COFFEE_TOKEN_PERIOD_DAYS || 30),
+  coffeeRenewalMonths: Number(process.env.COFFEE_RENEWAL_MONTHS || 12),
   bmcPlanBasic: process.env.BMC_PLAN_BASIC || 'Basic',
   bmcPlanPro: process.env.BMC_PLAN_PRO || 'Pro',
   jwtSecret: process.env.JWT_SECRET || 'dev-secret',

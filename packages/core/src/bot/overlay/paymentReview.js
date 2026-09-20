@@ -11,7 +11,8 @@ IRCTCExt.PaymentReviewOverlay = {
   _mode: null,
 
   isPaymentPage() {
-    return location.pathname.includes('bkgPaymentOptions');
+    const path = location.pathname;
+    return path.includes('bkgPaymentOptions') || /\/payment(?:\/|$)/i.test(path);
   },
 
   isNgetReviewPage() {
