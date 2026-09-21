@@ -1,3 +1,84 @@
+(function (root) {
+  root.IRCTCExt = root.IRCTCExt || {};
+
+  IRCTCExt.NgetConfig = {
+    id: 'nget',
+    label: 'Classic — nget',
+    homeUrl: 'https://www.irctc.co.in/nget',
+    trainSearchUrl: 'https://www.irctc.co.in/nget/train-search',
+    trainSearchPath: '/nget/train-search',
+    urlPattern: 'https://www.irctc.co.in/nget/*',
+    trainSearchUrlPattern: 'https://www.irctc.co.in/nget/train-search*',
+    gatewayUrl: 'https://pg.irctcpayments.com/',
+    gatewayHost: 'pg.irctcpayments.com',
+    gatewayUrlPattern: 'https://pg.irctcpayments.com/*',
+    gatewayAuthRedirectPath: '/pg/api/v2/authRedirect',
+    thirdPartyGatewayHosts: ['pg.irctcpayments.com', 'irctcipay.com', 'phonepe.com'],
+    errorPagePath: '/nget/error'
+  };
+})(typeof globalThis !== 'undefined' ? globalThis : window);
+
+;
+window.IRCTCExt = window.IRCTCExt || {};
+
+// TODO: verify nget path segments when implementing classic flow automation.
+IRCTCExt.NgetPaths = {
+  isGatewayHost(hostname = location.hostname) {
+    const host = IRCTCExt.NgetConfig?.gatewayHost || 'pg.irctcpayments.com';
+    return hostname.includes(host) || hostname.includes('irctcpayments.com');
+  },
+
+  isGatewayPath(path = location.pathname, hostname = location.hostname) {
+    return IRCTCExt.NgetPaths.isGatewayHost(hostname);
+  },
+
+  isGatewayAuthRedirectPath(path = location.pathname, hostname = location.hostname) {
+    if (!IRCTCExt.NgetPaths.isGatewayHost(hostname)) return false;
+    const authPath = IRCTCExt.NgetConfig?.gatewayAuthRedirectPath || '/pg/api/v2/authRedirect';
+    return path.includes(authPath) || path.includes('/authRedirect');
+  },
+
+  isPaymentPath(path = location.pathname) {
+    return path.includes('bkgPaymentOptions') || /\/payment(?:\/|$)/i.test(path);
+  },
+
+  isReviewPath(path = location.pathname) {
+    return path.includes('reviewBooking') || /\/review(?:\/|$)/i.test(path);
+  },
+
+  syncStepFromPath(path, state = {}) {
+    if (IRCTCExt.NgetPaths.isGatewayPath(path)) return 'gateway';
+    if (state.awaitingGateway && state.paymentPhase === 'gateway') return 'gateway';
+    if (IRCTCExt.NgetPaths.isPaymentPath(path)) return 'payment';
+    if (IRCTCExt.NgetPaths.isReviewPath(path)) return 'review';
+    if (path.includes('psgninput')) return state.passengersDone ? 'review' : 'passengers';
+    if (path.includes('train-list')) return 'train-list';
+    if (path.includes('train-search')) {
+      if (IRCTCExt.NgetLanguageFlow?.isLanguageModalVisible?.()) return 'language';
+      if (IRCTCExt.NgetLoginFlow?.needsLogin?.()) return 'login';
+      return 'search';
+    }
+    return 'init';
+  },
+
+  isErrorPage(path = location.pathname) {
+    return path.includes(IRCTCExt.NgetConfig.errorPagePath);
+  },
+
+  isTrainListPath(path = location.pathname) {
+    return path.includes('train-list');
+  },
+
+  isTrainSearchPath(path = location.pathname) {
+    return path.includes('train-search');
+  },
+
+  isPassengerPath(path = location.pathname) {
+    return path.includes('psgninput');
+  }
+};
+
+;
 window.IRCTCExt = window.IRCTCExt || {};
 
 IRCTCExt.EticketSelectors = {
@@ -327,6 +408,30 @@ IRCTCExt.EticketSelectors = {
     altCardName: ['#cardName'],
     altPayBtn: ['#confirm-purchase']
   },
+  irctcPaymentsGateway: {
+    cardAccordionBtn: ['#cardAccordionBtn', 'button.accordion-button.explore-btn'],
+    cardAccordionPanel: ['#collapseOne', '#cardAccordionBtn + .accordion-collapse'],
+    cardForm: ['#inputForm', 'form[name="inputForm"]', '#collapseOne form'],
+    cardNumberMasked: ['#cardNoMasked', 'input[name="cardNoMasked"]', '#collapseOne input[placeholder*="XXXX"]'],
+    expiryMonth: ['#month', 'select[name="expiry-month1"]', '#collapseOne select[name*="month" i]'],
+    expiryYear: ['#year', 'select[name="expiry-year1"]', '#collapseOne select[name*="year" i]'],
+    cvv: ['#cvv', 'input[name="cvv"]'],
+    nameOnCard: ['#nameOnCard', 'input[name="nameOnCard"]'],
+    smartPayToggle: ['#cardSmartPayToggle', '#collapseOne #cardSmartPayToggle'],
+    upiBhimAccordionBtn: ['#upiAccordionBtn', 'button[data-bs-target="#collapseUpi"]'],
+    upiBhimAccordionPanel: ['#collapseUpi'],
+    upiBhimQrRadio: ['#qr-click', 'input[data-click="toggleQR"]'],
+    upiBhimQrSection: ['#show-qr-div', '.showQRDiv'],
+    upiCcClAccordionBtn: ['#upiCcClAccordionBtn'],
+    upiCcClAccordionPanel: ['#collapseCcCl', '#upiCcClAccordionBtn + .accordion-collapse'],
+    upiCcClQrRadio: ['#qr-click-cccl'],
+    upiCcClQrSection: ['#show-qr-div-cccl'],
+    upiQrModal: ['.modal.show', '.modal.fade.show', '[role="dialog"].show'],
+    upiShowQrBtn: ['#irctc-generate-qr-btn', 'button[data-click="showUpiQR"]'],
+    upiQrImage: ['#irctc-qr-code', 'canvas', 'img[src*="qr" i]', '.qr-code img'],
+    payNowBtn: ['button.pay-now-btn', '.pay-now-btn', 'button.btn-primary'],
+    cardErrors: ['#cardErrFld', '#cardMonthErr', '#cardYearErr', '#cardcvvFld', '#cardErrFld1']
+  },
   phonepeGateway: {
     paymentOptionsTitle: ['Payment Options'],
     upiInstrument: ['#upi-instrument', '[id*="upi-instrument"]'],
@@ -531,7 +636,10 @@ IRCTCExt.Events = {
   },
 
   setNativeValue(el, value) {
-    const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+    if (!el) return;
+    let proto = HTMLInputElement.prototype;
+    if (el instanceof HTMLTextAreaElement) proto = HTMLTextAreaElement.prototype;
+    else if (el instanceof HTMLSelectElement) proto = HTMLSelectElement.prototype;
     const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
     if (setter) setter.call(el, value);
     else el.value = value;
@@ -1775,6 +1883,500 @@ IRCTCExt.IrctcIpayGateway = {
 ;
 window.IRCTCExt = window.IRCTCExt || {};
 
+IRCTCExt.IrctcPaymentsGateway = {
+  getSelectors() {
+    return IRCTCExt.SELECTORS?.irctcPaymentsGateway || {};
+  },
+
+  async finishGateway(overlay, message) {
+    await IRCTCExt.Storage.updateState({
+      paymentDone: true,
+      paymentPhase: null,
+      awaitingGateway: false,
+      paymentGateway: null,
+      status: 'done',
+      running: false,
+      currentStep: 'done'
+    });
+    overlay?.setStep('Payment');
+    overlay?.setStatus(message);
+    overlay?.showPause(message);
+  },
+
+  isAuthRedirectPage() {
+    return !!(
+      IRCTCExt.NgetPaths?.isGatewayAuthRedirectPath?.() || location.pathname.includes('/authRedirect')
+    );
+  },
+
+  resolveUpiVariant(config) {
+    const method =
+      config?.state?.gatewayPaymentMethod || config?.preferences?.paymentMethod || 'cards';
+    if (method === 'upi') return 'bhim';
+    if (IRCTCExt.Wait.queryOne(IRCTCExt.IrctcPaymentsGateway.getSelectors().upiBhimAccordionBtn)) {
+      return 'bhim';
+    }
+    if (IRCTCExt.Wait.queryOne(IRCTCExt.IrctcPaymentsGateway.getSelectors().upiCcClAccordionBtn)) {
+      return 'cccl';
+    }
+    if (document.querySelector('#show-qr-div #qr-click')) return 'bhim';
+    return 'cccl';
+  },
+
+  getUpiSelectors(variant) {
+    const sel = IRCTCExt.IrctcPaymentsGateway.getSelectors();
+    if (variant === 'bhim') {
+      return {
+        accordionBtn: sel.upiBhimAccordionBtn,
+        accordionPanel: sel.upiBhimAccordionPanel,
+        qrRadio: sel.upiBhimQrRadio,
+        qrSection: sel.upiBhimQrSection
+      };
+    }
+    return {
+      accordionBtn: sel.upiCcClAccordionBtn,
+      accordionPanel: sel.upiCcClAccordionPanel,
+      qrRadio: sel.upiCcClQrRadio,
+      qrSection: sel.upiCcClQrSection
+    };
+  },
+
+  isUpiQrSectionVisible(upiSel) {
+    const section = IRCTCExt.Wait.queryOne(upiSel.qrSection);
+    if (!section || !IRCTCExt.Wait.isVisible(section)) return false;
+    const radio = IRCTCExt.Wait.queryOne(upiSel.qrRadio, section);
+    return !!(radio && IRCTCExt.Wait.isVisible(radio));
+  },
+
+  isUpiAccordionOpen(upiSel) {
+    const btn = IRCTCExt.Wait.queryOne(upiSel.accordionBtn);
+    const panel = IRCTCExt.Wait.queryOne(upiSel.accordionPanel);
+    if (btn?.getAttribute('aria-expanded') === 'true') return true;
+    if (panel?.classList?.contains('show')) return true;
+    return IRCTCExt.IrctcPaymentsGateway.isUpiQrSectionVisible(upiSel);
+  },
+
+  async waitForReady(overlay) {
+    const sel = IRCTCExt.IrctcPaymentsGateway.getSelectors();
+    const onAuthRedirect = IRCTCExt.IrctcPaymentsGateway.isAuthRedirectPage();
+    const timeout = onAuthRedirect ? 90000 : 30000;
+
+    if (onAuthRedirect) {
+      overlay?.setStatus?.('Payment gateway loading — waiting for card/UPI form...');
+    }
+
+    const ready = await IRCTCExt.Wait.poll(
+      () => {
+        const cardAccordion = IRCTCExt.Wait.queryOne(sel.cardAccordionBtn);
+        const bhimAccordion = IRCTCExt.Wait.queryOne(sel.upiBhimAccordionBtn);
+        const ccclAccordion = IRCTCExt.Wait.queryOne(sel.upiCcClAccordionBtn);
+        if (cardAccordion && IRCTCExt.Wait.isVisible(cardAccordion)) return cardAccordion;
+        if (bhimAccordion && IRCTCExt.Wait.isVisible(bhimAccordion)) return bhimAccordion;
+        if (ccclAccordion && IRCTCExt.Wait.isVisible(ccclAccordion)) return ccclAccordion;
+        return null;
+      },
+      { timeout, interval: 250 }
+    );
+    if (!ready) throw new Error('IRCTC Payments gateway did not load');
+    overlay?.setStatus?.('Payment form ready — continuing automation...');
+    await IRCTCExt.Wait.delay(300);
+    return ready;
+  },
+
+  parseExpiryParts(expiry) {
+    const raw = String(expiry || '').trim();
+    const slash = raw.match(/^(\d{1,2})\s*\/\s*(\d{2,4})$/);
+    if (slash) {
+      const month = slash[1].padStart(2, '0');
+      const year = slash[2].length === 4 ? slash[2] : `20${slash[2]}`;
+      return { month, year };
+    }
+    const digits = raw.replace(/\D/g, '');
+    if (digits.length >= 4) {
+      const month = digits.slice(0, 2).padStart(2, '0');
+      const yy = digits.slice(2, 4);
+      return { month, year: `20${yy}` };
+    }
+    return { month: '', year: '' };
+  },
+
+  async clearGatewayInput(el) {
+    if (!el) return;
+    el.focus();
+    IRCTCExt.Events.setNativeValue(el, '');
+    el.dispatchEvent(new InputEvent('input', { bubbles: true, data: '', inputType: 'deleteContentBackward' }));
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('keyup', { bubbles: true }));
+    el.dispatchEvent(new Event('focusout', { bubbles: true }));
+    el.dispatchEvent(new Event('blur', { bubbles: true }));
+    await IRCTCExt.Wait.delay(150);
+  },
+
+  async fillGatewayInput(el, value, { slow = false } = {}) {
+    if (!el) return;
+    await IRCTCExt.IrctcPaymentsGateway.clearGatewayInput(el);
+    const text = String(value || '');
+    if (slow) {
+      await IRCTCExt.Events.typeSlowly(el, text, 40);
+    } else {
+      IRCTCExt.Events.setInputValue(el, text, { blur: false });
+      el.dispatchEvent(new Event('keyup', { bubbles: true }));
+      el.dispatchEvent(new Event('focusout', { bubbles: true }));
+      el.dispatchEvent(new Event('blur', { bubbles: true }));
+    }
+    await IRCTCExt.Wait.delay(150);
+  },
+
+  async fillSelect(select, value) {
+    if (!select || !value) return;
+    select.focus();
+    IRCTCExt.Events.setNativeValue(select, value);
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    select.dispatchEvent(new Event('blur', { bubbles: true }));
+    await IRCTCExt.Wait.delay(150);
+  },
+
+  getCardPanelRoot() {
+    const sel = IRCTCExt.IrctcPaymentsGateway.getSelectors();
+    const panel = IRCTCExt.Wait.queryOne(sel.cardAccordionPanel);
+    if (panel) return panel;
+    const form = IRCTCExt.Wait.queryOne(sel.cardForm);
+    if (form) return form;
+    return document.body || document;
+  },
+
+  isCardsAccordionOpen() {
+    const sel = IRCTCExt.IrctcPaymentsGateway.getSelectors();
+    const btn = IRCTCExt.Wait.queryOne(sel.cardAccordionBtn);
+    const panel = IRCTCExt.Wait.queryOne(sel.cardAccordionPanel);
+    if (btn?.getAttribute('aria-expanded') === 'true') return true;
+    if (panel?.classList?.contains('show')) return true;
+    return IRCTCExt.IrctcPaymentsGateway.isCardFormVisible();
+  },
+
+  isCardFormVisible() {
+    const sel = IRCTCExt.IrctcPaymentsGateway.getSelectors();
+    const root = IRCTCExt.IrctcPaymentsGateway.getCardPanelRoot();
+    const number = IRCTCExt.Wait.queryOne(sel.cardNumberMasked, root);
+    return !!(number && IRCTCExt.Wait.isVisible(number));
+  },
+
+  async openCardsAccordion(overlay) {
+    const sel = IRCTCExt.IrctcPaymentsGateway.getSelectors();
+
+    const btn = await IRCTCExt.Wait.poll(
+      () => {
+        const candidate = IRCTCExt.Wait.queryOne(sel.cardAccordionBtn);
+        return candidate && IRCTCExt.Wait.isVisible(candidate) ? candidate : null;
+      },
+      { timeout: 20000, interval: 200 }
+    );
+    if (!btn) throw new Error('Cards accordion button not found on IRCTC Payments gateway');
+
+    if (!IRCTCExt.IrctcPaymentsGateway.isCardsAccordionOpen()) {
+      overlay?.setStatus('Opening Cards payment section...');
+      btn.scrollIntoView({ block: 'center', inline: 'nearest' });
+      IRCTCExt.Events.click(btn);
+      await IRCTCExt.Wait.delay(500);
+
+      if (!IRCTCExt.IrctcPaymentsGateway.isCardsAccordionOpen()) {
+        IRCTCExt.Events.click(btn);
+        await IRCTCExt.Wait.delay(500);
+      }
+    }
+
+    const opened = await IRCTCExt.Wait.poll(
+      () => (IRCTCExt.IrctcPaymentsGateway.isCardFormVisible() ? true : null),
+      { timeout: 15000, interval: 200 }
+    );
+    if (!opened) throw new Error('Cards payment form did not open');
+    overlay?.setStatus('Cards section open — filling details...');
+    return true;
+  },
+
+  async ensureSmartPayEnabled() {
+    const sel = IRCTCExt.IrctcPaymentsGateway.getSelectors();
+    const root = IRCTCExt.IrctcPaymentsGateway.getCardPanelRoot();
+    const toggle = IRCTCExt.Wait.queryOne(sel.smartPayToggle, root);
+    if (!toggle) return;
+    if (!toggle.checked) {
+      IRCTCExt.Events.click(toggle);
+      await IRCTCExt.Wait.delay(200);
+    }
+  },
+
+  hasVisibleCardErrors() {
+    const sel = IRCTCExt.IrctcPaymentsGateway.getSelectors();
+    for (const selector of sel.cardErrors || []) {
+      const el = document.querySelector(selector);
+      if (!el || !IRCTCExt.Wait.isVisible(el)) continue;
+      if (el.classList.contains('hideErrFld')) continue;
+      const text = (el.textContent || '').replace(/\s+/g, ' ').trim();
+      if (text && !/^error\.{3}$/i.test(text)) return true;
+      if (el.classList.contains('errorBorder')) return true;
+    }
+    return false;
+  },
+
+  async fillCardForm(card, overlay) {
+    const sel = IRCTCExt.IrctcPaymentsGateway.getSelectors();
+    const root = IRCTCExt.IrctcPaymentsGateway.getCardPanelRoot();
+    const numberEl = IRCTCExt.Wait.queryOne(sel.cardNumberMasked, root);
+    const monthEl = IRCTCExt.Wait.queryOne(sel.expiryMonth, root);
+    const yearEl = IRCTCExt.Wait.queryOne(sel.expiryYear, root);
+    const cvvEl = IRCTCExt.Wait.queryOne(sel.cvv, root);
+    const nameEl = IRCTCExt.Wait.queryOne(sel.nameOnCard, root);
+
+    if (!numberEl || !monthEl || !yearEl || !cvvEl || !nameEl) {
+      throw new Error('Card form fields not found on IRCTC Payments gateway');
+    }
+
+    const cardNumber = String(card?.number || '').replace(/\s+/g, '');
+    const { month, year } = IRCTCExt.IrctcPaymentsGateway.parseExpiryParts(card?.expiry);
+
+    overlay?.setStatus('Filling card details...');
+    await IRCTCExt.IrctcPaymentsGateway.fillGatewayInput(numberEl, cardNumber, { slow: true });
+    await IRCTCExt.IrctcPaymentsGateway.fillSelect(monthEl, month);
+    await IRCTCExt.IrctcPaymentsGateway.fillSelect(yearEl, year);
+    await IRCTCExt.IrctcPaymentsGateway.fillGatewayInput(cvvEl, card?.cvv || '');
+    await IRCTCExt.IrctcPaymentsGateway.fillGatewayInput(nameEl, card?.name || '');
+    await IRCTCExt.Wait.delay(300);
+
+    if (IRCTCExt.IrctcPaymentsGateway.hasVisibleCardErrors()) {
+      throw new Error('Gateway rejected saved card details — check card number, expiry, CVV, and name');
+    }
+  },
+
+  async openUpiAccordion(config, overlay) {
+    const variant = IRCTCExt.IrctcPaymentsGateway.resolveUpiVariant(config);
+    const upiSel = IRCTCExt.IrctcPaymentsGateway.getUpiSelectors(variant);
+
+    const btn = await IRCTCExt.Wait.poll(
+      () => {
+        const candidate = IRCTCExt.Wait.queryOne(upiSel.accordionBtn);
+        return candidate && IRCTCExt.Wait.isVisible(candidate) ? candidate : null;
+      },
+      { timeout: 20000, interval: 200 }
+    );
+    if (!btn) throw new Error('UPI accordion button not found on IRCTC Payments gateway');
+
+    if (!IRCTCExt.IrctcPaymentsGateway.isUpiAccordionOpen(upiSel)) {
+      overlay?.setStatus('Opening UPI payment section...');
+      btn.scrollIntoView({ block: 'center', inline: 'nearest' });
+      IRCTCExt.Events.click(btn);
+      await IRCTCExt.Wait.delay(500);
+
+      if (!IRCTCExt.IrctcPaymentsGateway.isUpiAccordionOpen(upiSel)) {
+        IRCTCExt.Events.click(btn);
+        await IRCTCExt.Wait.delay(500);
+      }
+    }
+
+    const section = await IRCTCExt.Wait.poll(
+      () => (IRCTCExt.IrctcPaymentsGateway.isUpiQrSectionVisible(upiSel) ? true : null),
+      { timeout: 15000, interval: 200 }
+    );
+    if (!section) throw new Error('UPI payment section did not open');
+    overlay?.setStatus('UPI section open — selecting QR...');
+    return upiSel;
+  },
+
+  async selectQrPayment(upiSel, overlay) {
+    overlay?.setStatus('Selecting QR payment...');
+
+    const radio = await IRCTCExt.Wait.poll(
+      () => {
+        const root = IRCTCExt.Wait.queryOne(upiSel.qrSection) || document;
+        const candidate = IRCTCExt.Wait.queryOne(upiSel.qrRadio, root);
+        return candidate && IRCTCExt.Wait.isVisible(candidate) ? candidate : null;
+      },
+      { timeout: 15000, interval: 200 }
+    );
+    if (!radio) throw new Error('UPI QR payment option not found');
+
+    if (!radio.checked) {
+      IRCTCExt.Events.click(radio);
+      const label = document.querySelector(`label[for="${radio.id}"]`);
+      if (label) IRCTCExt.Events.click(label);
+      await IRCTCExt.Wait.delay(400);
+    }
+
+    if (!radio.checked) {
+      throw new Error('Could not select UPI QR payment option');
+    }
+
+    await IRCTCExt.Wait.delay(500);
+  },
+
+  findShowQrButton() {
+    const sel = IRCTCExt.IrctcPaymentsGateway.getSelectors();
+    const direct = IRCTCExt.Wait.queryAll(sel.upiShowQrBtn);
+    for (const btn of direct) {
+      if (!IRCTCExt.Wait.isVisible(btn) || btn.disabled) continue;
+      if (/show\s*qr|click\s*here/i.test(btn.textContent || '')) return btn;
+    }
+
+    const buttons = document.querySelectorAll('button[data-click="showUpiQR"], #irctc-generate-qr-btn');
+    for (const btn of buttons) {
+      if (!IRCTCExt.Wait.isVisible(btn) || btn.disabled) continue;
+      return btn;
+    }
+
+    return null;
+  },
+
+  isQrCodeVisible() {
+    const sel = IRCTCExt.IrctcPaymentsGateway.getSelectors();
+    for (const selector of sel.upiQrImage || []) {
+      const el = document.querySelector(selector);
+      if (!el || !IRCTCExt.Wait.isVisible(el)) continue;
+      const rect = el.getBoundingClientRect();
+      if (rect.width > 40 && rect.height > 40) return true;
+    }
+    return false;
+  },
+
+  async clickShowQrButton(overlay) {
+    overlay?.setStatus('Opening QR modal...');
+
+    const showBtn = await IRCTCExt.Wait.poll(
+      () => IRCTCExt.IrctcPaymentsGateway.findShowQrButton(),
+      { timeout: 20000, interval: 250 }
+    );
+    if (!showBtn) throw new Error('Show QR button not found on IRCTC Payments gateway');
+
+    overlay?.setStatus('Clicking Show QR...');
+    showBtn.scrollIntoView({ block: 'center', inline: 'nearest' });
+    IRCTCExt.Events.click(showBtn);
+    await IRCTCExt.Wait.delay(600);
+
+    const qrReady = await IRCTCExt.Wait.poll(
+      () => {
+        if (IRCTCExt.IrctcPaymentsGateway.isQrCodeVisible()) return true;
+        const btn = IRCTCExt.IrctcPaymentsGateway.findShowQrButton();
+        return btn ? null : true;
+      },
+      { timeout: 15000, interval: 300 }
+    );
+
+    if (!qrReady) {
+      throw new Error('QR code did not appear after clicking Show QR');
+    }
+
+    return true;
+  },
+
+  findPayNowButton() {
+    const sel = IRCTCExt.IrctcPaymentsGateway.getSelectors();
+    const direct = IRCTCExt.Wait.queryAll(sel.payNowBtn);
+    for (const btn of direct) {
+      if (!IRCTCExt.Wait.isVisible(btn) || btn.disabled) continue;
+      if (/pay\s*now/i.test(btn.textContent || '')) return btn;
+    }
+
+    const buttons = document.querySelectorAll('button');
+    for (const btn of buttons) {
+      if (!IRCTCExt.Wait.isVisible(btn) || btn.disabled) continue;
+      if (btn.classList.contains('disabled')) continue;
+      if (btn.getAttribute('aria-disabled') === 'true') continue;
+      if (/pay\s*now/i.test(btn.textContent || '')) return btn;
+    }
+
+    return null;
+  },
+
+  async clickPayNow(overlay) {
+    overlay?.setStatus('Clicking Pay Now...');
+    const payBtn = await IRCTCExt.Wait.poll(
+      () => IRCTCExt.IrctcPaymentsGateway.findPayNowButton(),
+      { timeout: 15000, interval: 250 }
+    );
+    if (!payBtn) throw new Error('Pay Now button not found on IRCTC Payments gateway');
+
+    IRCTCExt.Events.click(payBtn);
+    await IRCTCExt.Wait.delay(600);
+    return true;
+  },
+
+  async handleCardFlow(config, overlay) {
+    const autoPay = IRCTCExt.BkgPayment.getAutoPaySettings(config);
+    const type = autoPay.type === 'credit' ? 'credit' : 'debit';
+    const card = autoPay.card;
+    if (!card?.number) {
+      throw new Error(`Saved ${type} card details are missing in extension popup`);
+    }
+
+    const maxAttempts = 3;
+    let lastError = null;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      try {
+        if (attempt > 1) {
+          overlay?.setStatus(`Retrying card fill (${attempt}/${maxAttempts})...`);
+          await IRCTCExt.Wait.delay(300);
+        }
+
+        await IRCTCExt.IrctcPaymentsGateway.openCardsAccordion(overlay);
+        await IRCTCExt.IrctcPaymentsGateway.ensureSmartPayEnabled();
+        await IRCTCExt.IrctcPaymentsGateway.fillCardForm(card, overlay);
+        await IRCTCExt.IrctcPaymentsGateway.clickPayNow(overlay);
+        await IRCTCExt.IrctcPaymentsGateway.finishGateway(
+          overlay,
+          'Card submitted — complete OTP/bank step manually.'
+        );
+        return true;
+      } catch (err) {
+        lastError = err;
+        if (attempt >= maxAttempts) break;
+      }
+    }
+
+    throw lastError || new Error('Could not complete card payment on IRCTC Payments gateway');
+  },
+
+  async handleQrFlow(config, overlay) {
+    const upiSel = await IRCTCExt.IrctcPaymentsGateway.openUpiAccordion(config, overlay);
+    await IRCTCExt.IrctcPaymentsGateway.selectQrPayment(upiSel, overlay);
+    await IRCTCExt.IrctcPaymentsGateway.clickShowQrButton(overlay);
+    await IRCTCExt.IrctcPaymentsGateway.finishGateway(
+      overlay,
+      'QR displayed — scan with your UPI app to complete payment.'
+    );
+    return true;
+  },
+
+  async handle(config, overlay) {
+    await IRCTCExt.IrctcPaymentsGateway.waitForReady(overlay);
+
+    const autoPay = IRCTCExt.BkgPayment.getAutoPaySettings(config);
+    if (!autoPay.enabled) {
+      await IRCTCExt.IrctcPaymentsGateway.finishGateway(
+        overlay,
+        'Auto pay disabled — complete payment manually on gateway.'
+      );
+      return true;
+    }
+
+    if (autoPay.type === 'credit' || autoPay.type === 'debit') {
+      return IRCTCExt.IrctcPaymentsGateway.handleCardFlow(config, overlay);
+    }
+
+    const method = config.preferences?.paymentMethod || 'cards';
+    if (autoPay.type === 'qr' || method === 'upi') {
+      return IRCTCExt.IrctcPaymentsGateway.handleQrFlow(config, overlay);
+    }
+
+    if (method === 'cards') {
+      return IRCTCExt.IrctcPaymentsGateway.handleCardFlow(config, overlay);
+    }
+
+    throw new Error(`Unsupported auto pay type: ${autoPay.type}`);
+  }
+};
+
+;
+window.IRCTCExt = window.IRCTCExt || {};
+
 IRCTCExt.PhonePeGateway = {
   isPhonePeHost() {
     return location.hostname.includes('phonepe.com');
@@ -2028,6 +2630,10 @@ IRCTCExt.PhonePeGateway = {
 window.IRCTCExt = window.IRCTCExt || {};
 
 IRCTCExt.Gateways = {
+  isIrctcPaymentsHost() {
+    return location.hostname.includes('irctcpayments.com');
+  },
+
   isIrctcIpayHost() {
     return location.hostname.includes('irctcipay.com');
   },
@@ -2064,6 +2670,10 @@ IRCTCExt.Gateways = {
   async run(config, overlay) {
     const gateway = config.state?.paymentGateway;
     const provider = IRCTCExt.BkgPayment.getPaymentProvider(config);
+
+    if (IRCTCExt.Gateways.isIrctcPaymentsHost()) {
+      return IRCTCExt.IrctcPaymentsGateway.handle(config, overlay);
+    }
 
     if (IRCTCExt.Gateways.isPhonePeHost() && IRCTCExt.Gateways.isPhonePeGateway(config)) {
       return IRCTCExt.PhonePeGateway.handle(config, overlay);
@@ -2345,30 +2955,123 @@ IRCTCExt.Overlay = {
 
 IRCTCExt.GatewayBot = {
   running: false,
+  _lastUrl: '',
+  _resumeTimer: null,
+  _overlayShown: false,
 
-  async resumeIfNeeded() {
-    const config = await IRCTCExt.Storage.get();
-    if (!config.state.running || config.state.paused || !config.state.awaitingGateway) return;
-    if (this.running) return;
+  isGatewayPage() {
+    return !!(
+      IRCTCExt.Gateways?.isIrctcPaymentsHost?.() ||
+      IRCTCExt.Gateways?.isIrctcIpayHost?.() ||
+      IRCTCExt.Gateways?.isPhonePeHost?.() ||
+      IRCTCExt.NgetPaths?.isGatewayPath?.()
+    );
+  },
+
+  isBookingActiveOnGateway(config) {
+    const state = config?.state || {};
+    if (!state.running) return false;
+    if (state.paymentDone) return false;
+    if (state.status === 'stopped' || state.status === 'done') return false;
+    return true;
+  },
+
+  isActiveGatewaySession(config) {
+    if (!IRCTCExt.GatewayBot.isBookingActiveOnGateway(config)) return false;
+    const state = config?.state || {};
+    if (state.awaitingGateway || state.paymentPhase === 'gateway' || state.currentStep === 'gateway') {
+      return true;
+    }
+    // Third-party gateway page during an active booking — adopt gateway step.
+    return IRCTCExt.GatewayBot.isGatewayPage();
+  },
+
+  async ensureGatewayBookingState(config) {
+    if (!IRCTCExt.GatewayBot.isActiveGatewaySession(config)) return config;
+    const state = config?.state || {};
+    if (state.awaitingGateway && state.paymentPhase === 'gateway') return config;
+
+    return IRCTCExt.Storage.updateState({
+      awaitingGateway: true,
+      paymentPhase: 'gateway',
+      currentStep: 'gateway',
+      status: state.status === 'error' ? 'running' : state.status || 'running'
+    });
+  },
+
+  getGatewayStatusMessage() {
+    if (IRCTCExt.NgetPaths?.isGatewayAuthRedirectPath?.()) {
+      return 'Payment gateway loading — please wait...';
+    }
+    if (location.pathname.includes('authRedirect')) {
+      return 'Payment gateway loading — please wait...';
+    }
+    return 'Payment gateway loaded — continuing automation...';
+  },
+
+  async showGatewayOverlay(config) {
+    if (!IRCTCExt.GatewayBot.isGatewayPage()) return null;
+    if (!IRCTCExt.GatewayBot.isActiveGatewaySession(config)) return null;
 
     if (IRCTCExt.EticketSelectors) {
       IRCTCExt.SELECTORS = IRCTCExt.EticketSelectors;
     }
 
-    this.running = true;
-    try {
-      const overlay = await IRCTCExt.Overlay.show();
+    const overlay = await IRCTCExt.Overlay.show();
+    if (!IRCTCExt.GatewayBot._overlayShown) {
       overlay.startTimer();
-      overlay.setStep('Payment');
-      overlay.setError('');
-      overlay.setStatus('Payment gateway loaded — continuing automation...');
+    }
+    IRCTCExt.GatewayBot._overlayShown = true;
+    overlay.setStep('Gateway');
+    overlay.setError('');
+    overlay.setStatus(IRCTCExt.GatewayBot.getGatewayStatusMessage());
+    IRCTCExt.PlatformBridge?.sendMessage('BOOKING_STATUS', {
+      status: 'gateway',
+      step: 'gateway'
+    });
+    return overlay;
+  },
+
+  scheduleResumeRetries() {
+    if (IRCTCExt.GatewayBot._resumeTimer) return;
+    let attempts = 0;
+    const maxAttempts = 30;
+
+    IRCTCExt.GatewayBot._resumeTimer = setInterval(() => {
+      attempts += 1;
+      if (attempts > maxAttempts) {
+        clearInterval(IRCTCExt.GatewayBot._resumeTimer);
+        IRCTCExt.GatewayBot._resumeTimer = null;
+        return;
+      }
+      IRCTCExt.GatewayBot.resumeIfNeeded().catch((err) =>
+        console.warn('[IRCTC-Gateway] Retry resume failed:', err)
+      );
+    }, 1000);
+  },
+
+  async resumeIfNeeded() {
+    if (!IRCTCExt.GatewayBot.isGatewayPage()) return;
+
+    let config = await IRCTCExt.Storage.get();
+    if (!IRCTCExt.GatewayBot.isActiveGatewaySession(config)) return;
+
+    config = await IRCTCExt.GatewayBot.ensureGatewayBookingState(config);
+
+    const overlay = await IRCTCExt.GatewayBot.showGatewayOverlay(config);
+    if (!overlay) return;
+
+    if (config.state.paused) return;
+    if (IRCTCExt.GatewayBot.running) return;
+
+    IRCTCExt.GatewayBot.running = true;
+    try {
       await IRCTCExt.Gateways.run(config, overlay);
     } catch (err) {
       console.error('[IRCTC-Gateway]', err);
-      const overlay = await IRCTCExt.Overlay.show().catch(() => null);
-      overlay?.setError(err.message || String(err));
-      overlay?.setStatus('Gateway payment failed: ' + (err.message || err));
-      overlay?.setStep('Error');
+      overlay.setError(err.message || String(err));
+      overlay.setStatus('Gateway payment failed: ' + (err.message || err));
+      overlay.setStep('Error');
       await IRCTCExt.Storage.updateState({
         status: 'error',
         running: false,
@@ -2380,8 +3083,38 @@ IRCTCExt.GatewayBot = {
         message: err.message
       });
     } finally {
-      this.running = false;
+      IRCTCExt.GatewayBot.running = false;
     }
+  },
+
+  onLocationMaybeChanged() {
+    const href = location.href;
+    if (href === IRCTCExt.GatewayBot._lastUrl) return;
+    IRCTCExt.GatewayBot._lastUrl = href;
+    IRCTCExt.GatewayBot.resumeIfNeeded().catch((err) =>
+      console.error('[IRCTC-Gateway] Resume failed:', err)
+    );
+  },
+
+  watchGatewayNavigation() {
+    IRCTCExt.GatewayBot._lastUrl = location.href;
+    window.addEventListener('popstate', () => IRCTCExt.GatewayBot.onLocationMaybeChanged());
+
+    // Must bind to history — detached calls (common in SPAs) otherwise throw "Illegal invocation".
+    const nativePushState = history.pushState.bind(history);
+    const nativeReplaceState = history.replaceState.bind(history);
+    history.pushState = function (...args) {
+      const result = nativePushState(...args);
+      IRCTCExt.GatewayBot.onLocationMaybeChanged();
+      return result;
+    };
+    history.replaceState = function (...args) {
+      const result = nativeReplaceState(...args);
+      IRCTCExt.GatewayBot.onLocationMaybeChanged();
+      return result;
+    };
+
+    setInterval(() => IRCTCExt.GatewayBot.onLocationMaybeChanged(), 750);
   },
 
   init() {
@@ -2393,7 +3126,7 @@ IRCTCExt.GatewayBot = {
 
     const handleMessage = (msg, sendResponse) => {
       if (msg.type === 'PING') {
-        sendResponse({ ok: true });
+        sendResponse({ ok: true, ready: true });
         return true;
       }
       if (msg.type === 'RESUME_GATEWAY' || msg.type === 'START_GATEWAY') {
@@ -2417,9 +3150,23 @@ IRCTCExt.GatewayBot = {
       IRCTCExt.PlatformBridge.onMessage(handleMessage);
     }
 
-    IRCTCExt.Wait.poll(() => document.body, { timeout: 10000, interval: 50 }).then(() => {
-      IRCTCExt.GatewayBot.resumeIfNeeded();
-    });
+    IRCTCExt.GatewayBot.watchGatewayNavigation();
+    IRCTCExt.GatewayBot.scheduleResumeRetries();
+
+    const bootstrap = () => {
+      IRCTCExt.GatewayBot.resumeIfNeeded().catch((err) =>
+        console.error('[IRCTC-Gateway] Bootstrap resume failed:', err)
+      );
+    };
+
+    if (document.body || document.documentElement) {
+      bootstrap();
+    } else {
+      IRCTCExt.Wait.poll(() => document.body || document.documentElement, {
+        timeout: 30000,
+        interval: 50
+      }).then(bootstrap);
+    }
   }
 };
 

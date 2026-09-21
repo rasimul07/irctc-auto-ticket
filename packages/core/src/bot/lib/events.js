@@ -58,7 +58,10 @@ IRCTCExt.Events = {
   },
 
   setNativeValue(el, value) {
-    const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+    if (!el) return;
+    let proto = HTMLInputElement.prototype;
+    if (el instanceof HTMLTextAreaElement) proto = HTMLTextAreaElement.prototype;
+    else if (el instanceof HTMLSelectElement) proto = HTMLSelectElement.prototype;
     const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
     if (setter) setter.call(el, value);
     else el.value = value;

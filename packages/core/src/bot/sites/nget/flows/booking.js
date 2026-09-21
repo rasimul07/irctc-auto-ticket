@@ -3,15 +3,8 @@
   if (IRCTCExt.NgetBookingFlow) return;
 
   function activateSharedBookingSelectors() {
-    const eticketSelectors = IRCTCExt.EticketSelectors;
-    if (!eticketSelectors) {
-      throw new Error('Eticket selectors not loaded. Reload the extension.');
-    }
     IRCTCExt.SELECTORS = {
-      ...IRCTCExt.NgetSelectors,
-      passengers: eticketSelectors.passengers,
-      psgnPreferences: eticketSelectors.psgnPreferences,
-      payment: eticketSelectors.payment
+      ...IRCTCExt.NgetSelectors
     };
   }
 
@@ -21,7 +14,7 @@
         throw new Error('Not on passenger input page');
       }
       activateSharedBookingSelectors();
-      return IRCTCExt.Passengers.addPassengers(config, overlay);
+      return IRCTCExt.NgetPassengersFlow.addPassengers(config, overlay);
     },
 
     async configurePsgninputOptions(config, overlay) {
@@ -29,7 +22,7 @@
         throw new Error('Not on passenger input page');
       }
       activateSharedBookingSelectors();
-      return IRCTCExt.PsgnPreferences.configure(config, overlay);
+      return IRCTCExt.NgetPsgnPreferencesFlow.configure(config, overlay);
     },
 
     async clickContinueToPayment(overlay) {
@@ -37,7 +30,19 @@
         throw new Error('Not on review booking page');
       }
       activateSharedBookingSelectors();
-      return IRCTCExt.PsgnPreferences.clickContinueToPayment(overlay);
+      return IRCTCExt.NgetReviewFlow.run(overlay);
+    },
+
+    async handlePayment(config, overlay) {
+      if (!IRCTCExt.NgetPaths.isPaymentPath(location.pathname)) {
+        throw new Error('Not on NGET payment page');
+      }
+      activateSharedBookingSelectors();
+      const method = config.preferences?.paymentMethod || 'cards';
+      if (method === 'upi') {
+        return IRCTCExt.NgetPaymentFlow.handleUpi(config, overlay);
+      }
+      return IRCTCExt.NgetPaymentFlow.handleCards(config, overlay);
     },
 
     async showPaymentReview(overlay) {

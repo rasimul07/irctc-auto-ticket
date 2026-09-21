@@ -182,23 +182,42 @@ IRCTCExt.Bot = {
       return 'done';
     }
 
-    const method = config.preferences?.paymentMethod || 'cards';
-
-    if (method === 'upi') {
-      await IRCTCExt.BkgPayment.handleUpiPayment(config, overlay);
-      overlay.setStatus('Payment provider selected. Complete payment on IRCTC.');
-    } else if (method === 'cards') {
-      const result = await IRCTCExt.BkgPayment.handleCardsPayment(config, overlay);
+    const sitePayment = site.flows?.BookingFlow?.handlePayment;
+    if (sitePayment) {
+      const result = await sitePayment(config, overlay);
       if (result?.awaitingGateway) {
+        await IRCTCExt.Storage.updateState({ currentStep: 'gateway' });
+        overlay.setStep('Gateway');
         IRCTCExt.PlatformBridge?.sendMessage('BOOKING_STATUS', {
           status: 'awaiting_gateway',
+          step: 'gateway',
           gateway: result.gateway
         });
         return 'wait';
       }
-      overlay.setStatus('Cards payment flow started. Complete payment on gateway.');
+      overlay.setStatus('Payment flow started. Complete payment on gateway.');
     } else {
-      throw new Error(`Unsupported payment method: ${method}`);
+      const method = config.preferences?.paymentMethod || 'cards';
+
+      if (method === 'upi') {
+        await IRCTCExt.BkgPayment.handleUpiPayment(config, overlay);
+        overlay.setStatus('Payment provider selected. Complete payment on IRCTC.');
+      } else if (method === 'cards') {
+        const result = await IRCTCExt.BkgPayment.handleCardsPayment(config, overlay);
+        if (result?.awaitingGateway) {
+          await IRCTCExt.Storage.updateState({ currentStep: 'gateway' });
+          overlay.setStep('Gateway');
+          IRCTCExt.PlatformBridge?.sendMessage('BOOKING_STATUS', {
+            status: 'awaiting_gateway',
+            step: 'gateway',
+            gateway: result.gateway
+          });
+          return 'wait';
+        }
+        overlay.setStatus('Cards payment flow started. Complete payment on gateway.');
+      } else {
+        throw new Error(`Unsupported payment method: ${method}`);
+      }
     }
 
     await IRCTCExt.Storage.updateState({ paymentDone: true });

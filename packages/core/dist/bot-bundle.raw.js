@@ -624,6 +624,30 @@ IRCTCExt.EticketSelectors = {
     altCardName: ['#cardName'],
     altPayBtn: ['#confirm-purchase']
   },
+  irctcPaymentsGateway: {
+    cardAccordionBtn: ['#cardAccordionBtn', 'button.accordion-button.explore-btn'],
+    cardAccordionPanel: ['#collapseOne', '#cardAccordionBtn + .accordion-collapse'],
+    cardForm: ['#inputForm', 'form[name="inputForm"]', '#collapseOne form'],
+    cardNumberMasked: ['#cardNoMasked', 'input[name="cardNoMasked"]', '#collapseOne input[placeholder*="XXXX"]'],
+    expiryMonth: ['#month', 'select[name="expiry-month1"]', '#collapseOne select[name*="month" i]'],
+    expiryYear: ['#year', 'select[name="expiry-year1"]', '#collapseOne select[name*="year" i]'],
+    cvv: ['#cvv', 'input[name="cvv"]'],
+    nameOnCard: ['#nameOnCard', 'input[name="nameOnCard"]'],
+    smartPayToggle: ['#cardSmartPayToggle', '#collapseOne #cardSmartPayToggle'],
+    upiBhimAccordionBtn: ['#upiAccordionBtn', 'button[data-bs-target="#collapseUpi"]'],
+    upiBhimAccordionPanel: ['#collapseUpi'],
+    upiBhimQrRadio: ['#qr-click', 'input[data-click="toggleQR"]'],
+    upiBhimQrSection: ['#show-qr-div', '.showQRDiv'],
+    upiCcClAccordionBtn: ['#upiCcClAccordionBtn'],
+    upiCcClAccordionPanel: ['#collapseCcCl', '#upiCcClAccordionBtn + .accordion-collapse'],
+    upiCcClQrRadio: ['#qr-click-cccl'],
+    upiCcClQrSection: ['#show-qr-div-cccl'],
+    upiQrModal: ['.modal.show', '.modal.fade.show', '[role="dialog"].show'],
+    upiShowQrBtn: ['#irctc-generate-qr-btn', 'button[data-click="showUpiQR"]'],
+    upiQrImage: ['#irctc-qr-code', 'canvas', 'img[src*="qr" i]', '.qr-code img'],
+    payNowBtn: ['button.pay-now-btn', '.pay-now-btn', 'button.btn-primary'],
+    cardErrors: ['#cardErrFld', '#cardMonthErr', '#cardYearErr', '#cardcvvFld', '#cardErrFld1']
+  },
   phonepeGateway: {
     paymentOptionsTitle: ['Payment Options'],
     upiInstrument: ['#upi-instrument', '[id*="upi-instrument"]'],
@@ -1553,6 +1577,2246 @@ IRCTCExt.EticketSite = {
 IRCTCExt.SiteRegistry?.register(IRCTCExt.EticketSite);
 
 ;
+(function (root) {
+  root.IRCTCExt = root.IRCTCExt || {};
+
+  IRCTCExt.NgetConfig = {
+    id: 'nget',
+    label: 'Classic — nget',
+    homeUrl: 'https://www.irctc.co.in/nget',
+    trainSearchUrl: 'https://www.irctc.co.in/nget/train-search',
+    trainSearchPath: '/nget/train-search',
+    urlPattern: 'https://www.irctc.co.in/nget/*',
+    trainSearchUrlPattern: 'https://www.irctc.co.in/nget/train-search*',
+    gatewayUrl: 'https://pg.irctcpayments.com/',
+    gatewayHost: 'pg.irctcpayments.com',
+    gatewayUrlPattern: 'https://pg.irctcpayments.com/*',
+    gatewayAuthRedirectPath: '/pg/api/v2/authRedirect',
+    thirdPartyGatewayHosts: ['pg.irctcpayments.com', 'irctcipay.com', 'phonepe.com'],
+    errorPagePath: '/nget/error'
+  };
+})(typeof globalThis !== 'undefined' ? globalThis : window);
+
+;
+window.IRCTCExt = window.IRCTCExt || {};
+
+// TODO: verify nget path segments when implementing classic flow automation.
+IRCTCExt.NgetPaths = {
+  isGatewayHost(hostname = location.hostname) {
+    const host = IRCTCExt.NgetConfig?.gatewayHost || 'pg.irctcpayments.com';
+    return hostname.includes(host) || hostname.includes('irctcpayments.com');
+  },
+
+  isGatewayPath(path = location.pathname, hostname = location.hostname) {
+    return IRCTCExt.NgetPaths.isGatewayHost(hostname);
+  },
+
+  isGatewayAuthRedirectPath(path = location.pathname, hostname = location.hostname) {
+    if (!IRCTCExt.NgetPaths.isGatewayHost(hostname)) return false;
+    const authPath = IRCTCExt.NgetConfig?.gatewayAuthRedirectPath || '/pg/api/v2/authRedirect';
+    return path.includes(authPath) || path.includes('/authRedirect');
+  },
+
+  isPaymentPath(path = location.pathname) {
+    return path.includes('bkgPaymentOptions') || /\/payment(?:\/|$)/i.test(path);
+  },
+
+  isReviewPath(path = location.pathname) {
+    return path.includes('reviewBooking') || /\/review(?:\/|$)/i.test(path);
+  },
+
+  syncStepFromPath(path, state = {}) {
+    if (IRCTCExt.NgetPaths.isGatewayPath(path)) return 'gateway';
+    if (state.awaitingGateway && state.paymentPhase === 'gateway') return 'gateway';
+    if (IRCTCExt.NgetPaths.isPaymentPath(path)) return 'payment';
+    if (IRCTCExt.NgetPaths.isReviewPath(path)) return 'review';
+    if (path.includes('psgninput')) return state.passengersDone ? 'review' : 'passengers';
+    if (path.includes('train-list')) return 'train-list';
+    if (path.includes('train-search')) {
+      if (IRCTCExt.NgetLanguageFlow?.isLanguageModalVisible?.()) return 'language';
+      if (IRCTCExt.NgetLoginFlow?.needsLogin?.()) return 'login';
+      return 'search';
+    }
+    return 'init';
+  },
+
+  isErrorPage(path = location.pathname) {
+    return path.includes(IRCTCExt.NgetConfig.errorPagePath);
+  },
+
+  isTrainListPath(path = location.pathname) {
+    return path.includes('train-list');
+  },
+
+  isTrainSearchPath(path = location.pathname) {
+    return path.includes('train-search');
+  },
+
+  isPassengerPath(path = location.pathname) {
+    return path.includes('psgninput');
+  }
+};
+
+;
+window.IRCTCExt = window.IRCTCExt || {};
+
+IRCTCExt.NgetSelectors = {
+  languageDialog: [
+    '.ui-dialog-content .pnr-detail',
+    '.ui-dialog-content',
+    '.ui-dialog.ui-widget'
+  ],
+  languageButtons: [
+    '.ui-dialog-content button.btn.btn-primary',
+    '.ui-dialog-content button.btn-primary',
+    '.ui-dialog button.btn-primary'
+  ],
+  languageButtonRow: [
+    '.ui-dialog-content .text-center.col-xs-12',
+    '.ui-dialog-content .text-center'
+  ],
+  languageEnglishSubmit: [
+    '.ui-dialog-content button[type="submit"].btn-primary',
+    '.ui-dialog button[type="submit"].btn-primary'
+  ],
+  loginHeaderBtn: [
+    'a.search_btn.loginText[aria-label*="Login"]',
+    'a.search_btn.loginText',
+    'button.search_btn:not(.train_Search)'
+  ], // desktop + sidebar; prefer findDesktopLoginButton / findSidebarLoginButton
+  hamburgerMenu: [
+    '.h_menu_drop_button a',
+    '.h_menu_drop_button .fa-align-justify',
+    'div.h_menu_drop_button a'
+  ],
+  hamburgerSidebar: [
+    '.ui-sidebar.ui-sidebar-active',
+    '.ui-sidebar-right.ui-sidebar-active'
+  ],
+  sidebarLoginBtn: [
+    '.ui-sidebar-active nav.nav-bar button.search_btn',
+    '.ui-sidebar-active button.search_btn'
+  ],
+  desktopLoginBtn: [
+    'a.search_btn.loginText[aria-label*="Login"]',
+    'a.search_btn.loginText'
+  ],
+  loginDialog: ['.ui-dialog-content:has(.irmodal)', '.ui-dialog .ui-dialog-content'],
+  loginModal: ['.ui-dialog-content .irmodal', '.ui-dialog-content .irmodal[role="form"]', '.irmodal'],
+  loginUsername: [
+    'input[formcontrolname="userid"]',
+    'input[placeholder="User Name"]',
+    '.irmodal input[formcontrolname="userid"]'
+  ],
+  loginPassword: [
+    'input[formcontrolname="password"]',
+    'input[placeholder="Password"]',
+    '.irmodal input[formcontrolname="password"]'
+  ],
+  loginSubmit: [
+    'button.train_Search[type="submit"]',
+    'button.search_btn.train_Search.train_Search_custom_hover[type="submit"]',
+    '.irmodal button.train_Search[type="submit"]',
+    '.irmodal button.search_btn.train_Search'
+  ],
+  loginCaptcha: [
+    '.irmodal input[placeholder*="Captcha"]',
+    '.irmodal input[placeholder*="CAPTCHA"]',
+    '.irmodal input[formcontrolname="captcha"]'
+  ],
+  loggedInProfile: [
+    'a[href*="logout"]',
+    'button[aria-label*="Logout"]',
+    '.user-profile',
+    '.profile-icon'
+  ],
+  searchFrom: [
+    'p-autocomplete#origin input.ui-autocomplete-input',
+    '#origin input.ui-autocomplete-input',
+    'p-autocomplete[formcontrolname="origin"] input'
+  ],
+  searchTo: [
+    'p-autocomplete#destination input.ui-autocomplete-input',
+    '#destination input.ui-autocomplete-input',
+    'p-autocomplete[formcontrolname="destination"] input'
+  ],
+  searchDate: [
+    'p-calendar#jDate input',
+    'p-calendar[formcontrolname="journeyDate"] input',
+    '#jDate input'
+  ],
+  searchClass: [
+    'p-dropdown#journeyClass .ui-dropdown-trigger',
+    'p-dropdown[formcontrolname="journeyClass"] .ui-dropdown-trigger'
+  ],
+  searchQuota: [
+    'p-dropdown#journeyQuota .ui-dropdown-trigger',
+    'p-dropdown[formcontrolname="journeyQuota"] .ui-dropdown-trigger'
+  ],
+  searchButton: [
+    'button.search_btn.train_Search',
+    'button.train_Search[type="submit"]',
+    'button.train_Search'
+  ],
+  autocompletePanel: [
+    '.ui-autocomplete-panel',
+    'ul.ui-autocomplete-items'
+  ],
+  autocompleteOptions: [
+    '.ui-autocomplete-panel li.ui-autocomplete-list-item',
+    'ul.ui-autocomplete-items li'
+  ],
+  dropdownPanel: [
+    '.ui-dropdown-panel .ui-dropdown-item',
+    'ul.ui-dropdown-items li',
+    '.ui-dropdown-panel li'
+  ],
+  dropdownOptions: [
+    '.ui-dropdown-panel .ui-dropdown-item',
+    'ul.ui-dropdown-items li'
+  ],
+  calendarPanel: [
+    '.ui-datepicker',
+    '.ui-datepicker-calendar'
+  ],
+  trainList: {
+    container: ['.trains-div', 'app-train-avl-enq'],
+    trainCard: ['app-train-avl-enq'],
+    trainHeading: ['.train-heading strong'],
+    classCell: ['div.pre-avl'],
+    classLabel: ['div.pre-avl strong'],
+    classRefreshLink: ['div.pre-avl .col-xs-12.link', 'div.pre-avl .link'],
+    classRefreshIcon: ['div.pre-avl .fa-repeat', 'div.pre-avl .fa.fa-repeat'],
+    classStatus: ['div.pre-avl'],
+    classPickerCell: ['div.pre-avl'],
+    classTabMenu: ['p-tabmenu', '.ui-tabmenu'],
+    classTabItem: ['.ui-tabmenuitem'],
+    classTabActive: ['.ui-tabmenuitem.ui-state-active'],
+    datePanel: ['p-tabmenu'],
+    dateCell: ['div.pre-avl'],
+    dateLabel: ['div.pre-avl > div:first-child strong'],
+    dateStatus: ['div.pre-avl .AVAILABLE', 'div.pre-avl .RAC', 'div.pre-avl .WL', 'div.pre-avl .REGRET'],
+    bookNowBtn: ['button.train_Search', 'button.btnDefault.train_Search'],
+    bookNowEnabled: [
+      'button.train_Search:not(.disable-book)',
+      'button.btnDefault.train_Search:not(.disable-book)'
+    ]
+  },
+  passengers: {
+    passengerPanel: ['p-panel .ui-panel-title', '.ui-panel-title.p-heading'],
+    passengerRow: ['app-passenger'],
+    addPassengerLink: ['a span.prenext'],
+    deletePassengerBtn: ['a.fa.fa-remove.fa-lg', 'a.fa-remove'],
+    passengerName: [
+      'p-autocomplete[formcontrolname="passengerName"] input',
+      'input[formcontrolname="passengerName"]'
+    ],
+    passengerAge: ['input[formcontrolname="passengerAge"]'],
+    passengerGender: [
+      'select[formcontrolname="passengerGender"]',
+      'input[formcontrolname="passengerGender"]',
+      'p-dropdown[formcontrolname="passengerGender"] .ui-dropdown-trigger',
+      'p-dropdown[formcontrolname="passengerGender"]'
+    ],
+    passengerBerth: ['select[formcontrolname="passengerBerthChoice"]'],
+    autocompleteOptions: [
+      '.ui-autocomplete-panel li.ui-autocomplete-list-item',
+      'ul.ui-autocomplete-items li'
+    ],
+    validationError: ['app-control-messages small', '.ui-messages-error']
+  },
+  psgnPreferences: {
+    paymentPanelTitle: ['.ui-panel-title.p-heading', 'p-panel .ui-panel-title'],
+    paymentTypeCards: ['input[name="paymentType"][value="3"]'],
+    paymentTypeUpi: ['input[name="paymentType"][value="2"]'],
+    paymentTypeRadio: ['p-radiobutton[formcontrolname="paymentType"]', 'input[name="paymentType"]'],
+    continueBtn: [
+      'button.train_Search.btnDefault[type="submit"]',
+      'button.train_Search.btnDefault'
+    ]
+  },
+  review: {
+    passengerDetailHost: ['app-psgn-detail'],
+    passengerDetailContent: [
+      'app-psgn-detail .ui-panel-content',
+      'app-psgn-detail p-panel .ui-panel-content'
+    ],
+    continueBtn: [
+      'button.train_Search.btnDefault[type="submit"]',
+      'button.btnDefault.train_Search'
+    ]
+  },
+  payment: {
+    payTypeMenu: ['#pay-type'],
+    bankTypeItem: ['#pay-type .bank-type', '.bank-type'],
+    bankTypeActive: ['.bank-type-active'],
+    bankOptionRow: ['.bank-text', '.border-all.link .bank-text'],
+    bankOptionClickable: ['.border-all.link', 'td .border-all.link'],
+    payAndBookBtn: ['button.btn.btn-primary', 'button.btn-primary']
+  }
+};
+
+;
+(function (root) {
+  root.IRCTCExt = root.IRCTCExt || {};
+  if (IRCTCExt.NgetTrainList) return;
+
+  IRCTCExt.NgetTrainList = {
+    setStatus(overlay, msg) {
+      overlay?.setStatus(msg);
+    },
+
+    scrollIntoViewIfNeeded(el) {
+      if (!el) return;
+      el.scrollIntoView({ block: 'center', inline: 'nearest' });
+    },
+
+    normalizeTrainText(text) {
+      return String(text || '')
+        .toLowerCase()
+        .replace(/[^\w\s]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    },
+
+    scoreTrainName(cardName, searchName) {
+      const a = IRCTCExt.NgetTrainList.normalizeTrainText(cardName);
+      const b = IRCTCExt.NgetTrainList.normalizeTrainText(searchName);
+      if (!b) return 0;
+      if (a === b) return 100;
+      if (a.includes(b) || b.includes(a)) return 80;
+
+      const wordsA = a.split(' ').filter(Boolean);
+      const wordsB = b.split(' ').filter(Boolean);
+      if (!wordsB.length) return 0;
+
+      const overlap = wordsB.filter((word) =>
+        wordsA.some((cardWord) => cardWord.includes(word) || word.includes(cardWord))
+      ).length;
+      return Math.round((overlap / wordsB.length) * 70);
+    },
+
+    parseCardHeading(text) {
+      const raw = String(text || '').trim();
+      const match = raw.match(/^(.+?)\s*\(\s*(\d+)\s*\)\s*$/);
+      if (!match) return { name: raw, number: '' };
+      return { name: match[1].trim(), number: match[2].trim() };
+    },
+
+    getCardHeading(card) {
+      const sel = IRCTCExt.SELECTORS.trainList;
+      const el = IRCTCExt.Wait.queryOne(sel.trainHeading, card);
+      return (el?.textContent || '').trim();
+    },
+
+    getCardTrainName(card) {
+      return IRCTCExt.NgetTrainList.parseCardHeading(IRCTCExt.NgetTrainList.getCardHeading(card)).name;
+    },
+
+    getCardTrainNumber(card) {
+      return IRCTCExt.NgetTrainList.parseCardHeading(IRCTCExt.NgetTrainList.getCardHeading(card)).number;
+    },
+
+    resolveTrainCard(el) {
+      if (!el) return null;
+      if (el.matches?.('app-train-avl-enq')) return el;
+      return el.closest('app-train-avl-enq');
+    },
+
+    isPopulatedTrainCard(card) {
+      if (!card) return false;
+      const heading = IRCTCExt.Wait.queryOne(IRCTCExt.SELECTORS.trainList.trainHeading, card);
+      return !!(heading && IRCTCExt.Wait.isVisible(heading));
+    },
+
+    getPopulatedTrainCards() {
+      const sel = IRCTCExt.SELECTORS.trainList;
+      const headingSelector = sel.trainHeading?.[0] || '.train-heading strong';
+      const cards = [];
+      const seen = new Set();
+
+      for (const heading of document.querySelectorAll(headingSelector)) {
+        if (!IRCTCExt.Wait.isVisible(heading)) continue;
+        const card = IRCTCExt.NgetTrainList.resolveTrainCard(heading);
+        if (!card || seen.has(card)) continue;
+        if (!IRCTCExt.NgetTrainList.isPopulatedTrainCard(card)) continue;
+        seen.add(card);
+        cards.push(card);
+      }
+
+      if (cards.length) return cards;
+
+      return [...document.querySelectorAll(sel.trainCard?.[0] || 'app-train-avl-enq')].filter((card) =>
+        IRCTCExt.NgetTrainList.isPopulatedTrainCard(card)
+      );
+    },
+
+    findTrainCardByNumber(trainNo) {
+      const normalized = String(trainNo || '').trim();
+      if (!normalized) return null;
+
+      for (const card of IRCTCExt.NgetTrainList.getPopulatedTrainCards()) {
+        if (IRCTCExt.NgetTrainList.getCardTrainNumber(card) === normalized) return card;
+      }
+
+      const headingSelector = IRCTCExt.SELECTORS.trainList.trainHeading?.[0] || '.train-heading strong';
+      const numberPattern = new RegExp(`\\(\\s*${normalized}\\s*\\)`);
+      for (const heading of document.querySelectorAll(headingSelector)) {
+        if (!IRCTCExt.Wait.isVisible(heading)) continue;
+        if (!numberPattern.test(heading.textContent || '')) continue;
+        const card = IRCTCExt.NgetTrainList.resolveTrainCard(heading);
+        if (card && IRCTCExt.NgetTrainList.isPopulatedTrainCard(card)) return card;
+      }
+
+      return null;
+    },
+
+    findTrainCardByName(trainName, minScore = 50) {
+      if (!trainName) return null;
+
+      const normalizedSearch = IRCTCExt.NgetTrainList.normalizeTrainText(trainName);
+      let bestCard = null;
+      let bestScore = 0;
+
+      for (const card of IRCTCExt.NgetTrainList.getPopulatedTrainCards()) {
+        const name = IRCTCExt.NgetTrainList.getCardTrainName(card);
+        const normalizedName = IRCTCExt.NgetTrainList.normalizeTrainText(name);
+        if (normalizedName === normalizedSearch) return card;
+
+        const score = IRCTCExt.NgetTrainList.scoreTrainName(name, trainName);
+        if (score > bestScore) {
+          bestScore = score;
+          bestCard = card;
+        }
+      }
+
+      return bestScore >= minScore ? bestCard : null;
+    },
+
+    findTrainCard(journey = {}) {
+      const trainNo = String(journey.trainNo || '').trim();
+      const trainName = String(journey.trainName || '').trim();
+
+      if (trainNo) {
+        const byNumber = IRCTCExt.NgetTrainList.findTrainCardByNumber(trainNo);
+        if (byNumber) return byNumber;
+
+        if (!/^\d+$/.test(trainNo)) {
+          const byNoAsName = IRCTCExt.NgetTrainList.findTrainCardByName(trainNo);
+          if (byNoAsName) return byNoAsName;
+        }
+      }
+
+      if (trainName) {
+        const byName = IRCTCExt.NgetTrainList.findTrainCardByName(trainName);
+        if (byName) return byName;
+      }
+
+      if (trainName || trainNo) return null;
+      return IRCTCExt.NgetTrainList.getPopulatedTrainCards()[0] || null;
+    },
+
+    async waitForTrainListReady(overlay) {
+      IRCTCExt.NgetTrainList.setStatus(overlay, 'Waiting for train list...');
+
+      const ready = await IRCTCExt.Wait.poll(
+        () => (IRCTCExt.NgetTrainList.getPopulatedTrainCards().length > 0 ? true : null),
+        { timeout: 20000, interval: 100 }
+      );
+
+      if (!ready) throw new Error('Train list did not load');
+    },
+
+    async findTrainCardWithPoll(journey, searchLabel, overlay) {
+      IRCTCExt.NgetTrainList.setStatus(overlay, `Searching train list for ${searchLabel}...`);
+
+      let card = IRCTCExt.NgetTrainList.findTrainCard(journey);
+      if (card) return card;
+
+      card = await IRCTCExt.Wait.poll(() => IRCTCExt.NgetTrainList.findTrainCard(journey), {
+        timeout: 8000,
+        interval: 100
+      });
+
+      if (!card && (journey.trainName || journey.trainNo)) {
+        throw new Error(`Train ${searchLabel} not found in results`);
+      }
+      if (!card) throw new Error('No trains found on page');
+      return card;
+    },
+
+    classCellMatchesTravelClass(classCell, travelClass) {
+      if (!classCell || !travelClass) return false;
+
+      const labelEl = classCell.querySelector('strong');
+      const text = (labelEl?.textContent || classCell.textContent || '').trim();
+      const normalizedClass = String(travelClass).trim().toUpperCase();
+      const classLabel = IRCTCExt.Stations.getClassLabel(travelClass);
+
+      if (text.includes(classLabel)) return true;
+      if (new RegExp(`\\(\\s*${normalizedClass}\\s*\\)`).test(text)) return true;
+      if (new RegExp(`\\b${normalizedClass}\\b`).test(text.toUpperCase())) return true;
+
+      return false;
+    },
+
+    isClassPickerCell(cell) {
+      if (!cell || IRCTCExt.NgetTrainList.isDateAvailabilityCell(cell)) return false;
+
+      if (IRCTCExt.NgetTrainList.findClassRefreshControl(cell)) return true;
+
+      const strong = cell.querySelector('div:first-child strong, strong');
+      const label = (strong?.textContent || '').trim();
+      if (!label) return false;
+      if (/\b(mon|tue|wed|thu|fri|sat|sun)\b/i.test(label)) return false;
+
+      return (
+        /\([A-Z0-9]{1,3}\)/.test(label) ||
+        /sleeper|tier|class|chair|sitting|economy|anubhuti|vistadome/i.test(label)
+      );
+    },
+
+    isDateAvailabilityCell(cell) {
+      if (!cell) return false;
+      if (cell.querySelector('.AVAILABLE, .RAC, .WL, .REGRET')) return true;
+      const label = IRCTCExt.NgetTrainList.getDateCellLabel(cell);
+      return /\b(mon|tue|wed|thu|fri|sat|sun)\b/i.test(label);
+    },
+
+    getClassPickerCells(card) {
+      const sel = IRCTCExt.SELECTORS.trainList;
+      const cells = [...card.querySelectorAll(sel.classPickerCell?.[0] || 'div.pre-avl')];
+      return cells.filter((cell) => IRCTCExt.NgetTrainList.isClassPickerCell(cell));
+    },
+
+    getClassCells(card) {
+      return IRCTCExt.NgetTrainList.getClassPickerCells(card);
+    },
+
+    getDatePanel(card) {
+      const sel = IRCTCExt.SELECTORS.trainList;
+      return IRCTCExt.Wait.queryOne(sel.datePanel, card);
+    },
+
+    getDateAvailabilityCells(card) {
+      const panel = IRCTCExt.NgetTrainList.getDatePanel(card);
+      if (!panel) return [];
+
+      const container = panel.closest('.col-xs-12') || card;
+      const cells = [...container.querySelectorAll('div.pre-avl')];
+      return cells.filter((cell) => IRCTCExt.NgetTrainList.isDateAvailabilityCell(cell));
+    },
+
+    getDateCellLabel(dateCell) {
+      const sel = IRCTCExt.SELECTORS.trainList;
+      const labelEl = IRCTCExt.Wait.queryOne(sel.dateLabel, dateCell) || dateCell.querySelector('strong');
+      return (labelEl?.textContent || '').trim();
+    },
+
+    findClassCell(card, travelClass) {
+      for (const classCell of IRCTCExt.NgetTrainList.getClassPickerCells(card)) {
+        if (IRCTCExt.NgetTrainList.classCellMatchesTravelClass(classCell, travelClass)) {
+          return classCell;
+        }
+      }
+      return null;
+    },
+
+    async findClassCellWithScroll(card, travelClass, overlay) {
+      for (let i = 0; i < 8; i += 1) {
+        const classCell = IRCTCExt.NgetTrainList.findClassCell(card, travelClass);
+        if (classCell) {
+          IRCTCExt.NgetTrainList.scrollIntoViewIfNeeded(classCell);
+          return classCell;
+        }
+
+        const scrollHost = card.querySelector('[style*="overflow-x"]') || card.querySelector('table');
+        if (scrollHost && scrollHost.scrollWidth > scrollHost.clientWidth) {
+          IRCTCExt.NgetTrainList.setStatus(overlay, `Scrolling to find class ${travelClass}...`);
+          scrollHost.scrollLeft += Math.min(180, scrollHost.clientWidth);
+          await IRCTCExt.Wait.delay(250);
+          continue;
+        }
+        break;
+      }
+
+      const classCell = IRCTCExt.NgetTrainList.findClassCell(card, travelClass);
+      if (classCell) IRCTCExt.NgetTrainList.scrollIntoViewIfNeeded(classCell);
+      return classCell;
+    },
+
+    findClassRefreshControl(classCell) {
+      if (!classCell) return null;
+
+      const sel = IRCTCExt.SELECTORS.trainList;
+      const links = IRCTCExt.Wait.queryAll(sel.classRefreshLink, classCell);
+      const link = links.find(
+        (el) => /refresh/i.test(el.textContent || '') && IRCTCExt.Wait.isVisible(el)
+      );
+      if (link) return link;
+
+      const icons = IRCTCExt.Wait.queryAll(sel.classRefreshIcon, classCell);
+      const icon = icons.find((el) => IRCTCExt.Wait.isVisible(el));
+      if (icon) return icon;
+
+      return null;
+    },
+
+    async waitForDatePanel(card, overlay) {
+      const loaded = await IRCTCExt.Wait.poll(
+        () => {
+          const panel = IRCTCExt.NgetTrainList.getDatePanel(card);
+          if (!panel || !IRCTCExt.Wait.isVisible(panel)) return null;
+          return IRCTCExt.NgetTrainList.getDateAvailabilityCells(card).length > 0 ? true : null;
+        },
+        { timeout: 10000, interval: 200 }
+      );
+
+      if (!loaded) throw new Error('Date availability panel did not load');
+      return true;
+    },
+
+    parseDateCellStatus(dateCell) {
+      const sel = IRCTCExt.SELECTORS.trainList;
+      const statusEl = IRCTCExt.Wait.queryOne(sel.dateStatus, dateCell);
+      const text = (statusEl?.textContent || dateCell?.textContent || '').replace(/\s+/g, ' ').trim();
+      const status = { type: '', text };
+
+      const upper = text.toUpperCase();
+      if (/high\s*load|please\s*retry/i.test(text)) status.type = 'HIGH_LOAD';
+      else if (statusEl?.classList.contains('AVAILABLE') || upper.includes('AVAILABLE')) status.type = 'AVAILABLE';
+      else if (statusEl?.classList.contains('RAC') || /\bRAC\b/.test(upper)) status.type = 'RAC';
+      else if (statusEl?.classList.contains('WL') || /\bWL\b/.test(upper)) status.type = 'WL';
+      else if (statusEl?.classList.contains('REGRET') || upper.includes('REGRET') || /not available/i.test(text)) {
+        status.type = 'REGRET';
+      }
+
+      return status;
+    },
+
+    findDateCell(card, journeyDate) {
+      if (!journeyDate) return null;
+
+      for (const dateCell of IRCTCExt.NgetTrainList.getDateAvailabilityCells(card)) {
+        const label = IRCTCExt.NgetTrainList.getDateCellLabel(dateCell);
+        if (IRCTCExt.Stations.dateLabelsMatch(journeyDate, label)) return dateCell;
+      }
+
+      return null;
+    },
+
+    classTabMatchesTravelClass(tab, travelClass) {
+      if (!tab || !travelClass) return false;
+      const text = (tab.textContent || '').trim();
+      const normalizedClass = String(travelClass).trim().toUpperCase();
+      const classLabel = IRCTCExt.Stations.getClassLabel(travelClass);
+
+      if (text.includes(classLabel)) return true;
+      if (new RegExp(`\\(\\s*${normalizedClass}\\s*\\)`).test(text)) return true;
+      if (new RegExp(`\\b${normalizedClass}\\b`).test(text.toUpperCase())) return true;
+
+      return false;
+    },
+
+    async ensureClassTabActive(card, travelClass, overlay) {
+      const sel = IRCTCExt.SELECTORS.trainList;
+      const active = IRCTCExt.Wait.queryOne(sel.classTabActive, card);
+      if (active && IRCTCExt.NgetTrainList.classTabMatchesTravelClass(active, travelClass)) return;
+
+      const tabs = IRCTCExt.Wait.queryAll(sel.classTabItem, card);
+      const match = tabs.find((tab) => IRCTCExt.NgetTrainList.classTabMatchesTravelClass(tab, travelClass));
+      if (!match) return;
+
+      IRCTCExt.NgetTrainList.setStatus(overlay, `Selecting class tab ${travelClass}...`);
+      IRCTCExt.Events.click(match.querySelector('a') || match);
+      await IRCTCExt.Wait.delay(300);
+    },
+
+    isHighLoadStatus(status) {
+      const text = String(status?.text || '');
+      return /high\s*load|please\s*retry/i.test(text) || status?.type === 'HIGH_LOAD';
+    },
+
+    isRetryableAvailabilityError(status) {
+      return IRCTCExt.NgetTrainList.isHighLoadStatus(status);
+    },
+
+    isBookableStatus(statusType) {
+      return statusType === 'AVAILABLE' || statusType === 'RAC';
+    },
+
+    async refreshClassAvailability(classPickerCell, card, overlay, travelClass) {
+      IRCTCExt.NgetTrainList.scrollIntoViewIfNeeded(classPickerCell);
+
+      const refresh = IRCTCExt.NgetTrainList.findClassRefreshControl(classPickerCell);
+      if (!refresh) throw new Error(`Refresh control not found for class ${travelClass}`);
+
+      IRCTCExt.NgetTrainList.setStatus(overlay, `Refreshing availability for ${travelClass}...`);
+      IRCTCExt.Events.click(refresh);
+      await IRCTCExt.Wait.delay(500);
+      await IRCTCExt.NgetTrainList.waitForDatePanel(card, overlay);
+      return true;
+    },
+
+    async waitForBookableDate(card, journeyDate, travelClass, classPickerCell, overlay) {
+      let attempt = 0;
+      const dateLabel = IRCTCExt.Stations.formatDateForNgetCard(journeyDate) || journeyDate;
+
+      while (await IRCTCExt.Bot.isRunning()) {
+        const control = await IRCTCExt.Bot.checkControlState();
+        if (control === 'stopped') throw new Error('Booking stopped');
+        if (control === 'paused') {
+          IRCTCExt.NgetTrainList.setStatus(overlay, 'Paused — click Resume to continue...');
+          await IRCTCExt.Bot.waitUntilResumedOrStopped();
+          if (!(await IRCTCExt.Bot.isRunning())) throw new Error('Booking stopped');
+          continue;
+        }
+
+        await IRCTCExt.NgetTrainList.waitForDatePanel(card, overlay);
+        await IRCTCExt.NgetTrainList.ensureClassTabActive(card, travelClass, overlay);
+
+        const dateCell = IRCTCExt.NgetTrainList.findDateCell(card, journeyDate);
+        if (!dateCell) {
+          throw new Error(`Journey date not found in availability (${dateLabel})`);
+        }
+
+        const status = IRCTCExt.NgetTrainList.parseDateCellStatus(dateCell);
+        if (IRCTCExt.NgetTrainList.isBookableStatus(status.type)) {
+          return { dateCell, status };
+        }
+
+        if (!IRCTCExt.NgetTrainList.isRetryableAvailabilityError(status)) {
+          throw new Error(
+            `${dateLabel} shows ${status.text || status.type || 'not available'} — not bookable`
+          );
+        }
+
+        attempt += 1;
+        IRCTCExt.NgetTrainList.setStatus(
+          overlay,
+          `High load on ${dateLabel} — refreshing (attempt ${attempt})...`
+        );
+        await IRCTCExt.NgetTrainList.refreshClassAvailability(
+          classPickerCell,
+          card,
+          overlay,
+          travelClass
+        );
+        await IRCTCExt.Wait.delay(400);
+      }
+
+      throw new Error('Booking stopped');
+    },
+
+    selectDateCell(dateCell) {
+      if (!dateCell) return;
+      IRCTCExt.NgetTrainList.scrollIntoViewIfNeeded(dateCell);
+      IRCTCExt.Events.click(dateCell);
+    },
+
+    findBookNowButton(card) {
+      const sel = IRCTCExt.SELECTORS.trainList;
+      const enabled = IRCTCExt.Wait.queryOne(sel.bookNowEnabled, card);
+      if (enabled && IRCTCExt.Wait.isVisible(enabled)) return enabled;
+
+      const buttons = card.querySelectorAll(sel.bookNowBtn?.[0] || 'button.train_Search');
+      return (
+        [...buttons].find(
+          (btn) =>
+            /book\s*now/i.test(btn.textContent || '') &&
+            !btn.classList.contains('disable-book') &&
+            IRCTCExt.Wait.isVisible(btn)
+        ) || null
+      );
+    },
+
+    async waitForBookNowEnabled(card, overlay, travelClass) {
+      return IRCTCExt.Wait.poll(
+        () => IRCTCExt.NgetTrainList.findBookNowButton(card),
+        { timeout: 15000, interval: 200 }
+      );
+    },
+
+    async confirmBookingAndWait(overlay) {
+      if (location.pathname.includes('psgninput')) return true;
+
+      const deadline = Date.now() + 25000;
+      while (Date.now() < deadline) {
+        if (location.pathname.includes('psgninput')) return true;
+        await IRCTCExt.Wait.delay(100);
+      }
+
+      if (location.pathname.includes('psgninput')) return true;
+      throw new Error('Did not reach passenger input page after booking');
+    },
+
+    async bookTrain(config, overlay) {
+      const { journey } = config;
+
+      overlay?.setStep('Train List');
+      await IRCTCExt.NgetTrainList.waitForTrainListReady(overlay);
+
+      const trainName = String(journey.trainName || '').trim();
+      const trainNo = String(journey.trainNo || '').trim();
+      const searchLabel = trainNo || trainName || 'train';
+      const travelClass = journey.travelClass || 'SL';
+
+      const card = await IRCTCExt.NgetTrainList.findTrainCardWithPoll(journey, searchLabel, overlay);
+
+      const trainNum = IRCTCExt.NgetTrainList.getCardTrainNumber(card) || trainNo || '';
+      const matchedName = IRCTCExt.NgetTrainList.getCardTrainName(card);
+      const foundLabel =
+        trainNum && matchedName
+          ? `Found train ${trainNum} — ${matchedName}`
+          : matchedName
+            ? `Found train ${matchedName}`
+            : `Found train ${trainNum}`;
+      IRCTCExt.NgetTrainList.setStatus(overlay, foundLabel);
+
+      const classPickerCell = await IRCTCExt.NgetTrainList.findClassCellWithScroll(card, travelClass, overlay);
+      if (!classPickerCell) throw new Error(`Class ${travelClass} not found for train ${trainNum}`);
+
+      if (!journey.date) throw new Error('Journey date is required for nget train-list booking');
+
+      await IRCTCExt.NgetTrainList.refreshClassAvailability(
+        classPickerCell,
+        card,
+        overlay,
+        travelClass
+      );
+
+      const { dateCell, status } = await IRCTCExt.NgetTrainList.waitForBookableDate(
+        card,
+        journey.date,
+        travelClass,
+        classPickerCell,
+        overlay
+      );
+
+      const dateLabel =
+        IRCTCExt.NgetTrainList.getDateCellLabel(dateCell) ||
+        IRCTCExt.Stations.formatDateForNgetCard(journey.date);
+      IRCTCExt.NgetTrainList.setStatus(
+        overlay,
+        `Selecting ${dateLabel} (${status.text || status.type})...`
+      );
+      IRCTCExt.NgetTrainList.selectDateCell(dateCell);
+      await IRCTCExt.Wait.delay(300);
+
+      let bookBtn = IRCTCExt.NgetTrainList.findBookNowButton(card);
+      if (!bookBtn) {
+        IRCTCExt.NgetTrainList.setStatus(overlay, 'Waiting for Book Now to enable...');
+        bookBtn = await IRCTCExt.NgetTrainList.waitForBookNowEnabled(card, overlay, travelClass);
+      }
+      if (!bookBtn) throw new Error('Book Now button did not become enabled');
+
+      IRCTCExt.NgetTrainList.setStatus(
+        overlay,
+        `${dateLabel} available (${status.text || status.type}) — clicking Book Now...`
+      );
+      IRCTCExt.NgetTrainList.scrollIntoViewIfNeeded(bookBtn);
+      IRCTCExt.Events.click(bookBtn);
+      await IRCTCExt.Wait.delay(400);
+
+      IRCTCExt.NgetTrainList.setStatus(overlay, 'Book Now clicked — waiting for passenger page...');
+      await IRCTCExt.NgetTrainList.confirmBookingAndWait(overlay);
+      return true;
+    }
+  };
+})(typeof globalThis !== 'undefined' ? globalThis : window);
+
+;
+(function (root) {
+  root.IRCTCExt = root.IRCTCExt || {};
+  if (IRCTCExt.NgetLanguageFlow) return;
+
+  IRCTCExt.NgetLanguageFlow = {
+    isEnglishButton(btn) {
+      if (!btn) return false;
+      const text = (btn.textContent || '').trim();
+      if (/^english$/i.test(text)) return true;
+      const aria = btn.getAttribute('aria-label') || '';
+      return /english/i.test(text) && /welcome to irctc/i.test(aria);
+    },
+
+    getDialogRoot() {
+      const dialog = IRCTCExt.Wait.queryOne(IRCTCExt.NgetSelectors.languageDialog);
+      if (!dialog || !IRCTCExt.Wait.isVisible(dialog)) return null;
+      const text = (dialog.textContent || '').replace(/\s+/g, ' ');
+      if (!/welcome to irctc/i.test(text)) return null;
+      if (!/preferred language/i.test(text)) return null;
+      return dialog;
+    },
+
+    isLanguageModalVisible() {
+      return !!IRCTCExt.NgetLanguageFlow.getDialogRoot();
+    },
+
+    findEnglishButton() {
+      const dialog = IRCTCExt.NgetLanguageFlow.getDialogRoot();
+      if (!dialog) return null;
+
+      const primaryButtons = IRCTCExt.Wait.queryAll(IRCTCExt.NgetSelectors.languageButtons, dialog);
+      const byText = primaryButtons.find((btn) => IRCTCExt.NgetLanguageFlow.isEnglishButton(btn));
+      if (byText) return byText;
+
+      const rows = IRCTCExt.Wait.queryAll(IRCTCExt.NgetSelectors.languageButtonRow, dialog);
+      for (const row of rows) {
+        const submitButtons = IRCTCExt.Wait.queryAll(
+          ['button[type="submit"].btn-primary', 'button.btn-primary'],
+          row
+        );
+        const english = submitButtons.find((btn) => /english/i.test((btn.textContent || '').trim()));
+        if (english) return english;
+      }
+
+      const submitButtons = IRCTCExt.Wait.queryAll(IRCTCExt.NgetSelectors.languageEnglishSubmit, dialog);
+      return submitButtons.find((btn) => IRCTCExt.NgetLanguageFlow.isEnglishButton(btn)) || null;
+    },
+
+    submitEnglishButton(englishBtn) {
+      IRCTCExt.Events.click(englishBtn);
+
+      const form = englishBtn.closest('form');
+      if (!form) return;
+
+      if (typeof form.requestSubmit === 'function') {
+        try {
+          form.requestSubmit(englishBtn);
+        } catch {
+          form.requestSubmit();
+        }
+        return;
+      }
+
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    },
+
+    async clickEnglishAndWaitForClose(englishBtn, overlay) {
+      overlay?.setStatus?.('Selecting English...');
+      IRCTCExt.NgetLanguageFlow.submitEnglishButton(englishBtn);
+      await IRCTCExt.Wait.delay(500);
+
+      if (!IRCTCExt.NgetLanguageFlow.isLanguageModalVisible()) {
+        return true;
+      }
+
+      IRCTCExt.NgetLanguageFlow.submitEnglishButton(englishBtn);
+      await IRCTCExt.Wait.delay(400);
+
+      const closed = await IRCTCExt.Wait.poll(
+        () => (!IRCTCExt.NgetLanguageFlow.isLanguageModalVisible() ? true : null),
+        { timeout: 10000, interval: 200 }
+      );
+
+      return !!closed;
+    },
+
+    async dismissPreferredLanguage(overlay) {
+      overlay?.setStep?.('Language');
+      overlay?.setStatus?.('Waiting for language prompt...');
+
+      const modalShown = await IRCTCExt.Wait.poll(
+        () => (IRCTCExt.NgetLanguageFlow.isLanguageModalVisible() ? true : null),
+        { timeout: 12000, interval: 200 }
+      );
+
+      if (!modalShown) {
+        overlay?.setStatus?.('Language prompt not shown — continuing.');
+        return false;
+      }
+
+      const englishBtn = IRCTCExt.NgetLanguageFlow.findEnglishButton();
+      if (!englishBtn) {
+        throw new Error('English language button not found on IRCTC language prompt.');
+      }
+
+      const closed = await IRCTCExt.NgetLanguageFlow.clickEnglishAndWaitForClose(englishBtn, overlay);
+      if (!closed) {
+        throw new Error('Language prompt did not close after selecting English.');
+      }
+
+      overlay?.setStatus?.('English selected.');
+      await IRCTCExt.Wait.delay(300);
+      return true;
+    },
+
+    async dismissIfPresent(overlay) {
+      return IRCTCExt.NgetLanguageFlow.dismissPreferredLanguage(overlay);
+    }
+  };
+})(typeof globalThis !== 'undefined' ? globalThis : window);
+
+;
+(function (root) {
+  root.IRCTCExt = root.IRCTCExt || {};
+  if (IRCTCExt.NgetLoginFlow) return;
+
+  IRCTCExt.NgetLoginFlow = {
+    NARROW_LOGIN_BREAKPOINT: 1302,
+
+    usesNarrowLoginLayout() {
+      return window.innerWidth < IRCTCExt.NgetLoginFlow.NARROW_LOGIN_BREAKPOINT;
+    },
+
+    isSidebarOpen() {
+      const sidebar = IRCTCExt.Wait.queryOne(IRCTCExt.SELECTORS.hamburgerSidebar);
+      return !!(sidebar && IRCTCExt.Wait.isVisible(sidebar));
+    },
+
+    getLoginModalRoot() {
+      const dialogs = document.querySelectorAll('.ui-dialog-content');
+      for (const dialog of dialogs) {
+        if (!IRCTCExt.Wait.isVisible(dialog)) continue;
+
+        const modal = dialog.querySelector('.irmodal');
+        if (!modal) continue;
+
+        const title = modal.querySelector('.modal-title, #exampleModalLabel');
+        const userInput = modal.querySelector('input[formcontrolname="userid"]');
+        const isLoginTitle = title && /login/i.test(title.textContent || '');
+        const hasLoginForm = !!(userInput && IRCTCExt.Wait.isVisible(userInput));
+
+        if (isLoginTitle || hasLoginForm) return modal;
+      }
+
+      const modal = IRCTCExt.Wait.queryOne(IRCTCExt.SELECTORS.loginModal);
+      if (!modal || !IRCTCExt.Wait.isVisible(modal)) return null;
+
+      const title = modal.querySelector('.modal-title, #exampleModalLabel');
+      if (title && !/login/i.test(title.textContent || '')) return null;
+      return modal;
+    },
+
+    isLoginModalVisible() {
+      const modal = IRCTCExt.NgetLoginFlow.getLoginModalRoot();
+      if (!modal) return false;
+      const userInput = IRCTCExt.Wait.queryOne(IRCTCExt.SELECTORS.loginUsername, modal);
+      const passInput = IRCTCExt.Wait.queryOne(IRCTCExt.SELECTORS.loginPassword, modal);
+      return !!(
+        userInput &&
+        passInput &&
+        IRCTCExt.Wait.isVisible(userInput) &&
+        IRCTCExt.Wait.isVisible(passInput)
+      );
+    },
+
+    isLoginHeaderButton(btn, { visibleOnly = true, allowInSidebar = false } = {}) {
+      if (!btn) return false;
+      if (visibleOnly && !IRCTCExt.Wait.isVisible(btn)) return false;
+      if (btn.closest('.irmodal, .ui-dialog-content .irmodal, .ui-dialog-content')) return false;
+      if (!allowInSidebar && btn.closest('.ui-sidebar')) return false;
+      if (btn.classList.contains('train_Search')) return false;
+
+      const text = (btn.textContent || '').trim();
+      const aria = (btn.getAttribute('aria-label') || '').toLowerCase();
+      return (
+        /login\s*\/\s*register/i.test(text) ||
+        (/\blogin\b/i.test(text) && aria.includes('login'))
+      );
+    },
+
+    findDesktopLoginButton() {
+      const selectors = IRCTCExt.SELECTORS.desktopLoginBtn || IRCTCExt.SELECTORS.loginHeaderBtn || [];
+      for (const selector of selectors) {
+        const candidates = document.querySelectorAll(selector);
+        const match = [...candidates].find((btn) =>
+          IRCTCExt.NgetLoginFlow.isLoginHeaderButton(btn, { visibleOnly: true, allowInSidebar: false })
+        );
+        if (match) return match;
+      }
+      return null;
+    },
+
+    findSidebarLoginButton() {
+      if (!IRCTCExt.NgetLoginFlow.isSidebarOpen()) return null;
+
+      const sidebar = IRCTCExt.Wait.queryOne(IRCTCExt.SELECTORS.hamburgerSidebar);
+      if (!sidebar) return null;
+
+      const selectors = IRCTCExt.SELECTORS.sidebarLoginBtn || [];
+      for (const selector of selectors) {
+        const candidates = sidebar.querySelectorAll(selector);
+        const match = [...candidates].find((btn) =>
+          IRCTCExt.NgetLoginFlow.isLoginHeaderButton(btn, { visibleOnly: true, allowInSidebar: true })
+        );
+        if (match) return match;
+      }
+
+      const buttons = sidebar.querySelectorAll('button.search_btn');
+      return (
+        [...buttons].find((btn) =>
+          IRCTCExt.NgetLoginFlow.isLoginHeaderButton(btn, { visibleOnly: true, allowInSidebar: true })
+        ) || null
+      );
+    },
+
+    findLoginButton({ visibleOnly = true } = {}) {
+      const desktop = IRCTCExt.NgetLoginFlow.findDesktopLoginButton();
+      if (desktop) return desktop;
+
+      const sidebar = IRCTCExt.NgetLoginFlow.findSidebarLoginButton();
+      if (sidebar) return sidebar;
+
+      return null;
+    },
+
+    headerLoginButton() {
+      if (IRCTCExt.NgetLoginFlow.usesNarrowLoginLayout()) {
+        return IRCTCExt.NgetLoginFlow.findSidebarLoginButton();
+      }
+      return IRCTCExt.NgetLoginFlow.findDesktopLoginButton();
+    },
+
+    hamburgerMenuTrigger() {
+      const selectors = IRCTCExt.SELECTORS.hamburgerMenu || [];
+      for (const selector of selectors) {
+        const el = document.querySelector(selector);
+        if (!el) continue;
+        const clickTarget = el.closest('a') || el.closest('.h_menu_drop_button') || el;
+        const container = clickTarget.closest('.h_menu_drop_button') || clickTarget;
+        if (IRCTCExt.Wait.isVisible(container) || IRCTCExt.Wait.isVisible(clickTarget)) {
+          return clickTarget;
+        }
+      }
+      return null;
+    },
+
+    async openSidebarMenu(overlay) {
+      if (IRCTCExt.NgetLoginFlow.isSidebarOpen()) return true;
+
+      const trigger = IRCTCExt.NgetLoginFlow.hamburgerMenuTrigger();
+      if (!trigger) return false;
+
+      overlay?.setStatus('Opening menu...');
+      IRCTCExt.Events.click(trigger);
+
+      const opened = await IRCTCExt.Wait.poll(
+        () => (IRCTCExt.NgetLoginFlow.isSidebarOpen() ? true : null),
+        { timeout: 8000, interval: 200 }
+      );
+      return !!opened;
+    },
+
+    async resolveLoginButton(overlay) {
+      const narrow = IRCTCExt.NgetLoginFlow.usesNarrowLoginLayout();
+      const desktopBtn = IRCTCExt.NgetLoginFlow.findDesktopLoginButton();
+
+      if (!narrow && desktopBtn) return desktopBtn;
+
+      if (narrow || !desktopBtn) {
+        const sidebarBtn = IRCTCExt.NgetLoginFlow.findSidebarLoginButton();
+        if (sidebarBtn) return sidebarBtn;
+
+        const opened = await IRCTCExt.NgetLoginFlow.openSidebarMenu(overlay);
+        if (!opened) {
+          if (desktopBtn) return desktopBtn;
+          return null;
+        }
+
+        overlay?.setStatus('Clicking LOGIN / REGISTER in menu...');
+        const btn = await IRCTCExt.Wait.poll(
+          () => IRCTCExt.NgetLoginFlow.findSidebarLoginButton(),
+          { timeout: 8000, interval: 200 }
+        );
+        if (btn) return btn;
+      }
+
+      return desktopBtn || IRCTCExt.NgetLoginFlow.findLoginButton({ visibleOnly: true });
+    },
+
+    needsLogin() {
+      if (IRCTCExt.NgetLoginFlow.isLoginModalVisible()) return true;
+      if (IRCTCExt.Wait.queryOne(IRCTCExt.SELECTORS.loggedInProfile)) return false;
+
+      if (IRCTCExt.NgetLoginFlow.findDesktopLoginButton()) return true;
+      if (IRCTCExt.NgetLoginFlow.findSidebarLoginButton()) return true;
+
+      const searchInput = IRCTCExt.Wait.queryOne(IRCTCExt.SELECTORS.searchFrom);
+      if (searchInput && IRCTCExt.Wait.isVisible(searchInput)) return false;
+
+      if (IRCTCExt.NgetLoginFlow.usesNarrowLoginLayout()) {
+        return !!IRCTCExt.NgetLoginFlow.hamburgerMenuTrigger();
+      }
+
+      return false;
+    },
+
+    getLoginSubmit(modalRoot) {
+      const root = modalRoot || IRCTCExt.NgetLoginFlow.getLoginModalRoot();
+      if (!root) return null;
+
+      const submit = IRCTCExt.Wait.queryOne(IRCTCExt.SELECTORS.loginSubmit, root);
+      if (submit && IRCTCExt.Wait.isVisible(submit)) return submit;
+
+      const buttons = root.querySelectorAll('button[type="submit"], button.train_Search');
+      return (
+        [...buttons].find(
+          (btn) => /sign\s*in/i.test(btn.textContent || '') && IRCTCExt.Wait.isVisible(btn)
+        ) || null
+      );
+    },
+
+    hasChallenge() {
+      const modal = IRCTCExt.NgetLoginFlow.getLoginModalRoot();
+      if (!modal) return false;
+
+      const captchaInput = modal.querySelector(
+        'input[placeholder*="Captcha" i], input[placeholder*="CAPTCHA" i], input[formcontrolname="captcha"]'
+      );
+      if (
+        captchaInput &&
+        captchaInput.type !== 'checkbox' &&
+        IRCTCExt.Wait.isVisible(captchaInput)
+      ) {
+        return true;
+      }
+
+      const otpInput = modal.querySelector(
+        'input:not([type="checkbox"])[placeholder*="OTP" i], input:not([type="checkbox"])[formcontrolname="otp"]'
+      );
+      if (!otpInput || !IRCTCExt.Wait.isVisible(otpInput)) return false;
+
+      // Accessibility option on nget login — not an OTP entry field.
+      if (otpInput.id === 'otpLogin' || otpInput.name === 'otpLogin') return false;
+
+      return true;
+    },
+
+    async isLoggedIn() {
+      if (IRCTCExt.NgetLoginFlow.isLoginModalVisible()) return false;
+
+      if (IRCTCExt.Wait.queryOne(IRCTCExt.SELECTORS.loggedInProfile)) return true;
+
+      if (IRCTCExt.NgetLoginFlow.findDesktopLoginButton()) return false;
+      if (IRCTCExt.NgetLoginFlow.findSidebarLoginButton()) return false;
+
+      const searchInput = IRCTCExt.Wait.queryOne(IRCTCExt.SELECTORS.searchFrom);
+      return !!(searchInput && IRCTCExt.Wait.isVisible(searchInput));
+    },
+
+    async ensureLoginModal(overlay) {
+      if (IRCTCExt.NgetLoginFlow.isLoginModalVisible()) {
+        return IRCTCExt.NgetLoginFlow.getLoginModalRoot();
+      }
+
+      const shell = IRCTCExt.NgetLoginFlow.getLoginModalRoot();
+      if (shell) {
+        const ready = await IRCTCExt.Wait.poll(
+          () =>
+            IRCTCExt.NgetLoginFlow.isLoginModalVisible()
+              ? IRCTCExt.NgetLoginFlow.getLoginModalRoot()
+              : null,
+          { timeout: 5000, interval: 200 }
+        );
+        if (ready) return ready;
+      }
+
+      overlay?.setStatus('Opening login...');
+      const loginBtn = await IRCTCExt.NgetLoginFlow.resolveLoginButton(overlay);
+      if (!loginBtn) throw new Error('LOGIN / REGISTER button not found');
+
+      IRCTCExt.Events.click(loginBtn);
+      await IRCTCExt.Wait.delay(600);
+
+      const modal = await IRCTCExt.Wait.poll(
+        () =>
+          IRCTCExt.NgetLoginFlow.isLoginModalVisible()
+            ? IRCTCExt.NgetLoginFlow.getLoginModalRoot()
+            : null,
+        { timeout: 10000, interval: 200 }
+      );
+      if (!modal) throw new Error('Login modal did not open');
+      return modal;
+    },
+
+    async waitForEnabledSubmit(modalRoot) {
+      return IRCTCExt.Wait.poll(
+        () => {
+          const submit = IRCTCExt.NgetLoginFlow.getLoginSubmit(modalRoot);
+          if (!submit || !IRCTCExt.Wait.isVisible(submit)) return null;
+          if (submit.disabled) return null;
+          return submit;
+        },
+        { timeout: 8000, interval: 150 }
+      );
+    },
+
+    async waitForCaptchaContinue(overlay, modalRoot) {
+      overlay.setStatus('CAPTCHA or OTP required. Complete it, then click Continue.');
+      await IRCTCExt.Storage.updateState({ currentStep: 'login-captcha', paused: true });
+      await new Promise((resolve) => {
+        overlay.showPause('Complete CAPTCHA or OTP in the login form, then click Continue.', async () => {
+          const submit = IRCTCExt.NgetLoginFlow.getLoginSubmit(modalRoot);
+          if (submit && !submit.disabled) {
+            IRCTCExt.Events.click(submit);
+          }
+          await IRCTCExt.Storage.updateState({ paused: false });
+          await IRCTCExt.Wait.delay(1500);
+          resolve();
+        });
+      });
+    },
+
+    async run(config, overlay) {
+      await IRCTCExt.Wait.poll(
+        () => {
+          if (IRCTCExt.NgetLoginFlow.isLoginModalVisible()) return true;
+          if (IRCTCExt.Wait.queryOne(IRCTCExt.SELECTORS.loggedInProfile)) return true;
+          if (IRCTCExt.Wait.queryOne(IRCTCExt.SELECTORS.searchFrom)) return true;
+          if (IRCTCExt.NgetLoginFlow.findDesktopLoginButton()) return true;
+          if (IRCTCExt.NgetLoginFlow.findSidebarLoginButton()) return true;
+          if (IRCTCExt.NgetLoginFlow.isSidebarOpen()) return true;
+          if (IRCTCExt.NgetLoginFlow.hamburgerMenuTrigger()) return true;
+          return null;
+        },
+        { timeout: 12000, interval: 200 }
+      );
+
+      if (await IRCTCExt.NgetLoginFlow.isLoggedIn()) {
+        overlay.setStatus('Already logged in');
+        return true;
+      }
+
+      overlay.setStep('Login');
+
+      const dialogAlreadyOpen = IRCTCExt.NgetLoginFlow.isLoginModalVisible();
+      overlay.setStatus(
+        dialogAlreadyOpen ? 'Login dialog open — filling credentials...' : 'Opening login...'
+      );
+      const modal = await IRCTCExt.NgetLoginFlow.ensureLoginModal(overlay);
+
+      const userInput = await IRCTCExt.Wait.waitFor(IRCTCExt.SELECTORS.loginUsername, {
+        timeout: 10000,
+        visible: true,
+        root: modal
+      });
+      const passInput = await IRCTCExt.Wait.waitFor(IRCTCExt.SELECTORS.loginPassword, {
+        timeout: 10000,
+        visible: true,
+        root: modal
+      });
+      if (!userInput || !passInput) throw new Error('Login form not found');
+
+      overlay.setStatus('Filling username and password...');
+      IRCTCExt.Events.setInputValue(userInput, config.credentials.username);
+      IRCTCExt.Events.setInputValue(passInput, config.credentials.password);
+
+      if (IRCTCExt.NgetLoginFlow.hasChallenge()) {
+        await IRCTCExt.NgetLoginFlow.waitForCaptchaContinue(overlay, modal);
+      } else {
+        const submit = await IRCTCExt.NgetLoginFlow.waitForEnabledSubmit(modal);
+        if (!submit) throw new Error('SIGN IN button stayed disabled');
+        overlay.setStatus('Submitting login...');
+        IRCTCExt.Events.click(submit);
+        await IRCTCExt.Wait.delay(800);
+
+        if (IRCTCExt.NgetLoginFlow.hasChallenge()) {
+          await IRCTCExt.NgetLoginFlow.waitForCaptchaContinue(overlay, modal);
+        }
+      }
+
+      await IRCTCExt.Wait.poll(() => IRCTCExt.NgetLoginFlow.isLoggedIn(), { timeout: 20000, interval: 400 });
+      if (!(await IRCTCExt.NgetLoginFlow.isLoggedIn())) {
+        throw new Error('Login failed or timed out');
+      }
+
+      overlay.setStatus('Login successful');
+      return true;
+    },
+
+    async runWithRetry(config, overlay, { maxAttempts = 3 } = {}) {
+      await IRCTCExt.NgetLanguageFlow.dismissPreferredLanguage(overlay);
+
+      if (await IRCTCExt.NgetLoginFlow.isLoggedIn()) {
+        overlay.setStatus('Already logged in');
+        return true;
+      }
+
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+          await IRCTCExt.NgetLoginFlow.run(config, overlay);
+          if (await IRCTCExt.NgetLoginFlow.isLoggedIn()) return true;
+        } catch (err) {
+          if (attempt >= maxAttempts) throw err;
+          console.warn(`[IRCTC-Bot] Nget login attempt ${attempt}/${maxAttempts}:`, err);
+          overlay.setStatus(`Login failed, retry ${attempt}/${maxAttempts}...`);
+          await IRCTCExt.Wait.delay(1500);
+        }
+      }
+
+      throw new Error(`Login failed after ${maxAttempts} attempts`);
+    }
+  };
+})(typeof globalThis !== 'undefined' ? globalThis : window);
+
+;
+(function (root) {
+  root.IRCTCExt = root.IRCTCExt || {};
+  if (IRCTCExt.NgetSearchFlow) return;
+
+  IRCTCExt.NgetSearchFlow = {
+    visibleAutocompleteOptions() {
+      const panels = IRCTCExt.Wait.queryAll(IRCTCExt.SELECTORS.autocompletePanel);
+      const visiblePanels = panels.filter((panel) => IRCTCExt.Wait.isVisible(panel));
+      const options = visiblePanels.flatMap((panel) =>
+        Array.from(panel.querySelectorAll('li')).filter((li) => IRCTCExt.Wait.isVisible(li))
+      );
+      if (options.length) return options;
+
+      return IRCTCExt.Wait.queryAll(IRCTCExt.SELECTORS.autocompleteOptions).filter((opt) =>
+        IRCTCExt.Wait.isVisible(opt)
+      );
+    },
+
+    stationOptionsAfterHeader(options) {
+      const stationsIdx = options.findIndex((opt) => /stations/i.test(opt.textContent || ''));
+      if (stationsIdx >= 0) {
+        const after = options.slice(stationsIdx + 1).filter((opt) => {
+          const text = (opt.textContent || '').trim();
+          return text && !/^-+$/.test(text) && !/journeys/i.test(text);
+        });
+        if (after.length) return after;
+      }
+
+      return options.filter((opt) => {
+        const text = (opt.textContent || '').trim();
+        if (!text || /^-+$/.test(text)) return false;
+        if (/journeys/i.test(text)) return false;
+        return !/stations/i.test(text);
+      });
+    },
+
+    async pickStationOption(text) {
+      const options = await IRCTCExt.Wait.poll(
+        () => {
+          const list = IRCTCExt.NgetSearchFlow.visibleAutocompleteOptions();
+          return list.length ? list : null;
+        },
+        { timeout: 8000, interval: 150 }
+      );
+      if (!options?.length) return false;
+
+      const candidates = IRCTCExt.NgetSearchFlow.stationOptionsAfterHeader(options);
+      const match =
+        candidates.find((opt) => IRCTCExt.Events.optionMatches(opt, text)) ||
+        options.find((opt) => IRCTCExt.Events.optionMatches(opt, text));
+
+      if (!match) return false;
+      IRCTCExt.Events.click(match);
+      await IRCTCExt.Wait.delay(300);
+      return true;
+    },
+
+    inputShowsStation(input, text) {
+      const value = (input?.value || '').trim();
+      if (!value) return false;
+      const needles = IRCTCExt.Stations.stationSearchTerms(text).map((term) =>
+        IRCTCExt.Stations.normalizeStationText(term)
+      );
+      const shown = IRCTCExt.Stations.normalizeStationText(value);
+      return needles.some(
+        (needle) =>
+          needle.length >= 2 &&
+          (shown.includes(needle) || needle.includes(shown.split('-')[0]?.trim() || shown))
+      );
+    },
+
+    async fillNgetStation(input, text) {
+      if (!input || !text) return false;
+      if (IRCTCExt.NgetSearchFlow.inputShowsStation(input, text)) return true;
+
+      const terms = IRCTCExt.Stations.stationSearchTerms(text);
+      for (const term of terms) {
+        input.focus();
+        IRCTCExt.Events.click(input);
+        IRCTCExt.Events.setInputValue(input, term, { blur: false });
+        await IRCTCExt.Wait.delay(500);
+
+        if (await IRCTCExt.NgetSearchFlow.pickStationOption(text)) {
+          if (IRCTCExt.NgetSearchFlow.inputShowsStation(input, text)) return true;
+        }
+
+        await IRCTCExt.Events.typeSlowly(input, term, 60);
+        await IRCTCExt.Wait.delay(400);
+        if (await IRCTCExt.NgetSearchFlow.pickStationOption(text)) {
+          if (IRCTCExt.NgetSearchFlow.inputShowsStation(input, text)) return true;
+        }
+      }
+
+      return IRCTCExt.NgetSearchFlow.inputShowsStation(input, text);
+    },
+
+    async selectNgetDropdown(triggerSelectors, labelText) {
+      const trigger = await IRCTCExt.Wait.waitFor(triggerSelectors, { timeout: 5000, visible: true });
+      if (!trigger) return false;
+
+      const shown = (trigger.closest('p-dropdown')?.querySelector('.ui-dropdown-label')?.textContent || '')
+        .trim()
+        .toLowerCase();
+      if (shown && shown === String(labelText).trim().toLowerCase()) return true;
+
+      IRCTCExt.Events.click(trigger);
+      await IRCTCExt.Wait.delay(400);
+
+      const options = await IRCTCExt.Wait.poll(
+        () => {
+          const list = IRCTCExt.Wait.queryAll(IRCTCExt.SELECTORS.dropdownPanel).filter((opt) =>
+            IRCTCExt.Wait.isVisible(opt)
+          );
+          return list.length ? list : null;
+        },
+        { timeout: 8000, interval: 150 }
+      );
+      if (!options?.length) return false;
+
+      const target = String(labelText).trim().toLowerCase();
+      const match =
+        options.find((opt) => (opt.textContent || '').trim().toLowerCase() === target) ||
+        options.find((opt) => IRCTCExt.Events.optionMatches(opt, labelText)) ||
+        options.find((opt) => (opt.textContent || '').toLowerCase().includes(target));
+
+      if (!match) return false;
+      IRCTCExt.Events.click(match);
+      await IRCTCExt.Wait.delay(300);
+      return true;
+    },
+
+    async submitSearchWithRedirect(overlay, { maxAttempts = 3, redirectTimeoutMs = 8000 } = {}) {
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        overlay.setStatus(
+          attempt === 1 ? 'Submitting search...' : `Retrying search (${attempt}/${maxAttempts})...`
+        );
+
+        const searchBtn = await IRCTCExt.Wait.waitFor(IRCTCExt.SELECTORS.searchButton, {
+          timeout: 5000,
+          visible: true
+        });
+        if (!searchBtn) throw new Error('Search Trains button not found');
+
+        IRCTCExt.Events.click(searchBtn);
+
+        const redirected = await IRCTCExt.Wait.poll(
+          () => IRCTCExt.NgetPaths.isTrainListPath(location.pathname),
+          { timeout: redirectTimeoutMs, interval: 200 }
+        );
+
+        if (redirected) {
+          await IRCTCExt.Storage.updateState({
+            currentStep: 'train-list',
+            running: true,
+            status: 'running',
+            message: 'Search submitted — loading train list'
+          });
+          overlay.setStep('train-list');
+          overlay.setStatus('Search submitted — loading train list...');
+          return true;
+        }
+
+        if (attempt < maxAttempts) {
+          overlay.setStatus(`Search did not redirect, retry ${attempt}/${maxAttempts}...`);
+          await IRCTCExt.Wait.delay(500);
+        }
+      }
+
+      throw new Error('Search did not open train list');
+    },
+
+    async run(config, overlay) {
+      overlay.setStep('Search');
+      overlay.setStatus('Filling journey details...');
+      await IRCTCExt.Storage.updateState({ currentStep: 'search' });
+
+      IRCTCExt.Modals.dismissSessionRestore?.();
+      await IRCTCExt.Wait.delay(300);
+
+      const fromInput = await IRCTCExt.Wait.waitFor(IRCTCExt.SELECTORS.searchFrom, {
+        timeout: 20000,
+        visible: true
+      });
+      const toInput = await IRCTCExt.Wait.waitFor(IRCTCExt.SELECTORS.searchTo, {
+        timeout: 15000,
+        visible: true
+      });
+      if (!fromInput || !toInput) throw new Error('Search form not found');
+
+      const fromText = config.journey.from || config.journey.fromCode;
+      const toText = config.journey.to || config.journey.toCode;
+      if (!fromText || !toText) throw new Error('From/To station not configured');
+
+      overlay.setStatus('Selecting From station...');
+      const fromOk = await IRCTCExt.NgetSearchFlow.fillNgetStation(fromInput, fromText);
+      if (!fromOk) throw new Error('Could not select From station');
+
+      overlay.setStatus('Selecting To station...');
+      const toOk = await IRCTCExt.NgetSearchFlow.fillNgetStation(toInput, toText);
+      if (!toOk) throw new Error('Could not select To station');
+
+      const dateInput = await IRCTCExt.Wait.waitFor(IRCTCExt.SELECTORS.searchDate, {
+        timeout: 5000,
+        visible: true
+      });
+      const dateStr = IRCTCExt.Stations.formatDateForIRCTC(config.journey.date);
+      if (dateInput && dateStr) {
+        overlay.setStatus('Selecting travel date...');
+        IRCTCExt.Events.setInputValue(dateInput, dateStr, { blur: true });
+        await IRCTCExt.Wait.delay(200);
+        IRCTCExt.Events.click(dateInput);
+        await IRCTCExt.Wait.delay(300);
+        const picked = await IRCTCExt.Events.pickCustomCalendarDate(dateStr);
+        if (!picked && dateInput.value !== dateStr) {
+          IRCTCExt.Events.setInputValue(dateInput, dateStr, { blur: true });
+        }
+      }
+
+      const travelClass = config.journey?.travelClass || 'SL';
+      overlay.setStatus('Selecting class...');
+      const classLabel = IRCTCExt.Stations.getClassLabel(travelClass);
+      const classOk = await IRCTCExt.NgetSearchFlow.selectNgetDropdown(
+        IRCTCExt.SELECTORS.searchClass,
+        classLabel
+      );
+      if (!classOk) throw new Error(`Could not select class: ${classLabel}`);
+
+      const quota = config.journey?.quota || 'TATKAL';
+      overlay.setStatus('Selecting quota...');
+      const quotaText = IRCTCExt.Stations.quotaOptionText(quota);
+      const quotaOk = await IRCTCExt.NgetSearchFlow.selectNgetDropdown(
+        IRCTCExt.SELECTORS.searchQuota,
+        quotaText
+      );
+      if (!quotaOk) throw new Error(`Could not select quota: ${quotaText}`);
+
+      return IRCTCExt.NgetSearchFlow.submitSearchWithRedirect(overlay);
+    }
+  };
+})(typeof globalThis !== 'undefined' ? globalThis : window);
+
+;
+(function (root) {
+  root.IRCTCExt = root.IRCTCExt || {};
+  if (IRCTCExt.NgetReviewFlow) return;
+
+  const sharedPrefs = () => IRCTCExt.PsgnPreferences;
+
+  IRCTCExt.NgetReviewFlow = {
+    getSelectors() {
+      return IRCTCExt.SELECTORS?.review || IRCTCExt.NgetSelectors.review;
+    },
+
+    async waitForPassengerDetails() {
+      const sel = IRCTCExt.NgetReviewFlow.getSelectors();
+      const block = await IRCTCExt.Wait.poll(
+        () => {
+          const host = IRCTCExt.Wait.queryOne(sel.passengerDetailHost);
+          if (!host || !IRCTCExt.Wait.isVisible(host)) return null;
+          const content = IRCTCExt.Wait.queryOne(sel.passengerDetailContent, host);
+          return content && IRCTCExt.Wait.isVisible(content) ? content : null;
+        },
+        { timeout: 20000, interval: 250 }
+      );
+      if (!block) throw new Error('Passenger details panel not found on review page');
+      return block;
+    },
+
+    async showPassengerReviewPopup() {
+      if (IRCTCExt.PaymentReviewOverlay?.showPassengerReview) {
+        await IRCTCExt.PaymentReviewOverlay.showPassengerReview();
+        return;
+      }
+      await IRCTCExt.NgetReviewFlow.waitForPassengerDetails();
+    },
+
+    findContinueButton() {
+      const sel = IRCTCExt.NgetReviewFlow.getSelectors();
+      const candidates = IRCTCExt.Wait.queryAll(sel.continueBtn);
+      for (const btn of candidates) {
+        if (!IRCTCExt.Wait.isVisible(btn)) continue;
+        const text = (btn.textContent || '').replace(/\s+/g, ' ').trim();
+        if (/^\s*continue\s*$/i.test(text)) return btn;
+      }
+
+      const buttons = Array.from(document.querySelectorAll('button.train_Search.btnDefault'));
+      return (
+        buttons.find((btn) => {
+          if (!IRCTCExt.Wait.isVisible(btn)) return false;
+          const text = (btn.textContent || '').replace(/\s+/g, ' ').trim();
+          return /^\s*continue\s*$/i.test(text);
+        }) || null
+      );
+    },
+
+    isContinueEnabled(btn) {
+      if (!btn || !IRCTCExt.Wait.isVisible(btn)) return false;
+      if (btn.disabled) return false;
+      if (btn.classList.contains('disabled')) return false;
+      if (btn.getAttribute('aria-disabled') === 'true') return false;
+      return true;
+    },
+
+    findConfirmationDialog() {
+      const dialogs = document.querySelectorAll('[role="dialog"], .ui-dialog, .p-dialog');
+      for (const dialog of dialogs) {
+        if (!IRCTCExt.Wait.isVisible(dialog)) continue;
+        const buttons = Array.from(dialog.querySelectorAll('button'));
+        const hasContinue = buttons.some((btn) => {
+          if (!IRCTCExt.Wait.isVisible(btn) || btn.disabled) return false;
+          return /continue/i.test(btn.textContent || '');
+        });
+        if (hasContinue) return dialog;
+      }
+      return null;
+    },
+
+    findConfirmationContinueButton(root = document) {
+      const buttons = Array.from(root.querySelectorAll('button'));
+      return (
+        buttons.find((btn) => {
+          if (!IRCTCExt.Wait.isVisible(btn) || btn.disabled) return false;
+          return /continue/i.test(btn.textContent || '');
+        }) || null
+      );
+    },
+
+    hasReachedPayment() {
+      return IRCTCExt.NgetPaths.isPaymentPath(location.pathname);
+    },
+
+    async clickContinue(overlay) {
+      overlay.setStatus('Waiting for Continue button...');
+
+      const btn = await IRCTCExt.Wait.poll(
+        () => {
+          const candidate = IRCTCExt.NgetReviewFlow.findContinueButton();
+          return candidate && IRCTCExt.NgetReviewFlow.isContinueEnabled(candidate) ? candidate : null;
+        },
+        { timeout: 20000, interval: 250 }
+      );
+      if (!btn) throw new Error('Continue button not found or still disabled');
+
+      overlay.setStatus('Clicking Continue...');
+      sharedPrefs().clickTarget(btn);
+      await IRCTCExt.Wait.delay(800);
+      return true;
+    },
+
+    async handleConfirmationIfNeeded(overlay) {
+      const dialog = await IRCTCExt.Wait.poll(
+        () => IRCTCExt.NgetReviewFlow.findConfirmationDialog(),
+        { timeout: 5000, interval: 250 }
+      );
+      if (!dialog) return false;
+
+      const btn = await IRCTCExt.Wait.poll(
+        () => IRCTCExt.NgetReviewFlow.findConfirmationContinueButton(dialog),
+        { timeout: 10000, interval: 250 }
+      );
+      if (!btn) return false;
+
+      overlay.setStatus('Confirming booking review...');
+      sharedPrefs().clickTarget(btn);
+      await IRCTCExt.Wait.delay(500);
+      return true;
+    },
+
+    async waitForNextStep(overlay, timeout = 60000) {
+      if (IRCTCExt.NgetReviewFlow.hasReachedPayment()) return true;
+
+      overlay.setStatus('Waiting for payment page...');
+      const reached = await IRCTCExt.Wait.poll(
+        () => {
+          if (IRCTCExt.NgetReviewFlow.hasReachedPayment()) return true;
+          const dialog = IRCTCExt.NgetReviewFlow.findConfirmationDialog();
+          return dialog ? 'confirm' : null;
+        },
+        { timeout, interval: 500 }
+      );
+
+      if (reached === 'confirm') {
+        await IRCTCExt.NgetReviewFlow.handleConfirmationIfNeeded(overlay);
+        return IRCTCExt.NgetReviewFlow.waitForNextStep(overlay, timeout);
+      }
+
+      if (!reached) throw new Error('Did not reach payment page after review Continue');
+      return true;
+    },
+
+    async run(overlay) {
+      overlay.setStep('Review');
+      overlay.setStatus('Loading passenger details...');
+
+      await IRCTCExt.NgetReviewFlow.waitForPassengerDetails();
+      await IRCTCExt.NgetReviewFlow.showPassengerReviewPopup();
+      await IRCTCExt.Wait.delay(400);
+
+      await IRCTCExt.NgetReviewFlow.clickContinue(overlay);
+      await IRCTCExt.NgetReviewFlow.waitForNextStep(overlay);
+
+      overlay.setStatus('Review complete — on payment page.');
+      return true;
+    }
+  };
+})(typeof globalThis !== 'undefined' ? globalThis : window);
+
+;
+(function (root) {
+  root.IRCTCExt = root.IRCTCExt || {};
+  if (IRCTCExt.NgetPaymentFlow) return;
+
+  const sharedPrefs = () => IRCTCExt.PsgnPreferences;
+
+  // Must not use /upi/i alone — "IRCTC iPay (Credit Card/Debit Card/UPI)" also matches.
+  const BHIM_UPI_USSD_SIDEBAR = /bhim\s*\/\s*upi/i;
+
+  const CARDS_PROVIDER_MAP = {
+    'irctc ipay': {
+      sideMenuPattern: /irctc\s*ipay\s*\(credit/i,
+      subOptionPattern: /irctc\s*ipay\s*new/i,
+      sideMenuLabel: 'IRCTC iPay (credit) sidebar',
+      tileLabel: 'IRCTC iPay New tile',
+      gateway: 'irctcIpay'
+    },
+    ipay: {
+      sideMenuPattern: /irctc\s*ipay\s*\(credit/i,
+      subOptionPattern: /irctc\s*ipay\s*new/i,
+      sideMenuLabel: 'IRCTC iPay (credit) sidebar',
+      tileLabel: 'IRCTC iPay New tile',
+      gateway: 'irctcIpay'
+    },
+    phonepe: {
+      sideMenuPattern: /multiple\s*payment\s*service/i,
+      subOptionPattern: /phonepe/i,
+      sideMenuLabel: 'Multiple Payment Service sidebar',
+      tileLabel: 'PhonePe tile',
+      gateway: 'phonepe'
+    }
+  };
+
+  const UPI_PROVIDER_MAP = {
+    'irctc ipay': {
+      sideMenuPattern: BHIM_UPI_USSD_SIDEBAR,
+      subOptionPattern: /irctc\s*ipay\s*new/i,
+      sideMenuLabel: 'BHIM/UPI/USSD sidebar',
+      tileLabel: 'IRCTC iPay New tile',
+      gateway: 'irctcIpay'
+    },
+    ipay: {
+      sideMenuPattern: BHIM_UPI_USSD_SIDEBAR,
+      subOptionPattern: /irctc\s*ipay\s*new/i,
+      sideMenuLabel: 'BHIM/UPI/USSD sidebar',
+      tileLabel: 'IRCTC iPay New tile',
+      gateway: 'irctcIpay'
+    },
+    phonepe: {
+      sideMenuPattern: /multiple\s*payment\s*service/i,
+      subOptionPattern: /phonepe/i,
+      sideMenuLabel: 'Multiple Payment Service sidebar',
+      tileLabel: 'PhonePe tile',
+      gateway: 'phonepe'
+    },
+    razorpay: {
+      sideMenuPattern: /multiple\s*payment\s*service/i,
+      subOptionPattern: /razorpay/i,
+      sideMenuLabel: 'Multiple Payment Service sidebar',
+      tileLabel: 'Razorpay tile',
+      gateway: 'razorpay',
+      manualGateway: true
+    },
+    payu: {
+      sideMenuPattern: /multiple\s*payment\s*service/i,
+      subOptionPattern: /payu/i,
+      sideMenuLabel: 'Multiple Payment Service sidebar',
+      tileLabel: 'PayU tile',
+      gateway: 'payu',
+      manualGateway: true
+    },
+    'amazon pay': {
+      sideMenuPattern: BHIM_UPI_USSD_SIDEBAR,
+      subOptionPattern: /amazon\s*pay/i,
+      sideMenuLabel: 'BHIM/UPI/USSD sidebar',
+      tileLabel: 'Amazon Pay tile',
+      gateway: 'amazonpay',
+      manualGateway: true
+    }
+  };
+
+  IRCTCExt.NgetPaymentFlow = {
+    getSelectors() {
+      return IRCTCExt.SELECTORS?.payment || IRCTCExt.NgetSelectors.payment;
+    },
+
+    normalizeProviderName(name) {
+      return String(name || '').trim().toLowerCase();
+    },
+
+    getProviderConfig(method, providerName) {
+      const normalized = IRCTCExt.NgetPaymentFlow.normalizeProviderName(providerName);
+      const map = method === 'upi' ? UPI_PROVIDER_MAP : CARDS_PROVIDER_MAP;
+      const config = map[normalized];
+      if (!config) {
+        throw new Error(`Unsupported NGET payment provider: ${providerName || '(empty)'}`);
+      }
+      return config;
+    },
+
+    getPaymentProvider(config, method) {
+      const prefs = config.preferences || {};
+      if (method === 'upi') {
+        return prefs.upiProvider || 'IRCTC iPay';
+      }
+      return prefs.cardsProvider || 'PhonePe';
+    },
+
+    clickTarget(el) {
+      if (!el) return;
+      el.scrollIntoView({ block: 'center', inline: 'nearest' });
+      if (sharedPrefs()?.clickTarget) {
+        sharedPrefs().clickTarget(el);
+      } else {
+        IRCTCExt.Events.click(el);
+      }
+    },
+
+    getBankTypeLabel(item) {
+      const colPad = item.querySelector('.col-pad');
+      if (colPad) return (colPad.textContent || '').replace(/\s+/g, ' ').trim();
+      return (item.textContent || '').replace(/\s+/g, ' ').trim();
+    },
+
+    isBankTypeActive(item) {
+      return !!(item && item.classList.contains('bank-type-active'));
+    },
+
+    getPayTypeMenuRoot() {
+      const sel = IRCTCExt.NgetPaymentFlow.getSelectors();
+      const menu = IRCTCExt.Wait.queryOne(sel.payTypeMenu);
+      return menu && IRCTCExt.Wait.isVisible(menu) ? menu : null;
+    },
+
+    findBankTypeItem(pattern) {
+      const sel = IRCTCExt.NgetPaymentFlow.getSelectors();
+      const root = IRCTCExt.NgetPaymentFlow.getPayTypeMenuRoot() || document;
+      const items = IRCTCExt.Wait.queryAll(sel.bankTypeItem, root);
+      let fallback = null;
+
+      for (const item of items) {
+        if (!IRCTCExt.Wait.isVisible(item)) continue;
+        const label = IRCTCExt.NgetPaymentFlow.getBankTypeLabel(item);
+        if (!pattern.test(label)) continue;
+        // Prefer the BHIM/UPI/USSD row over any accidental partial match.
+        if (/bhim\s*\/\s*upi/i.test(label)) return item;
+        if (!fallback) fallback = item;
+      }
+
+      return fallback;
+    },
+
+    formatStepStatus(providerName, message) {
+      const who = String(providerName || '').trim();
+      return who ? `${who}: ${message}` : message;
+    },
+
+    async selectBankType(pattern, overlay, options = {}) {
+      const { providerName, menuLabel, maxAttempts = 6 } = options;
+      overlay?.setStatus(
+        IRCTCExt.NgetPaymentFlow.formatStepStatus(
+          providerName,
+          `selecting ${menuLabel || 'payment category'}...`
+        )
+      );
+
+      const item = await IRCTCExt.Wait.poll(
+        () => IRCTCExt.NgetPaymentFlow.findBankTypeItem(pattern),
+        { timeout: 15000, interval: 250 }
+      );
+      if (!item) throw new Error('Payment category not found on NGET payment page');
+
+      for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+        if (IRCTCExt.NgetPaymentFlow.isBankTypeActive(item)) return true;
+        IRCTCExt.NgetPaymentFlow.clickTarget(item);
+        await IRCTCExt.Wait.delay(500);
+        if (IRCTCExt.NgetPaymentFlow.isBankTypeActive(item)) return true;
+      }
+
+      const label = IRCTCExt.NgetPaymentFlow.getBankTypeLabel(item);
+      throw new Error(`Could not select payment category on NGET payment page: ${label}`);
+    },
+
+    getBankOptionLabel(row) {
+      const span = row.querySelector('span.col-pad') || row.querySelector('span');
+      return (span?.textContent || row.textContent || '').replace(/\s+/g, ' ').trim();
+    },
+
+    findBankOptionClickable(row) {
+      return (
+        row.closest('.border-all.link') ||
+        row.closest('.border-all') ||
+        row.closest('td') ||
+        row.parentElement
+      );
+    },
+
+    findBankOption(pattern) {
+      const sel = IRCTCExt.NgetPaymentFlow.getSelectors();
+      const rows = IRCTCExt.Wait.queryAll(sel.bankOptionRow);
+      for (const row of rows) {
+        if (!IRCTCExt.Wait.isVisible(row)) continue;
+        const label = IRCTCExt.NgetPaymentFlow.getBankOptionLabel(row);
+        if (pattern.test(label)) {
+          const clickable = IRCTCExt.NgetPaymentFlow.findBankOptionClickable(row);
+          if (clickable && IRCTCExt.Wait.isVisible(clickable)) return clickable;
+        }
+      }
+
+      const clickables = IRCTCExt.Wait.queryAll(sel.bankOptionClickable);
+      for (const el of clickables) {
+        if (!IRCTCExt.Wait.isVisible(el)) continue;
+        const label = (el.textContent || '').replace(/\s+/g, ' ').trim();
+        if (pattern.test(label)) return el;
+      }
+
+      return null;
+    },
+
+    async selectBankOption(pattern, overlay, options = {}) {
+      const { providerName, tileLabel, maxAttempts = 6 } = options;
+      overlay?.setStatus(
+        IRCTCExt.NgetPaymentFlow.formatStepStatus(
+          providerName,
+          `selecting ${tileLabel || 'payment option'}...`
+        )
+      );
+
+      const option = await IRCTCExt.Wait.poll(
+        () => IRCTCExt.NgetPaymentFlow.findBankOption(pattern),
+        { timeout: 15000, interval: 250 }
+      );
+      if (!option) {
+        throw new Error(
+          `Payment option not found on NGET payment page${tileLabel ? `: ${tileLabel}` : ''}`
+        );
+      }
+
+      for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+        IRCTCExt.NgetPaymentFlow.clickTarget(option);
+        await IRCTCExt.Wait.delay(350);
+        return true;
+      }
+
+      throw new Error('Could not select payment option on NGET payment page');
+    },
+
+    isPayAndBookEnabled(btn) {
+      if (!btn || !IRCTCExt.Wait.isVisible(btn)) return false;
+      if (btn.disabled) return false;
+      if (btn.classList.contains('disabled')) return false;
+      if (btn.getAttribute('aria-disabled') === 'true') return false;
+      return true;
+    },
+
+    findPayAndBookButton(root = document) {
+      const sel = IRCTCExt.NgetPaymentFlow.getSelectors();
+      const buttons = root.querySelectorAll(sel.payAndBookBtn?.[0] || 'button.btn.btn-primary');
+      for (const btn of buttons) {
+        if (
+          IRCTCExt.NgetPaymentFlow.isPayAndBookEnabled(btn) &&
+          /pay\s*&\s*book/i.test(btn.textContent || '')
+        ) {
+          return btn;
+        }
+      }
+
+      const fallback = root.querySelectorAll('button.btn-primary, button.btn.btn-primary');
+      for (const btn of fallback) {
+        if (
+          IRCTCExt.NgetPaymentFlow.isPayAndBookEnabled(btn) &&
+          /pay\s*&\s*book/i.test(btn.textContent || '')
+        ) {
+          return btn;
+        }
+      }
+
+      return null;
+    },
+
+    async clickPayAndBook(overlay, providerName = '') {
+      overlay?.setStatus(
+        IRCTCExt.NgetPaymentFlow.formatStepStatus(providerName, 'clicking Pay & Book...')
+      );
+
+      const payBtn = await IRCTCExt.Wait.poll(
+        () => IRCTCExt.NgetPaymentFlow.findPayAndBookButton(document),
+        { timeout: 15000, interval: 250 }
+      );
+      if (!payBtn) throw new Error('Pay & Book button not found on NGET payment page');
+
+      IRCTCExt.NgetPaymentFlow.clickTarget(payBtn);
+      await IRCTCExt.Wait.delay(600);
+      return true;
+    },
+
+    async waitForPaymentPage() {
+      const sel = IRCTCExt.NgetPaymentFlow.getSelectors();
+      await IRCTCExt.Wait.poll(
+        () => IRCTCExt.Wait.queryOne(sel.payTypeMenu) && IRCTCExt.Wait.isVisible(IRCTCExt.Wait.queryOne(sel.payTypeMenu)),
+        { timeout: 15000, interval: 250 }
+      );
+    },
+
+    async runProviderFlow(config, overlay, method) {
+      const providerName = IRCTCExt.NgetPaymentFlow.getPaymentProvider(config, method);
+      const providerConfig = IRCTCExt.NgetPaymentFlow.getProviderConfig(method, providerName);
+
+      await IRCTCExt.NgetPaymentFlow.waitForPaymentPage();
+      await IRCTCExt.Wait.delay(400);
+
+      const stepContext = {
+        providerName,
+        menuLabel: providerConfig.sideMenuLabel,
+        tileLabel: providerConfig.tileLabel
+      };
+
+      await IRCTCExt.NgetPaymentFlow.selectBankType(providerConfig.sideMenuPattern, overlay, stepContext);
+      await IRCTCExt.Wait.delay(600);
+      await IRCTCExt.NgetPaymentFlow.selectBankOption(providerConfig.subOptionPattern, overlay, stepContext);
+      await IRCTCExt.Wait.delay(400);
+
+      if (providerConfig.manualGateway) {
+        await IRCTCExt.NgetPaymentFlow.clickPayAndBook(overlay, providerName);
+        overlay?.setStatus(
+          IRCTCExt.NgetPaymentFlow.formatStepStatus(
+            providerName,
+            'complete payment on gateway manually'
+          )
+        );
+        return { awaitingGateway: false };
+      }
+
+      await IRCTCExt.Storage.updateState({
+        running: true,
+        status: 'running',
+        paymentPhase: 'gateway',
+        paymentGateway: providerConfig.gateway,
+        gatewayPaymentMethod: method,
+        awaitingGateway: true,
+        currentStep: 'gateway'
+      });
+
+      await IRCTCExt.NgetPaymentFlow.clickPayAndBook(overlay, providerName);
+      overlay?.setStatus(
+        IRCTCExt.NgetPaymentFlow.formatStepStatus(providerName, 'redirecting to payment gateway...')
+      );
+
+      return {
+        awaitingGateway: true,
+        gateway: providerConfig.gateway
+      };
+    },
+
+    async handleCards(config, overlay) {
+      return IRCTCExt.NgetPaymentFlow.runProviderFlow(config, overlay, 'cards');
+    },
+
+    async handleUpi(config, overlay) {
+      return IRCTCExt.NgetPaymentFlow.runProviderFlow(config, overlay, 'upi');
+    }
+  };
+})(typeof globalThis !== 'undefined' ? globalThis : window);
+
+;
+(function (root) {
+  root.IRCTCExt = root.IRCTCExt || {};
+  if (IRCTCExt.NgetBookingFlow) return;
+
+  function activateSharedBookingSelectors() {
+    IRCTCExt.SELECTORS = {
+      ...IRCTCExt.NgetSelectors
+    };
+  }
+
+  IRCTCExt.NgetBookingFlow = {
+    async fillPassengers(config, overlay) {
+      if (!location.pathname.includes('psgninput')) {
+        throw new Error('Not on passenger input page');
+      }
+      activateSharedBookingSelectors();
+      return IRCTCExt.NgetPassengersFlow.addPassengers(config, overlay);
+    },
+
+    async configurePsgninputOptions(config, overlay) {
+      if (!location.pathname.includes('psgninput')) {
+        throw new Error('Not on passenger input page');
+      }
+      activateSharedBookingSelectors();
+      return IRCTCExt.NgetPsgnPreferencesFlow.configure(config, overlay);
+    },
+
+    async clickContinueToPayment(overlay) {
+      if (!location.pathname.includes('reviewBooking') && !location.pathname.includes('review')) {
+        throw new Error('Not on review booking page');
+      }
+      activateSharedBookingSelectors();
+      return IRCTCExt.NgetReviewFlow.run(overlay);
+    },
+
+    async handlePayment(config, overlay) {
+      if (!IRCTCExt.NgetPaths.isPaymentPath(location.pathname)) {
+        throw new Error('Not on NGET payment page');
+      }
+      activateSharedBookingSelectors();
+      const method = config.preferences?.paymentMethod || 'cards';
+      if (method === 'upi') {
+        return IRCTCExt.NgetPaymentFlow.handleUpi(config, overlay);
+      }
+      return IRCTCExt.NgetPaymentFlow.handleCards(config, overlay);
+    },
+
+    async showPaymentReview(overlay) {
+      activateSharedBookingSelectors();
+      overlay.setStep('Payment');
+      const message = 'Complete payment manually on IRCTC.';
+      if (IRCTCExt.PaymentReviewOverlay?.show) {
+        await IRCTCExt.PaymentReviewOverlay.show();
+        overlay.showPause(message);
+      } else {
+        overlay.setStatus(message);
+        overlay.showPause?.(message);
+      }
+      await IRCTCExt.Storage.updateState({ status: 'done', running: false, currentStep: 'done' });
+      return true;
+    }
+  };
+})(typeof globalThis !== 'undefined' ? globalThis : window);
+
+;
+(function (root) {
+  root.IRCTCExt = root.IRCTCExt || {};
+
+  IRCTCExt.NgetSite = {
+    ...IRCTCExt.NgetConfig,
+    selectors: IRCTCExt.NgetSelectors,
+    syncStepFromPath: IRCTCExt.NgetPaths.syncStepFromPath.bind(IRCTCExt.NgetPaths),
+    isErrorPage: IRCTCExt.NgetPaths.isErrorPage.bind(IRCTCExt.NgetPaths),
+    isTrainListPath: IRCTCExt.NgetPaths.isTrainListPath.bind(IRCTCExt.NgetPaths),
+    isTrainSearchPath: IRCTCExt.NgetPaths.isTrainSearchPath.bind(IRCTCExt.NgetPaths),
+    isPaymentPath: IRCTCExt.NgetPaths.isPaymentPath.bind(IRCTCExt.NgetPaths),
+    isReviewPath: IRCTCExt.NgetPaths.isReviewPath.bind(IRCTCExt.NgetPaths),
+    isPassengerPath: IRCTCExt.NgetPaths.isPassengerPath.bind(IRCTCExt.NgetPaths),
+    isGatewayPath: IRCTCExt.NgetPaths.isGatewayPath.bind(IRCTCExt.NgetPaths),
+    isGatewayHost: IRCTCExt.NgetPaths.isGatewayHost.bind(IRCTCExt.NgetPaths),
+    isGatewayAuthRedirectPath: IRCTCExt.NgetPaths.isGatewayAuthRedirectPath.bind(IRCTCExt.NgetPaths),
+    flows: {
+      LoginFlow: IRCTCExt.NgetLoginFlow,
+      SearchFlow: IRCTCExt.NgetSearchFlow,
+      BookingFlow: IRCTCExt.NgetBookingFlow
+    },
+    TrainList: IRCTCExt.NgetTrainList
+  };
+
+  IRCTCExt.SiteRegistry?.register(IRCTCExt.NgetSite);
+})(typeof globalThis !== 'undefined' ? globalThis : window);
+
+;
 window.IRCTCExt = window.IRCTCExt || {};
 
 IRCTCExt.Wait = {
@@ -1910,7 +4174,10 @@ IRCTCExt.Events = {
   },
 
   setNativeValue(el, value) {
-    const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+    if (!el) return;
+    let proto = HTMLInputElement.prototype;
+    if (el instanceof HTMLTextAreaElement) proto = HTMLTextAreaElement.prototype;
+    else if (el instanceof HTMLSelectElement) proto = HTMLSelectElement.prototype;
     const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
     if (setter) setter.call(el, value);
     else el.value = value;
@@ -3833,6 +6100,928 @@ IRCTCExt.Passengers = {
 };
 
 ;
+(function (root) {
+  root.IRCTCExt = root.IRCTCExt || {};
+  if (IRCTCExt.NgetPassengersFlow) return;
+
+  function passengersLib() {
+    const lib = IRCTCExt.Passengers;
+    if (!lib) throw new Error('Passenger helpers not loaded. Reload the extension.');
+    return lib;
+  }
+
+  IRCTCExt.NgetPassengersFlow = {
+    getSelectors() {
+      return IRCTCExt.SELECTORS?.passengers || IRCTCExt.NgetSelectors.passengers;
+    },
+
+    getPassengerRows() {
+      const sel = IRCTCExt.NgetPassengersFlow.getSelectors();
+      return IRCTCExt.Wait.queryAll(sel.passengerRow).filter((row) => IRCTCExt.Wait.isVisible(row));
+    },
+
+    getRowBlock(row) {
+      if (!row) return null;
+      let block = row.parentElement;
+      while (block && block !== document.body) {
+        const deleteBtn = IRCTCExt.Wait.queryOne(
+          IRCTCExt.NgetPassengersFlow.getSelectors().deletePassengerBtn,
+          block
+        );
+        if (deleteBtn && block.contains(row)) return block;
+        if (block.matches?.('p-panel, .ui-panel-content')) break;
+        block = block.parentElement;
+      }
+      return row.parentElement || row;
+    },
+
+    getNameInput(row) {
+      const sel = IRCTCExt.NgetPassengersFlow.getSelectors();
+      return IRCTCExt.Wait.queryOne(sel.passengerName, row);
+    },
+
+    isPlaceholderGender(value) {
+      const text = String(value || '').replace(/\s+/g, ' ').trim();
+      return !text || /^(gender|select|choose)$/i.test(text);
+    },
+
+    readGenderValueFromElement(el) {
+      if (!el) return '';
+
+      if (el.tagName === 'SELECT') {
+        const selected = el.options[el.selectedIndex];
+        const text = (selected?.textContent || '').replace(/\s+/g, ' ').trim();
+        if (!IRCTCExt.NgetPassengersFlow.isPlaceholderGender(text)) return text;
+        if (el.value) return passengersLib().genderLabel(el.value);
+        return '';
+      }
+
+      if (el.tagName === 'INPUT') {
+        return (el.value || el.textContent || '').replace(/\s+/g, ' ').trim();
+      }
+
+      const dropdown = el.closest('p-dropdown') || el;
+      return passengersLib().getDropdownShownValue(dropdown) || '';
+    },
+
+    getGenderElements(row) {
+      if (!row) return [];
+      const seen = new Set();
+      const elements = [
+        ...row.querySelectorAll('input[formcontrolname="passengerGender"]'),
+        ...row.querySelectorAll('select[formcontrolname="passengerGender"]'),
+        ...row.querySelectorAll('p-dropdown[formcontrolname="passengerGender"]')
+      ];
+
+      return elements.filter((el) => {
+        if (!el || seen.has(el)) return false;
+        seen.add(el);
+        return el.tagName === 'INPUT' || IRCTCExt.Wait.isVisible(el);
+      });
+    },
+
+    readGenderFromRow(row) {
+      const elements = IRCTCExt.NgetPassengersFlow.getGenderElements(row);
+      for (const el of elements) {
+        const value = IRCTCExt.NgetPassengersFlow.readGenderValueFromElement(el);
+        if (!IRCTCExt.NgetPassengersFlow.isPlaceholderGender(value)) return value;
+      }
+      return '';
+    },
+
+    findEditableGenderElement(row) {
+      const select = row.querySelector('select[formcontrolname="passengerGender"]');
+      if (select && IRCTCExt.Wait.isVisible(select)) return select;
+
+      const input = row.querySelector('input[formcontrolname="passengerGender"]');
+      if (input && !input.readOnly && IRCTCExt.Wait.isVisible(input)) return input;
+
+      const dropdown = row.querySelector('p-dropdown[formcontrolname="passengerGender"]');
+      if (dropdown && IRCTCExt.Wait.isVisible(dropdown)) return dropdown;
+
+      return null;
+    },
+
+    genderMatchesPassenger(genderValue, passenger) {
+      if (!passenger?.gender || IRCTCExt.NgetPassengersFlow.isPlaceholderGender(genderValue)) {
+        return false;
+      }
+      return passengersLib().segmentMatches(genderValue, passengersLib().genderToken(passenger.gender));
+    },
+
+    parsePassengerRow(row) {
+      const sel = IRCTCExt.NgetPassengersFlow.getSelectors();
+      const nameInput = IRCTCExt.Wait.queryOne(sel.passengerName, row);
+      const ageInput = IRCTCExt.Wait.queryOne(sel.passengerAge, row);
+      const berthSelect = IRCTCExt.Wait.queryOne(sel.passengerBerth, row);
+      const gender = IRCTCExt.NgetPassengersFlow.readGenderFromRow(row);
+
+      let berth = '';
+      if (berthSelect?.tagName === 'SELECT') {
+        const selected = berthSelect.options[berthSelect.selectedIndex];
+        berth = (selected?.textContent || berthSelect.value || '').replace(/\s+/g, ' ').trim();
+      }
+
+      return {
+        name: (nameInput?.value || '').replace(/\s+/g, ' ').trim(),
+        age: String(ageInput?.value || '').trim(),
+        gender,
+        berth
+      };
+    },
+
+    isRowEmpty(row) {
+      const parsed = IRCTCExt.NgetPassengersFlow.parsePassengerRow(row);
+      if (!parsed.name) return true;
+
+      const sel = IRCTCExt.NgetPassengersFlow.getSelectors();
+      const errors = IRCTCExt.Wait.queryAll(sel.validationError, row).filter((el) => {
+        if (!IRCTCExt.Wait.isVisible(el)) return false;
+        const text = (el.textContent || '').replace(/\s+/g, ' ').trim();
+        return /valid name|name is required/i.test(text);
+      });
+      return errors.length > 0;
+    },
+
+    rowMatchesPassenger(row, passenger) {
+      const details = IRCTCExt.NgetPassengersFlow.parsePassengerRow(row);
+      if (passengersLib().normalizeName(details.name) !== passengersLib().normalizeName(passenger.name)) return false;
+      if (passenger.age && String(details.age).trim() !== String(passenger.age).trim()) return false;
+      if (
+        passenger.gender &&
+        details.gender &&
+        !passengersLib().segmentMatches(details.gender, passengersLib().genderToken(passenger.gender))
+      ) {
+        return false;
+      }
+      return true;
+    },
+
+    findAddPassengerLink() {
+      const spans = IRCTCExt.Wait.queryAll(IRCTCExt.NgetPassengersFlow.getSelectors().addPassengerLink);
+      for (const span of spans) {
+        const text = (span.textContent || '').replace(/\s+/g, ' ').trim();
+        if (/^\+?\s*add passenger/i.test(text)) {
+          const link = span.closest('a') || span;
+          if (IRCTCExt.Wait.isVisible(link)) return link;
+        }
+      }
+      return null;
+    },
+
+    async clickAddPassenger() {
+      const before = IRCTCExt.NgetPassengersFlow.getPassengerRows().length;
+      const link = IRCTCExt.NgetPassengersFlow.findAddPassengerLink();
+      if (!link) throw new Error('"+ Add Passenger" link not found');
+
+      IRCTCExt.Events.click(link);
+
+      const increased = await IRCTCExt.Wait.poll(
+        () => {
+          const count = IRCTCExt.NgetPassengersFlow.getPassengerRows().length;
+          return count > before ? count : null;
+        },
+        { timeout: 10000, interval: 200 }
+      );
+      if (!increased) throw new Error('Passenger row was not added after clicking "+ Add Passenger"');
+      return increased;
+    },
+
+    async ensurePassengerRows(count) {
+      let rows = IRCTCExt.NgetPassengersFlow.getPassengerRows();
+      while (rows.length < count) {
+        await IRCTCExt.NgetPassengersFlow.clickAddPassenger();
+        rows = IRCTCExt.NgetPassengersFlow.getPassengerRows();
+      }
+      return rows;
+    },
+
+    async deletePassengerRow(row, overlay) {
+      const parsed = IRCTCExt.NgetPassengersFlow.parsePassengerRow(row);
+      overlay?.setStatus(`Deleting passenger: ${parsed.name || 'empty row'}...`);
+
+      const block = IRCTCExt.NgetPassengersFlow.getRowBlock(row);
+      const deleteBtn = IRCTCExt.Wait.queryOne(
+        IRCTCExt.NgetPassengersFlow.getSelectors().deletePassengerBtn,
+        block
+      );
+      if (!deleteBtn || !IRCTCExt.Wait.isVisible(deleteBtn)) {
+        throw new Error(`Delete button not found for ${parsed.name || 'passenger row'}`);
+      }
+
+      IRCTCExt.Events.click(deleteBtn);
+      await IRCTCExt.Wait.delay(400);
+      await passengersLib().confirmPassengerDeleteIfNeeded();
+
+      const removed = await IRCTCExt.Wait.poll(
+        () => (!document.contains(row) ? true : null),
+        { timeout: 10000, interval: 200 }
+      );
+      if (!removed) throw new Error(`Passenger row was not removed: ${parsed.name || 'unknown'}`);
+      return true;
+    },
+
+    visibleAutocompleteOptions() {
+      const sel = IRCTCExt.NgetPassengersFlow.getSelectors();
+      return IRCTCExt.Wait.queryAll(sel.autocompleteOptions).filter((item) =>
+        IRCTCExt.Wait.isVisible(item)
+      );
+    },
+
+    parseAutocompleteOption(li) {
+      const name = (li.querySelector('strong')?.textContent || '').replace(/\s+/g, ' ').trim();
+      const parts = (li.textContent || '')
+        .replace(/\s+/g, ' ')
+        .split('|')
+        .map((part) => part.trim())
+        .filter(Boolean);
+
+      let age = '';
+      let gender = '';
+      if (parts.length >= 2) {
+        const agePart = parts.find((part) => /\d+\s*yrs?/i.test(part)) || parts[1];
+        age = agePart.replace(/\s*yrs?/i, '').trim();
+      }
+      if (parts.length >= 3) {
+        gender = parts[parts.length - 1].replace(/fa-check-circle.*/i, '').trim();
+      }
+
+      if (!gender && parts.length >= 2) {
+        const last = parts[parts.length - 1];
+        if (!/\d/.test(last)) gender = last.replace(/fa-check-circle.*/i, '').trim();
+      }
+
+      return { name, age, gender };
+    },
+
+    shouldSkipAutocompleteOption(li, passenger, currentRow) {
+      if (!li.querySelector('.fa-check-circle')) return false;
+      const rows = IRCTCExt.NgetPassengersFlow.getPassengerRows();
+      return rows.some(
+        (row) =>
+          row !== currentRow && IRCTCExt.NgetPassengersFlow.rowMatchesPassenger(row, passenger)
+      );
+    },
+
+    optionMatchesPassenger(li, passenger) {
+      const parsed = IRCTCExt.NgetPassengersFlow.parseAutocompleteOption(li);
+      if (passengersLib().normalizeName(parsed.name) !== passengersLib().normalizeName(passenger.name)) return false;
+      if (passenger.age && String(parsed.age).trim() !== String(passenger.age).trim()) return false;
+      if (
+        passenger.gender &&
+        parsed.gender &&
+        !passengersLib().segmentMatches(parsed.gender, passengersLib().genderToken(passenger.gender))
+      ) {
+        return false;
+      }
+      return true;
+    },
+
+    nameInputMatches(nameInput, passengerName) {
+      return passengersLib().normalizeName(nameInput?.value || '') === passengersLib().normalizeName(passengerName);
+    },
+
+    async pickMasterListOption(nameInput, passenger) {
+      const options = IRCTCExt.NgetPassengersFlow.visibleAutocompleteOptions();
+      if (!options.length) return false;
+
+      const currentRow = nameInput.closest('app-passenger');
+      const match = options.find(
+        (opt) =>
+          !IRCTCExt.NgetPassengersFlow.shouldSkipAutocompleteOption(opt, passenger, currentRow) &&
+          IRCTCExt.NgetPassengersFlow.optionMatchesPassenger(opt, passenger)
+      );
+      if (!match) return false;
+
+      IRCTCExt.Events.click(match.querySelector('strong') || match);
+      await IRCTCExt.Wait.delay(400);
+      const row = nameInput.closest('app-passenger');
+      return row
+        ? IRCTCExt.NgetPassengersFlow.isRowIdentityComplete(row, passenger)
+        : IRCTCExt.NgetPassengersFlow.nameInputMatches(nameInput, passenger.name);
+    },
+
+    isRowIdentityComplete(row, passenger) {
+      if (!IRCTCExt.NgetPassengersFlow.rowMatchesPassenger(row, passenger)) return false;
+      const parsed = IRCTCExt.NgetPassengersFlow.parsePassengerRow(row);
+      if (passenger.age && !parsed.age) return false;
+      if (passenger.gender && !parsed.gender) return false;
+      return true;
+    },
+
+    async fillPassengerName(nameInput, passenger, row) {
+      const name = String(passenger.name || '').trim();
+      if (!name) return false;
+
+      if (IRCTCExt.NgetPassengersFlow.isRowIdentityComplete(row, passenger)) {
+        return true;
+      }
+
+      nameInput.focus();
+      IRCTCExt.Events.setInputValue(nameInput, name, { blur: false });
+      await IRCTCExt.Wait.delay(200);
+
+      if (IRCTCExt.NgetPassengersFlow.isRowIdentityComplete(row, passenger)) {
+        return true;
+      }
+
+      const pickedAfterSet = await IRCTCExt.Wait.poll(
+        async () => {
+          if (await IRCTCExt.NgetPassengersFlow.pickMasterListOption(nameInput, passenger)) return true;
+          return null;
+        },
+        { timeout: 2000, interval: 150 }
+      );
+      if (pickedAfterSet) return true;
+
+      const prefix = name.slice(0, Math.min(4, name.length));
+      if (prefix) {
+        IRCTCExt.Events.setInputValue(nameInput, '', { blur: false });
+        await IRCTCExt.Events.typeSlowly(nameInput, prefix, 25);
+        await IRCTCExt.Wait.delay(250);
+        if (await IRCTCExt.NgetPassengersFlow.pickMasterListOption(nameInput, passenger)) return true;
+      }
+
+      IRCTCExt.Events.setInputValue(nameInput, name, { blur: false });
+      await IRCTCExt.Wait.delay(200);
+      if (await IRCTCExt.NgetPassengersFlow.pickMasterListOption(nameInput, passenger)) return true;
+
+      return await IRCTCExt.NgetPassengersFlow.fillPassengerNameManual(nameInput, passenger, row);
+    },
+
+    async fillPassengerNameManual(nameInput, passenger, row) {
+      const sel = IRCTCExt.NgetPassengersFlow.getSelectors();
+      const name = String(passenger.name || '').trim();
+
+      IRCTCExt.Events.setInputValue(nameInput, name, { blur: false });
+
+      const ageInput = IRCTCExt.Wait.queryOne(sel.passengerAge, row);
+      if (ageInput && !ageInput.readOnly && passenger.age) {
+        IRCTCExt.Events.setInputValue(ageInput, String(passenger.age).trim());
+      }
+
+      const genderOk = await IRCTCExt.NgetPassengersFlow.selectGenderOnRow(row, passenger);
+      if (!genderOk && passenger.gender) {
+        throw new Error(`Could not select gender: ${passengersLib().genderLabel(passenger.gender)}`);
+      }
+
+      await IRCTCExt.Wait.delay(200);
+      return IRCTCExt.NgetPassengersFlow.isRowIdentityComplete(row, passenger);
+    },
+
+    genderSelectValue(gender) {
+      const token = String(gender || '').trim();
+      const map = {
+        M: 'M',
+        F: 'F',
+        T: 'T',
+        Male: 'M',
+        Female: 'F',
+        Transgender: 'T'
+      };
+      if (map[token]) return map[token];
+      const label = passengersLib().genderLabel(token);
+      return map[label] || token;
+    },
+
+    async selectNativeSelectOption(select, passenger) {
+      const targetValue = IRCTCExt.NgetPassengersFlow.genderSelectValue(passenger.gender);
+      const option = [...select.options].find(
+        (opt) =>
+          opt.value === targetValue ||
+          passengersLib().segmentMatches(opt.textContent, passengersLib().genderToken(passenger.gender))
+      );
+      if (!option) return false;
+
+      select.focus();
+      IRCTCExt.Events.click(select);
+      select.value = option.value;
+      select.selectedIndex = option.index;
+      select.dispatchEvent(new Event('input', { bubbles: true }));
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+      select.dispatchEvent(new Event('blur', { bubbles: true }));
+      await IRCTCExt.Wait.delay(150);
+
+      if (select.value === option.value) return true;
+
+      IRCTCExt.Events.click(select);
+      await IRCTCExt.Wait.delay(100);
+      select.value = option.value;
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+      await IRCTCExt.Wait.delay(150);
+      return select.value === option.value;
+    },
+
+    async selectGenderOnRow(row, passenger) {
+      if (!passenger?.gender) return true;
+
+      const currentGender = IRCTCExt.NgetPassengersFlow.readGenderFromRow(row);
+      if (IRCTCExt.NgetPassengersFlow.genderMatchesPassenger(currentGender, passenger)) {
+        return true;
+      }
+
+      const genderEl = IRCTCExt.NgetPassengersFlow.findEditableGenderElement(row);
+      if (!genderEl) {
+        return IRCTCExt.NgetPassengersFlow.genderMatchesPassenger(
+          IRCTCExt.NgetPassengersFlow.readGenderFromRow(row),
+          passenger
+        );
+      }
+
+      const genderLabel = passengersLib().genderLabel(passenger.gender);
+      const sel = IRCTCExt.NgetPassengersFlow.getSelectors();
+
+      if (genderEl.tagName === 'SELECT') {
+        const selected = await IRCTCExt.NgetPassengersFlow.selectNativeSelectOption(
+          genderEl,
+          passenger
+        );
+        if (selected) return true;
+        return IRCTCExt.NgetPassengersFlow.genderMatchesPassenger(
+          IRCTCExt.NgetPassengersFlow.readGenderFromRow(row),
+          passenger
+        );
+      }
+
+      if (genderEl.tagName === 'INPUT' && !genderEl.readOnly) {
+        IRCTCExt.Events.setInputValue(genderEl, genderLabel);
+        return IRCTCExt.NgetPassengersFlow.genderMatchesPassenger(
+          IRCTCExt.NgetPassengersFlow.readGenderFromRow(row),
+          passenger
+        );
+      }
+
+      if (genderEl.closest?.('p-dropdown') || genderEl.matches?.('p-dropdown')) {
+        const selected = await passengersLib().selectDropdownIn(row, sel.passengerGender, genderLabel);
+        return (
+          selected ||
+          IRCTCExt.NgetPassengersFlow.genderMatchesPassenger(
+            IRCTCExt.NgetPassengersFlow.readGenderFromRow(row),
+            passenger
+          )
+        );
+      }
+
+      return false;
+    },
+
+    berthSelectValue(berth) {
+      const label = String(berth || '').trim();
+      const map = {
+        Upper: 'UB',
+        Lower: 'LB',
+        Middle: 'MB',
+        'Side Lower': 'SL',
+        'Side Upper': 'SU',
+        'No Preference': '',
+        '': ''
+      };
+      return map[label] ?? map[label.replace(/\s+/g, ' ')] ?? '';
+    },
+
+    async selectBerthOnRow(row, passenger) {
+      const labels = passengersLib().berthLabelsToTry(passenger?.berth);
+      if (!labels.length) return true;
+
+      const sel = IRCTCExt.NgetPassengersFlow.getSelectors();
+      const berthSelect = IRCTCExt.Wait.queryOne(sel.passengerBerth, row);
+      if (!berthSelect || berthSelect.tagName !== 'SELECT') return false;
+
+      const targetValue = IRCTCExt.NgetPassengersFlow.berthSelectValue(passenger.berth);
+      const current = berthSelect.value;
+      if (current === targetValue) return true;
+
+      const option = [...berthSelect.options].find(
+        (opt) =>
+          opt.value === targetValue ||
+          labels.some((label) => passengersLib().dropdownValueMatches(opt.textContent, label))
+      );
+      if (!option) return false;
+
+      berthSelect.value = option.value;
+      berthSelect.dispatchEvent(new Event('input', { bubbles: true }));
+      berthSelect.dispatchEvent(new Event('change', { bubbles: true }));
+      await IRCTCExt.Wait.delay(150);
+      return berthSelect.value === option.value;
+    },
+
+    rowBerthMatches(row, passenger) {
+      const labels = passengersLib().berthLabelsToTry(passenger?.berth);
+      if (!labels.length) return true;
+
+      const parsed = IRCTCExt.NgetPassengersFlow.parsePassengerRow(row);
+      return labels.some((label) => passengersLib().dropdownValueMatches(parsed.berth, label));
+    },
+
+    async fillPassengerRow(row, passenger, overlay) {
+      const sel = IRCTCExt.NgetPassengersFlow.getSelectors();
+      const nameInput = IRCTCExt.Wait.queryOne(sel.passengerName, row);
+      if (!nameInput) throw new Error('Passenger name field not found');
+
+      overlay?.setStatus(`Filling passenger: ${passenger.name}...`);
+      const nameOk = await IRCTCExt.NgetPassengersFlow.fillPassengerName(nameInput, passenger, row);
+      if (!nameOk) throw new Error(`Could not set passenger name: ${passenger.name}`);
+
+      const berthOk = await IRCTCExt.NgetPassengersFlow.selectBerthOnRow(row, passenger);
+      if (!berthOk && passengersLib().berthLabelsToTry(passenger?.berth).length) {
+        throw new Error(`Could not select berth: ${passengersLib().berthLabel(passenger.berth)}`);
+      }
+
+      if (!IRCTCExt.NgetPassengersFlow.rowMatchesPassenger(row, passenger)) {
+        const parsed = IRCTCExt.NgetPassengersFlow.parsePassengerRow(row);
+        throw new Error(
+          `Passenger row mismatch for ${passenger.name} (got name="${parsed.name}", age="${parsed.age}", gender="${parsed.gender}")`
+        );
+      }
+
+      return true;
+    },
+
+    findEmptyRow(usedRows = new Set()) {
+      const rows = IRCTCExt.NgetPassengersFlow.getPassengerRows();
+      return rows.find((row) => !usedRows.has(row) && IRCTCExt.NgetPassengersFlow.isRowEmpty(row)) || null;
+    },
+
+    findMatchingRow(passenger, usedRows = new Set()) {
+      const rows = IRCTCExt.NgetPassengersFlow.getPassengerRows();
+      return (
+        rows.find(
+          (row) =>
+            !usedRows.has(row) &&
+            !IRCTCExt.NgetPassengersFlow.isRowEmpty(row) &&
+            IRCTCExt.NgetPassengersFlow.rowMatchesPassenger(row, passenger)
+        ) || null
+      );
+    },
+
+    partitionRows(passengers) {
+      const rows = IRCTCExt.NgetPassengersFlow.getPassengerRows();
+      const matched = [];
+      const unmatchedPassengers = [];
+      const usedRows = new Set();
+
+      for (const passenger of passengers) {
+        const row = IRCTCExt.NgetPassengersFlow.findMatchingRow(passenger, usedRows);
+        if (row) {
+          matched.push({ passenger, row });
+          usedRows.add(row);
+        } else {
+          unmatchedPassengers.push(passenger);
+        }
+      }
+
+      const extraRows = rows.filter((row) => !usedRows.has(row));
+      return { matched, unmatchedPassengers, extraRows };
+    },
+
+    async getOrCreateEmptyRow(usedRows) {
+      let empty = IRCTCExt.NgetPassengersFlow.findEmptyRow(usedRows);
+      if (empty) return empty;
+
+      await IRCTCExt.NgetPassengersFlow.clickAddPassenger();
+      empty = IRCTCExt.NgetPassengersFlow.findEmptyRow(usedRows);
+      if (!empty) throw new Error('Could not find empty passenger row after adding');
+      return empty;
+    },
+
+    findRowByName(passenger, usedRows = new Set()) {
+      const configName = passengersLib().normalizeName(passenger.name);
+      const rows = IRCTCExt.NgetPassengersFlow.getPassengerRows();
+      return (
+        rows.find((row) => {
+          if (usedRows.has(row) || IRCTCExt.NgetPassengersFlow.isRowEmpty(row)) return false;
+          const parsed = IRCTCExt.NgetPassengersFlow.parsePassengerRow(row);
+          return passengersLib().normalizeName(parsed.name) === configName;
+        }) || null
+      );
+    },
+
+    passengerRowIsCorrect(row, passenger) {
+      return (
+        IRCTCExt.NgetPassengersFlow.rowMatchesPassenger(row, passenger) &&
+        IRCTCExt.NgetPassengersFlow.rowBerthMatches(row, passenger)
+      );
+    },
+
+    getFailingPassengers(passengers) {
+      return passengers.filter((passenger) => {
+        const row = IRCTCExt.NgetPassengersFlow.findMatchingRow(passenger);
+        return !row || !IRCTCExt.NgetPassengersFlow.passengerRowIsCorrect(row, passenger);
+      });
+    },
+
+    async fixPassengerRow(passenger, overlay, usedRows = new Set()) {
+      overlay.setStatus(`Fixing passenger: ${passenger.name}...`);
+
+      const matchingRow = IRCTCExt.NgetPassengersFlow.findMatchingRow(passenger, usedRows);
+      if (matchingRow && IRCTCExt.NgetPassengersFlow.passengerRowIsCorrect(matchingRow, passenger)) {
+        usedRows.add(matchingRow);
+        return matchingRow;
+      }
+
+      const nameRow = IRCTCExt.NgetPassengersFlow.findRowByName(passenger, usedRows);
+      if (nameRow) {
+        await IRCTCExt.NgetPassengersFlow.deletePassengerRow(nameRow, overlay);
+      } else if (matchingRow) {
+        await IRCTCExt.NgetPassengersFlow.deletePassengerRow(matchingRow, overlay);
+      }
+
+      const row = await IRCTCExt.NgetPassengersFlow.getOrCreateEmptyRow(usedRows);
+      usedRows.add(row);
+      await IRCTCExt.NgetPassengersFlow.fillPassengerRow(row, passenger, overlay);
+      return row;
+    },
+
+    async reviewPassengers(config, overlay) {
+      return IRCTCExt.NgetPassengersFlow.verifyAndReconcilePassengerList(config, overlay);
+    },
+
+    async verifyAndReconcilePassengerList(config, overlay) {
+      const passengers = (config.passengers || []).filter((p) => p.name && String(p.name).trim());
+      const maxPasses = 3;
+
+      for (let pass = 1; pass <= maxPasses; pass += 1) {
+        overlay.setStatus(`Verifying passenger list (${pass}/${maxPasses})...`);
+        await IRCTCExt.Wait.delay(400);
+
+        let changed = false;
+        let { matched, unmatchedPassengers, extraRows } =
+          IRCTCExt.NgetPassengersFlow.partitionRows(passengers);
+
+        for (const row of extraRows) {
+          const parsed = IRCTCExt.NgetPassengersFlow.parsePassengerRow(row);
+          if (!parsed.name && IRCTCExt.NgetPassengersFlow.isRowEmpty(row)) {
+            if (IRCTCExt.NgetPassengersFlow.getPassengerRows().length > passengers.length) {
+              await IRCTCExt.NgetPassengersFlow.deletePassengerRow(row, overlay);
+              changed = true;
+            }
+            continue;
+          }
+          overlay.setStatus(`Removing extra passenger: ${parsed.name || 'unknown'}...`);
+          await IRCTCExt.NgetPassengersFlow.deletePassengerRow(row, overlay);
+          changed = true;
+        }
+
+        if (changed) {
+          ({ matched, unmatchedPassengers, extraRows } =
+            IRCTCExt.NgetPassengersFlow.partitionRows(passengers));
+        }
+
+        for (const { passenger, row } of matched) {
+          if (!IRCTCExt.NgetPassengersFlow.rowBerthMatches(row, passenger)) {
+            overlay.setStatus(`Updating berth for ${passenger.name}...`);
+            const berthOk = await IRCTCExt.NgetPassengersFlow.selectBerthOnRow(row, passenger);
+            if (!berthOk) {
+              throw new Error(`Could not update berth for ${passenger.name}`);
+            }
+            changed = true;
+          }
+        }
+
+        const usedRows = new Set(matched.map((item) => item.row));
+        for (const passenger of unmatchedPassengers) {
+          overlay.setStatus(`Adding missing passenger: ${passenger.name}...`);
+          const row = await IRCTCExt.NgetPassengersFlow.getOrCreateEmptyRow(usedRows);
+          usedRows.add(row);
+          await IRCTCExt.NgetPassengersFlow.fillPassengerRow(row, passenger, overlay);
+          changed = true;
+        }
+
+        if (!changed) {
+          const finalRows = IRCTCExt.NgetPassengersFlow.getPassengerRows().filter(
+            (row) => !IRCTCExt.NgetPassengersFlow.isRowEmpty(row)
+          );
+          if (finalRows.length !== passengers.length) {
+            throw new Error(`Expected ${passengers.length} passenger(s), found ${finalRows.length}`);
+          }
+
+          const failingPassengers = IRCTCExt.NgetPassengersFlow.getFailingPassengers(passengers);
+
+          if (failingPassengers.length) {
+            if (pass === maxPasses) {
+              throw new Error(`Could not verify passenger: ${failingPassengers[0]?.name || 'unknown'}`);
+            }
+            const usedRows = new Set();
+            for (const passenger of failingPassengers) {
+              await IRCTCExt.NgetPassengersFlow.fixPassengerRow(passenger, overlay, usedRows);
+            }
+            changed = true;
+          } else {
+            overlay.setStatus(`Verified ${passengers.length} passenger(s)`);
+            return true;
+          }
+        }
+      }
+
+      throw new Error('Passenger list verification failed after multiple attempts');
+    },
+
+    async addPassengers(config, overlay) {
+      overlay.setStep('Passengers');
+      await IRCTCExt.Storage.updateState({ currentStep: 'passengers' });
+
+      const passengers = (config.passengers || []).filter((p) => p.name && String(p.name).trim());
+      if (!passengers.length) throw new Error('No passengers configured with names');
+
+      await IRCTCExt.NgetPassengersFlow.ensurePassengerRows(1);
+
+      const usedRows = new Set();
+      for (let i = 0; i < passengers.length; i += 1) {
+        const passenger = passengers[i];
+        overlay.setStatus(`Adding passenger ${i + 1}/${passengers.length}: ${passenger.name}...`);
+
+        let row = IRCTCExt.NgetPassengersFlow.findMatchingRow(passenger, usedRows);
+        if (!row) {
+          row = await IRCTCExt.NgetPassengersFlow.getOrCreateEmptyRow(usedRows);
+          await IRCTCExt.NgetPassengersFlow.fillPassengerRow(row, passenger, overlay);
+        } else {
+          if (!IRCTCExt.NgetPassengersFlow.rowBerthMatches(row, passenger)) {
+            await IRCTCExt.NgetPassengersFlow.selectBerthOnRow(row, passenger);
+          }
+        }
+
+        usedRows.add(row);
+      }
+
+      await IRCTCExt.NgetPassengersFlow.verifyAndReconcilePassengerList(config, overlay);
+      overlay.setStatus(`Verified ${passengers.length} passenger(s)`);
+      return true;
+    }
+  };
+})(typeof globalThis !== 'undefined' ? globalThis : window);
+
+;
+(function (root) {
+  root.IRCTCExt = root.IRCTCExt || {};
+  if (IRCTCExt.NgetPsgnPreferencesFlow) return;
+
+  const sharedPrefs = () => IRCTCExt.PsgnPreferences;
+
+  IRCTCExt.NgetPsgnPreferencesFlow = {
+    getSelectors() {
+      return IRCTCExt.SELECTORS?.psgnPreferences || IRCTCExt.NgetSelectors.psgnPreferences;
+    },
+
+    findPaymentPanel() {
+      const titles = IRCTCExt.Wait.queryAll(IRCTCExt.NgetPsgnPreferencesFlow.getSelectors().paymentPanelTitle);
+      for (const title of titles) {
+        if (!IRCTCExt.Wait.isVisible(title)) continue;
+        const text = (title.textContent || '').replace(/\s+/g, ' ').trim();
+        if (/payment\s*mode/i.test(text)) {
+          return title.closest('p-panel') || title.closest('.ui-panel') || title.parentElement;
+        }
+      }
+      return null;
+    },
+
+    findPaymentInput(method) {
+      const sel = IRCTCExt.NgetPsgnPreferencesFlow.getSelectors();
+      const value = method === 'upi' ? '2' : '3';
+      const selectors = method === 'upi' ? sel.paymentTypeUpi : sel.paymentTypeCards;
+      const panel = IRCTCExt.NgetPsgnPreferencesFlow.findPaymentPanel();
+      const root = panel || document;
+
+      const input = IRCTCExt.Wait.queryOne(selectors, root);
+      if (input) return input;
+
+      return IRCTCExt.Wait.queryOne(`input[name="paymentType"][value="${value}"]`, root);
+    },
+
+    findPaymentOption(method) {
+      const input = IRCTCExt.NgetPsgnPreferencesFlow.findPaymentInput(method);
+      if (!input) return null;
+
+      return (
+        input.closest('tr') ||
+        input.closest('label') ||
+        input.closest('p-radiobutton') ||
+        sharedPrefs()?.findOptionRow?.(input) ||
+        input.parentElement
+      );
+    },
+
+    isPaymentOptionSelected(method) {
+      const input = IRCTCExt.NgetPsgnPreferencesFlow.findPaymentInput(method);
+      if (!input) return false;
+
+      const optionRow = IRCTCExt.NgetPsgnPreferencesFlow.findPaymentOption(method);
+      if (optionRow && sharedPrefs()?.isOptionSelected?.(optionRow)) return true;
+
+      if (input.checked) return true;
+
+      const box = input.closest('p-radiobutton')?.querySelector('.ui-radiobutton-box, [role="radio"]');
+      return !!(
+        box?.classList.contains('ui-state-active') || box?.getAttribute('aria-checked') === 'true'
+      );
+    },
+
+    async selectPaymentMethod(config, overlay) {
+      const method = config.preferences?.paymentMethod || 'cards';
+      overlay.setStatus(
+        method === 'upi' ? 'Selecting BHIM/UPI payment...' : 'Selecting Cards/Net Banking payment...'
+      );
+
+      const panel = await IRCTCExt.Wait.poll(
+        () => IRCTCExt.NgetPsgnPreferencesFlow.findPaymentPanel(),
+        { timeout: 15000, interval: 200 }
+      );
+      if (!panel) throw new Error('Payment Mode section not found');
+
+      const optionRow = await IRCTCExt.Wait.poll(
+        () => {
+          const row = IRCTCExt.NgetPsgnPreferencesFlow.findPaymentOption(method);
+          return row && IRCTCExt.Wait.isVisible(row) ? row : null;
+        },
+        { timeout: 10000, interval: 200 }
+      );
+      if (!optionRow) throw new Error(`Payment option not found: ${method}`);
+
+      const selected = await sharedPrefs().selectRadioWithRetry(optionRow, method);
+      if (!selected) throw new Error(`Could not select payment option: ${method}`);
+
+      await IRCTCExt.Wait.delay(400);
+      return true;
+    },
+
+    findContinueButton() {
+      const sel = IRCTCExt.NgetPsgnPreferencesFlow.getSelectors();
+      const candidates = IRCTCExt.Wait.queryAll(sel.continueBtn);
+      for (const btn of candidates) {
+        if (!IRCTCExt.Wait.isVisible(btn)) continue;
+        const text = (btn.textContent || '').replace(/\s+/g, ' ').trim();
+        if (/^\s*continue\s*$/i.test(text)) return btn;
+      }
+
+      const buttons = Array.from(document.querySelectorAll('button.train_Search.btnDefault'));
+      return (
+        buttons.find((btn) => {
+          if (!IRCTCExt.Wait.isVisible(btn)) return false;
+          const text = (btn.textContent || '').replace(/\s+/g, ' ').trim();
+          return /^\s*continue\s*$/i.test(text);
+        }) || null
+      );
+    },
+
+    isContinueEnabled(btn) {
+      if (!btn || !IRCTCExt.Wait.isVisible(btn)) return false;
+      if (btn.disabled) return false;
+      if (btn.classList.contains('disabled')) return false;
+      if (btn.getAttribute('aria-disabled') === 'true') return false;
+      return true;
+    },
+
+    hasLeftPsgninput() {
+      const path = location.pathname;
+      if (!path.includes('psgninput')) return true;
+      if (IRCTCExt.NgetPaths.isReviewPath(path)) return true;
+      if (IRCTCExt.NgetPaths.isPaymentPath(path)) return true;
+      return false;
+    },
+
+    async clickContinue(overlay) {
+      overlay.setStatus('Waiting for Continue button...');
+
+      const btn = await IRCTCExt.Wait.poll(
+        () => {
+          const candidate = IRCTCExt.NgetPsgnPreferencesFlow.findContinueButton();
+          return candidate && IRCTCExt.NgetPsgnPreferencesFlow.isContinueEnabled(candidate)
+            ? candidate
+            : null;
+        },
+        { timeout: 20000, interval: 250 }
+      );
+      if (!btn) throw new Error('Continue button not found or still disabled');
+
+      overlay.setStatus('Clicking Continue...');
+      sharedPrefs().clickTarget(btn);
+      await IRCTCExt.Wait.delay(800);
+
+      const navigated = await IRCTCExt.Wait.poll(
+        () => (IRCTCExt.NgetPsgnPreferencesFlow.hasLeftPsgninput() ? true : null),
+        { timeout: 30000, interval: 300 }
+      );
+      if (!navigated) throw new Error('Did not leave passenger page after clicking Continue');
+      return true;
+    },
+
+    async configure(config, overlay) {
+      overlay.setStep('Review');
+      await IRCTCExt.Wait.delay(600);
+
+      await IRCTCExt.NgetPassengersFlow.reviewPassengers(config, overlay);
+      await IRCTCExt.Wait.delay(400);
+
+      await IRCTCExt.NgetPsgnPreferencesFlow.selectPaymentMethod(config, overlay);
+      await IRCTCExt.Wait.delay(400);
+
+      await IRCTCExt.NgetPsgnPreferencesFlow.clickContinue(overlay);
+      overlay.setStatus('Passenger review complete — continuing...');
+      return true;
+    }
+  };
+})(typeof globalThis !== 'undefined' ? globalThis : window);
+
+;
 window.IRCTCExt = window.IRCTCExt || {};
 
 IRCTCExt.PsgnPreferences = {
@@ -5121,23 +8310,42 @@ IRCTCExt.Bot = {
       return 'done';
     }
 
-    const method = config.preferences?.paymentMethod || 'cards';
-
-    if (method === 'upi') {
-      await IRCTCExt.BkgPayment.handleUpiPayment(config, overlay);
-      overlay.setStatus('Payment provider selected. Complete payment on IRCTC.');
-    } else if (method === 'cards') {
-      const result = await IRCTCExt.BkgPayment.handleCardsPayment(config, overlay);
+    const sitePayment = site.flows?.BookingFlow?.handlePayment;
+    if (sitePayment) {
+      const result = await sitePayment(config, overlay);
       if (result?.awaitingGateway) {
+        await IRCTCExt.Storage.updateState({ currentStep: 'gateway' });
+        overlay.setStep('Gateway');
         IRCTCExt.PlatformBridge?.sendMessage('BOOKING_STATUS', {
           status: 'awaiting_gateway',
+          step: 'gateway',
           gateway: result.gateway
         });
         return 'wait';
       }
-      overlay.setStatus('Cards payment flow started. Complete payment on gateway.');
+      overlay.setStatus('Payment flow started. Complete payment on gateway.');
     } else {
-      throw new Error(`Unsupported payment method: ${method}`);
+      const method = config.preferences?.paymentMethod || 'cards';
+
+      if (method === 'upi') {
+        await IRCTCExt.BkgPayment.handleUpiPayment(config, overlay);
+        overlay.setStatus('Payment provider selected. Complete payment on IRCTC.');
+      } else if (method === 'cards') {
+        const result = await IRCTCExt.BkgPayment.handleCardsPayment(config, overlay);
+        if (result?.awaitingGateway) {
+          await IRCTCExt.Storage.updateState({ currentStep: 'gateway' });
+          overlay.setStep('Gateway');
+          IRCTCExt.PlatformBridge?.sendMessage('BOOKING_STATUS', {
+            status: 'awaiting_gateway',
+            step: 'gateway',
+            gateway: result.gateway
+          });
+          return 'wait';
+        }
+        overlay.setStatus('Cards payment flow started. Complete payment on gateway.');
+      } else {
+        throw new Error(`Unsupported payment method: ${method}`);
+      }
     }
 
     await IRCTCExt.Storage.updateState({ paymentDone: true });

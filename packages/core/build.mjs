@@ -15,6 +15,8 @@ const sharedBotLibs = [
   'src/bot/lib/events.js',
   'src/bot/lib/stations.js',
   'src/bot/lib/passengers.js',
+  'src/bot/sites/nget/flows/passengers.js',
+  'src/bot/sites/nget/flows/psgnPreferences.js',
   'src/bot/lib/psgnPreferences.js',
   'src/bot/lib/bkgPayment.js'
 ];
@@ -29,6 +31,17 @@ const extensionBotFiles = [
   'src/bot/sites/eticket/flows/search.js',
   'src/bot/sites/eticket/flows/booking.js',
   'src/bot/sites/eticket/index.js',
+  'src/bot/sites/nget/config.js',
+  'src/bot/sites/nget/paths.js',
+  'src/bot/sites/nget/selectors.js',
+  'src/bot/sites/nget/trainList.js',
+  'src/bot/sites/nget/flows/language.js',
+  'src/bot/sites/nget/flows/login.js',
+  'src/bot/sites/nget/flows/search.js',
+  'src/bot/sites/nget/flows/review.js',
+  'src/bot/sites/nget/flows/payment.js',
+  'src/bot/sites/nget/flows/booking.js',
+  'src/bot/sites/nget/index.js',
   ...sharedBotLibs,
   'src/bot/overlay/overlay.js',
   'src/bot/bot.js'
@@ -37,11 +50,14 @@ const extensionBotFiles = [
 const webviewBotFiles = ['src/bot/webview-storage.js', ...extensionBotFiles];
 
 const gatewaySharedFiles = [
+  'src/bot/sites/nget/config.js',
+  'src/bot/sites/nget/paths.js',
   'src/bot/sites/eticket/selectors.js',
   'src/bot/lib/wait.js',
   'src/bot/lib/events.js',
   'src/bot/lib/bkgPayment.js',
   'src/bot/lib/gateways/irctcIpay.js',
+  'src/bot/lib/gateways/irctcPayments.js',
   'src/bot/lib/gateways/phonepe.js',
   'src/bot/lib/gateways/index.js',
   'src/bot/overlay/overlay.js',

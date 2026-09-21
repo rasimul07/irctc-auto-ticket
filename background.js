@@ -3,7 +3,7 @@ importScripts(
   'lib/schedule.js',
   'sites/registry.js',
   'packages/core/src/bot/sites/eticket/config.js',
-  'sites/nget/config.js'
+  'packages/core/src/bot/sites/nget/config.js'
 );
 
 IRCTCExt.SiteRegistry.register(IRCTCExt.EticketConfig);
@@ -29,21 +29,8 @@ async function updateStoreState(updates) {
   await saveConfigStore(store);
 }
 
-const NGET_SITE_FILES = [
-  'sites/nget/config.js',
-  'sites/nget/selectors.js',
-  'sites/nget/paths.js',
-  'sites/nget/flows/language.js',
-  'sites/nget/flows/login.js',
-  'sites/nget/flows/search.js',
-  'sites/nget/flows/booking.js',
-  'sites/nget/trainList.js',
-  'sites/nget/index.js'
-];
-
 const CONTENT_SCRIPT_FILES = [
   'packages/core/dist/chrome-core.iife.js',
-  ...NGET_SITE_FILES,
   'packages/core/dist/extension-bot.iife.js',
   'overlay/paymentReview.js'
 ];
@@ -58,7 +45,7 @@ const GATEWAY_CSS_FILES = ['overlay/overlay.css'];
 
 function isGatewayUrl(url) {
   if (!url) return false;
-  return url.includes('irctcipay.com') || url.includes('phonepe.com');
+  return url.includes('irctcipay.com') || url.includes('irctcpayments.com') || url.includes('phonepe.com');
 }
 
 async function scheduleAlarms(schedule) {
@@ -147,14 +134,35 @@ async function ensureContentScripts(tabId, scriptFiles = CONTENT_SCRIPT_FILES, c
   return waitForContentScriptReady(tabId, 20);
 }
 
-async function resumeGatewayOnTab(tabId) {
+function shouldResumeGateway(config) {
+  const state = config?.state || {};
+  if (!state.running || state.paymentDone) return false;
+  if (state.status === 'stopped' || state.status === 'done') return false;
+  return !!(
+    state.awaitingGateway ||
+    state.paymentPhase === 'gateway' ||
+    state.currentStep === 'gateway' ||
+    state.currentStep === 'payment'
+  );
+}
+
+async function resumeGatewayOnTab(tabId, attempt = 0) {
   const config = await getActiveConfig();
-  if (!config?.state?.running || !config?.state?.awaitingGateway) return;
+  if (!shouldResumeGateway(config)) return;
 
   await ensureContentScripts(tabId, GATEWAY_SCRIPT_FILES, GATEWAY_CSS_FILES);
+
   try {
     await chrome.tabs.sendMessage(tabId, { type: 'RESUME_GATEWAY' });
   } catch (err) {
+    if (attempt < 12) {
+      setTimeout(() => {
+        resumeGatewayOnTab(tabId, attempt + 1).catch((retryErr) =>
+          console.warn('[IRCTC-Bot] Gateway resume retry failed:', retryErr)
+        );
+      }, 500);
+      return;
+    }
     console.warn('[IRCTC-Bot] Gateway resume message failed:', err);
   }
 }
@@ -232,6 +240,7 @@ async function stopAllBooking() {
     url: [
       'https://www.irctc.co.in/*',
       'https://www.irctcipay.com/*',
+      'https://pg.irctcpayments.com/*',
       'https://mercury-t2.phonepe.com/*',
       'https://mercury.phonepe.com/*'
     ]
@@ -279,12 +288,13 @@ async function openIrctcTab({ skipAccessCheck = false } = {}) {
     if (existingTab) {
       tabId = existingTab.id;
       const alreadyOnTrainSearch = existingTab.url?.includes(site.trainSearchPath);
+      await chrome.tabs.update(tabId, { active: true });
       if (alreadyOnTrainSearch) {
-        await chrome.tabs.update(tabId, { active: true });
+        await chrome.tabs.reload(tabId);
       } else {
-        await chrome.tabs.update(tabId, { active: true, url: site.trainSearchUrl });
-        await waitForTabReady(tabId);
+        await chrome.tabs.update(tabId, { url: site.trainSearchUrl });
       }
+      await waitForTabReady(tabId);
     } else {
       const tab = await chrome.tabs.create({ url: site.trainSearchUrl, active: true });
       tabId = tab.id;
@@ -457,13 +467,28 @@ function tryResumeGateway(tabId, url) {
 }
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  if (changeInfo.status !== 'complete') return;
-  tryResumeGateway(tabId, tab.url);
+  const url = changeInfo.url || tab?.url;
+  if (!url) return;
+  if (changeInfo.status === 'complete' || changeInfo.url) {
+    tryResumeGateway(tabId, url);
+  }
 });
 
 chrome.tabs.onCreated.addListener((tab) => {
-  if (!tab.id || !tab.url) return;
-  tryResumeGateway(tab.id, tab.url);
+  if (!tab?.id) return;
+  if (tab.url && isGatewayUrl(tab.url)) {
+    tryResumeGateway(tab.id, tab.url);
+    return;
+  }
+  const onCreatedUpdated = (tabId, changeInfo, updatedTab) => {
+    if (tabId !== tab.id) return;
+    const url = changeInfo.url || updatedTab?.url;
+    if (!url || !isGatewayUrl(url)) return;
+    tryResumeGateway(tabId, url);
+    chrome.tabs.onUpdated.removeListener(onCreatedUpdated);
+  };
+  chrome.tabs.onUpdated.addListener(onCreatedUpdated);
+  setTimeout(() => chrome.tabs.onUpdated.removeListener(onCreatedUpdated), 60000);
 });
 
 restoreScheduleAlarms().catch((err) => console.error('[IRCTC-Bot] Schedule restore failed:', err));

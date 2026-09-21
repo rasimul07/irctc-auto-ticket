@@ -76,6 +76,7 @@ async function getLicenseByEmail(email) {
   const result = await query(
     `SELECT id, email, plan, bmc_membership_id, expires_at, active,
             tokens_balance, token_period_end, coffee_donations_count,
+            coffee_renewals_remaining, coffee_entitlement_started_at,
             created_at, updated_at
      FROM licenses
      WHERE email = $1`,
@@ -394,12 +395,15 @@ async function handleDonationCreated(email, payload) {
 
   const coffeeCount = extractCoffeeCount(payload);
   const tokenPeriodEnd = addDays(new Date(), config.coffeeTokenPeriodDays);
+  const renewalsRemaining = Math.max(0, config.coffeeRenewalMonths - 1);
 
   const result = await query(
     `INSERT INTO licenses (
-       email, plan, active, tokens_balance, token_period_end, coffee_donations_count, updated_at
+       email, plan, active, tokens_balance, token_period_end,
+       coffee_donations_count, coffee_renewals_remaining, coffee_entitlement_started_at,
+       updated_at
      )
-     VALUES ($1, 'coffee', TRUE, $2, $3, $4, NOW())
+     VALUES ($1, 'coffee', TRUE, $2, $3, $4, $5, NOW(), NOW())
      ON CONFLICT (email)
      DO UPDATE SET
        plan = 'coffee',
@@ -407,9 +411,11 @@ async function handleDonationCreated(email, payload) {
        tokens_balance = $2,
        token_period_end = $3,
        coffee_donations_count = licenses.coffee_donations_count + $4,
+       coffee_renewals_remaining = $5,
+       coffee_entitlement_started_at = NOW(),
        updated_at = NOW()
      RETURNING *`,
-    [normalized, config.coffeeTokensPerMonth, tokenPeriodEnd, coffeeCount]
+    [normalized, config.coffeeTokensPerMonth, tokenPeriodEnd, coffeeCount, renewalsRemaining]
   );
 
   return { license: result.rows[0], processed: true };
@@ -429,6 +435,10 @@ async function handleDonationRefunded(email, payload) {
          tokens_balance = CASE
            WHEN GREATEST(0, coffee_donations_count - $2) = 0 THEN 0
            ELSE tokens_balance
+         END,
+         coffee_renewals_remaining = CASE
+           WHEN GREATEST(0, coffee_donations_count - $2) = 0 THEN 0
+           ELSE coffee_renewals_remaining
          END,
          active = CASE
            WHEN GREATEST(0, coffee_donations_count - $2) = 0 AND plan = 'coffee' THEN FALSE

@@ -40,8 +40,9 @@ curl http://localhost:3000/health
 | `DB_PORT` | With `DB_HOST` only (default `5432`) |
 | `DB_SSL` | With `DB_HOST` only; auto-enabled for `*.supabase.co` in `DATABASE_URL` mode |
 | `FREE_TRIAL_DAYS` | Trial length after BMC `recurring_donation.started` (default `7`) |
-| `COFFEE_TOKENS_PER_MONTH` | Tokens granted per `donation.created` (default `10`) |
+| `COFFEE_TOKENS_PER_MONTH` | Tokens granted per monthly period (default `10`) |
 | `COFFEE_TOKEN_PERIOD_DAYS` | Coffee token validity window (default `30`) |
+| `COFFEE_RENEWAL_MONTHS` | Monthly grants per coffee purchase — initial + cron renewals (default `12`) |
 | `COFFEE_RENEW_CRON_ENABLED` | Enable daily coffee token auto-renew job (default `true`) |
 | `COFFEE_RENEW_CRON_SCHEDULE` | Cron expression for coffee renewals (default `0 0 * * *` — midnight UTC) |
 | `BMC_PLAN_BASIC` | BMC membership level name for Basic (default `Basic`) |
@@ -145,7 +146,7 @@ curl -X POST http://localhost:3000/api/v1/access/consume-token \
 |------|-----------|------------------|-------------|-------|
 | `none` | — | blocked | blocked | Register only; link email after BMC |
 | `trial` | `recurring_donation.started` | unlimited | blocked | `FREE_TRIAL_DAYS` from webhook |
-| `coffee` | `donation.created` | token-based | blocked | 10 tokens per 30 days; auto-renewed by cron if `coffee_donations_count >= 1` |
+| `coffee` | `donation.created` | token-based | blocked | `COFFEE_TOKENS_PER_MONTH` per 30 days for `COFFEE_RENEWAL_MONTHS` (12) per purchase; then renewals stop until next purchase |
 | `basic` | `membership.*` level **Basic** | unlimited | blocked | unlimited |
 | `pro` | `membership.*` level **Pro** | unlimited | allowed | unlimited |
 
@@ -155,11 +156,23 @@ Plan priority (same email): `pro` > `basic` > `coffee` > `trial`. Lower-tier web
 
 ### Coffee token auto-renew (cron)
 
-After a successful `donation.created` webhook (`status=succeeded`, `refunded=false`), `coffee_donations_count` is incremented by `data.coffee_count`. A background cron job renews expired coffee periods:
+After a successful `donation.created` webhook (`status=succeeded`, `refunded=false`):
+
+- Grants `COFFEE_TOKENS_PER_MONTH` tokens with `token_period_end = now + COFFEE_TOKEN_PERIOD_DAYS`
+- Sets `coffee_renewals_remaining = COFFEE_RENEWAL_MONTHS - 1` (11 renewals after the initial month)
+- Sets `coffee_entitlement_started_at = NOW()` (restarts the 12-month window on each purchase)
+- Increments `coffee_donations_count` by `data.coffee_count`
+
+A background cron job renews expired coffee periods:
 
 - Resets `tokens_balance` to `COFFEE_TOKENS_PER_MONTH`
 - Extends `token_period_end` by `COFFEE_TOKEN_PERIOD_DAYS`
-- Only when `plan=coffee`, `active=TRUE`, and `coffee_donations_count >= 1`
+- Decrements `coffee_renewals_remaining` by 1
+- Only when `plan=coffee`, `active=TRUE`, `coffee_donations_count >= 1`, and `coffee_renewals_remaining > 0`
+
+After 12 monthly grants (initial + 11 renewals), cron stops renewing. The user can still use remaining tokens until the current `token_period_end` expires. A new `donation.created` restarts the full 12-month cycle.
+
+Existing coffee licenses are backfilled on migration `006_coffee_renewal_limit.sql` with a best-effort estimate of remaining renewals from `created_at`.
 
 Manual run:
 
@@ -167,7 +180,7 @@ Manual run:
 npm run jobs:renew-coffee
 ```
 
-`donation.refunded` decrements `coffee_donations_count`; when it reaches 0, the coffee plan is deactivated and cron renewals stop.
+`donation.refunded` decrements `coffee_donations_count`; when it reaches 0, the coffee plan is deactivated, `coffee_renewals_remaining` is set to 0, and cron renewals stop.
 
 ## Buy Me a Coffee webhook
 
