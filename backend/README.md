@@ -272,6 +272,34 @@ Use a **separate** key from the EC2 → GitHub deploy key.
 bash ~/irctc-auto-ticket/backend/scripts/deploy.sh
 ```
 
+`deploy.sh` runs pending SQL migrations (`docker compose run --rm api node src/db/migrate.js`) before rebuilding the API container. Migrations are tracked in `schema_migrations` on your production database (Supabase).
+
+### Run migrations only (no redeploy)
+
+On EC2:
+
+```bash
+cd ~/irctc-auto-ticket/backend
+docker compose -f docker-compose.prod.yml run --rm api node src/db/migrate.js
+```
+
+Locally (uses `backend/.env` `DATABASE_URL`):
+
+```bash
+cd backend
+npm run db:migrate
+```
+
+### Ops scripts (on EC2 via Docker)
+
+```bash
+cd ~/irctc-auto-ticket/backend
+docker compose -f docker-compose.prod.yml run --rm api node scripts/verify-license.js user@example.com
+docker compose -f docker-compose.prod.yml run --rm api node scripts/reprocess-bmc-event.js <event_id>
+```
+
+`reprocess-bmc-event.js` deletes the stored `bmc_events` row and replays the webhook handler (useful after a failed migration when BMC events were stored but licenses were not created).
+
 ### Logs and status
 
 ```bash

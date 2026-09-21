@@ -23,6 +23,9 @@ if command -v pm2 >/dev/null 2>&1; then
   pm2 delete all 2>/dev/null || true
 fi
 
+echo "[deploy] running database migrations"
+docker compose -f docker-compose.prod.yml run --rm api node src/db/migrate.js
+
 echo "[deploy] building and starting Docker container"
 docker compose -f docker-compose.prod.yml up -d --build
 
