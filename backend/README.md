@@ -280,6 +280,8 @@ docker logs -f rail-ticket-api
 curl http://localhost:3000/health
 ```
 
+Route logs use prefixes: `[bmc]` (webhook signature/processing), `[access]` (register/link/status/consume-token), `[api]` (unhandled errors with method + path).
+
 The deploy script stops any PM2 processes to avoid port 3000 conflicts, rebuilds the Docker image, runs migrations, and verifies `/health`.
 
 ## Ionic reuse (future)

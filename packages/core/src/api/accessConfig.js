@@ -2,7 +2,7 @@ export const ACCESS_DEFAULTS = {
   API_BASE_DEV: 'http://localhost:3000/api/v1',
   API_BASE_PROD: 'https://api.railticket.tool.mridev.in/api/v1',
   BMC_URL: 'https://buymeacoffee.com/mritools',
-  USE_PROD_API: false,
+  USE_PROD_API: true,
 };
 
 export const CLIENT_TYPES = {

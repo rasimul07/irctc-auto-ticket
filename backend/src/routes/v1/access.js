@@ -1,9 +1,22 @@
 const router = require('express').Router();
 const clientContext = require('../../middleware/clientContext');
 const { sendSuccess, sendError, asyncHandler } = require('../../utils/http');
+const logger = require('../../utils/logger');
 const accessService = require('../../services/accessService');
 
 router.use(clientContext);
+
+function logAccessError(route, req, err, extra = {}) {
+  logger.error('access', `${route} failed`, {
+    clientType: req.clientType,
+    deviceId: extra.deviceId,
+    email: extra.email,
+    usageKey: extra.usageKey,
+    code: err.code,
+    message: err.message,
+    stack: err.stack
+  });
+}
 
 router.post(
   '/register',
@@ -13,8 +26,13 @@ router.post(
       return sendError(res, 'INVALID_DEVICE_ID', 'deviceId is required', 400);
     }
 
-    const status = await accessService.registerDevice(req.clientType, deviceId);
-    return sendSuccess(res, status, 201);
+    try {
+      const status = await accessService.registerDevice(req.clientType, deviceId);
+      return sendSuccess(res, status, 201);
+    } catch (err) {
+      logAccessError('register', req, err, { deviceId });
+      throw err;
+    }
   })
 );
 
@@ -26,14 +44,19 @@ router.get(
       return sendError(res, 'INVALID_DEVICE_ID', 'deviceId query param is required', 400);
     }
 
-    let status;
     try {
-      status = await accessService.resolveAccessStatus(req.clientType, deviceId);
+      let status;
+      try {
+        status = await accessService.resolveAccessStatus(req.clientType, deviceId);
+      } catch (err) {
+        if (err.code !== 'DEVICE_NOT_FOUND') throw err;
+        status = await accessService.registerDevice(req.clientType, deviceId);
+      }
+      return sendSuccess(res, status);
     } catch (err) {
-      if (err.code !== 'DEVICE_NOT_FOUND') throw err;
-      status = await accessService.registerDevice(req.clientType, deviceId);
+      logAccessError('status', req, err, { deviceId });
+      throw err;
     }
-    return sendSuccess(res, status);
   })
 );
 
@@ -49,8 +72,22 @@ router.post(
       return sendError(res, 'INVALID_EMAIL', 'email is required', 400);
     }
 
-    const status = await accessService.linkEmail(req.clientType, deviceId, email);
-    return sendSuccess(res, status);
+    try {
+      const status = await accessService.linkEmail(req.clientType, deviceId, email);
+      if (!status.allowed) {
+        logger.warn('access', 'link completed without active access', {
+          clientType: req.clientType,
+          deviceId,
+          email,
+          tier: status.tier,
+          plan: status.plan
+        });
+      }
+      return sendSuccess(res, status);
+    } catch (err) {
+      logAccessError('link', req, err, { deviceId, email });
+      throw err;
+    }
   })
 );
 
@@ -66,8 +103,13 @@ router.post(
       return sendError(res, 'INVALID_USAGE_KEY', 'usageKey is required', 400);
     }
 
-    const status = await accessService.consumeToken(req.clientType, deviceId, usageKey);
-    return sendSuccess(res, status);
+    try {
+      const status = await accessService.consumeToken(req.clientType, deviceId, usageKey);
+      return sendSuccess(res, status);
+    } catch (err) {
+      logAccessError('consume-token', req, err, { deviceId, usageKey });
+      throw err;
+    }
   })
 );
 

@@ -6,8 +6,14 @@ function notFoundHandler(_req, res) {
 
 const NETWORK_CODES = new Set(['ENOTFOUND', 'ECONNREFUSED', 'ETIMEDOUT', 'ECONNRESET', 'EAI_AGAIN']);
 
-function errorHandler(err, _req, res, _next) {
-  console.error('[api] error', err);
+function errorHandler(err, req, res, _next) {
+  console.error('[api] error', {
+    method: req.method,
+    path: req.originalUrl,
+    code: err.code,
+    message: err.message,
+    stack: err.stack
+  });
 
   if (NETWORK_CODES.has(err.code) || err.syscall === 'getaddrinfo') {
     return sendError(
