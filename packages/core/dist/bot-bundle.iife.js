@@ -5145,7 +5145,9 @@
         let berth = "";
         if (berthSelect?.tagName === "SELECT") {
           const selected = berthSelect.options[berthSelect.selectedIndex];
-          berth = (selected?.textContent || berthSelect.value || "").replace(/\s+/g, " ").trim();
+          berth = (selected?.textContent || "").replace(/\s+/g, " ").trim();
+          if (!berth && berthSelect.value === "WS") berth = "Window Side";
+          else if (!berth) berth = String(berthSelect.value || "").trim();
         }
         return {
           name: (nameInput?.value || "").replace(/\s+/g, " ").trim(),
@@ -5425,6 +5427,7 @@
           Middle: "MB",
           "Side Lower": "SL",
           "Side Upper": "SU",
+          "Window Side": "WS",
           "No Preference": "",
           "": ""
         };
@@ -5440,7 +5443,7 @@
         const current = berthSelect.value;
         if (current === targetValue) return true;
         const option = [...berthSelect.options].find(
-          (opt) => opt.value === targetValue || labels.some((label) => passengersLib().dropdownValueMatches(opt.textContent, label))
+          (opt) => labels.some((label) => passengersLib().dropdownValueMatches(opt.textContent, label)) || opt.value === targetValue
         );
         if (!option) return false;
         berthSelect.value = option.value;
