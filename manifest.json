@@ -10,8 +10,7 @@
     "https://pg.irctcpayments.com/*",
     "https://mercury-t2.phonepe.com/*",
     "https://mercury.phonepe.com/*",
-    "http://localhost:3000/*",
-    "https://api.yourdomain.com/*"
+    "https://api.railticket.tool.mridev.in/*"
   ],
   "background": {
     "service_worker": "background.js"

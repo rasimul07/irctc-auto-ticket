@@ -1607,6 +1607,7 @@ IRCTCExt.NgetSelectors = {
     dateCell: ['div.pre-avl'],
     dateLabel: ['div.pre-avl > div:first-child strong'],
     dateStatus: ['div.pre-avl .AVAILABLE', 'div.pre-avl .RAC', 'div.pre-avl .WL', 'div.pre-avl .REGRET'],
+    highLoadClose: ['.fa.fa-close', 'span.fa-close', '.fa-close'],
     bookNowBtn: ['button.train_Search', 'button.btnDefault.train_Search'],
     bookNowEnabled: [
       'button.train_Search:not(.disable-book)',
@@ -1973,18 +1974,89 @@ IRCTCExt.NgetSelectors = {
       return null;
     },
 
-    async waitForDatePanel(card, overlay) {
-      const loaded = await IRCTCExt.Wait.poll(
-        () => {
-          const panel = IRCTCExt.NgetTrainList.getDatePanel(card);
-          if (!panel || !IRCTCExt.Wait.isVisible(panel)) return null;
-          return IRCTCExt.NgetTrainList.getDateAvailabilityCells(card).length > 0 ? true : null;
-        },
-        { timeout: 10000, interval: 200 }
-      );
+    hasHighLoadInCard(card) {
+      if (!card) return false;
+      const text = (card.textContent || '').replace(/\s+/g, ' ');
+      return /high\s*load|please\s*retry/i.test(text);
+    },
 
-      if (!loaded) throw new Error('Date availability panel did not load');
+    findHighLoadCloseButton(card) {
+      const sel = IRCTCExt.SELECTORS.trainList;
+      const inCard = IRCTCExt.Wait.queryAll(sel.highLoadClose, card);
+      const cardClose = inCard.find((el) => IRCTCExt.Wait.isVisible(el));
+      if (cardClose) return cardClose;
+
+      if (!IRCTCExt.NgetTrainList.hasHighLoadInCard(card)) return null;
+
+      const pageClose = [...document.querySelectorAll(sel.highLoadClose?.[0] || '.fa.fa-close')].find(
+        (el) => IRCTCExt.Wait.isVisible(el)
+      );
+      return pageClose || null;
+    },
+
+    async dismissHighLoadError(card, overlay) {
+      const closeBtn = IRCTCExt.NgetTrainList.findHighLoadCloseButton(card);
+      if (!closeBtn) return false;
+
+      IRCTCExt.NgetTrainList.setStatus(overlay, 'Closing high-load error...');
+      IRCTCExt.Events.click(closeBtn);
+      await IRCTCExt.Wait.delay(300);
       return true;
+    },
+
+    async clickClassRefresh(classPickerCell, overlay, travelClass) {
+      IRCTCExt.NgetTrainList.scrollIntoViewIfNeeded(classPickerCell);
+
+      const refresh = IRCTCExt.NgetTrainList.findClassRefreshControl(classPickerCell);
+      if (!refresh) throw new Error(`Refresh control not found for class ${travelClass}`);
+
+      IRCTCExt.NgetTrainList.setStatus(overlay, `Refreshing availability for ${travelClass}...`);
+      IRCTCExt.Events.click(refresh);
+      await IRCTCExt.Wait.delay(500);
+      return true;
+    },
+
+    async waitForDatePanel(card, overlay, options = {}) {
+      const {
+        classPickerCell = null,
+        travelClass = '',
+        maxAttempts = 100
+      } = options;
+
+      for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+        const loaded = await IRCTCExt.Wait.poll(
+          () => {
+            const panel = IRCTCExt.NgetTrainList.getDatePanel(card);
+            if (!panel || !IRCTCExt.Wait.isVisible(panel)) return null;
+            return IRCTCExt.NgetTrainList.getDateAvailabilityCells(card).length > 0 ? true : null;
+          },
+          { timeout: attempt === 1 ? 10000 : 8000, interval: 200 }
+        );
+
+        if (loaded) return true;
+
+        const highLoad = IRCTCExt.NgetTrainList.hasHighLoadInCard(card);
+        if (!classPickerCell && !highLoad) {
+          throw new Error('Date availability panel did not load');
+        }
+
+        IRCTCExt.NgetTrainList.setStatus(
+          overlay,
+          highLoad
+            ? `High load — close & refresh (attempt ${attempt}/${maxAttempts})...`
+            : `Date panel loading — refresh (attempt ${attempt}/${maxAttempts})...`
+        );
+
+        await IRCTCExt.NgetTrainList.dismissHighLoadError(card, overlay);
+
+        if (!classPickerCell) {
+          throw new Error('Date availability panel did not load');
+        }
+
+        await IRCTCExt.NgetTrainList.clickClassRefresh(classPickerCell, overlay, travelClass);
+      }
+
+      throw new Error(`Date availability panel did not load after ${maxAttempts} attempts`);
     },
 
     parseDateCellStatus(dateCell) {
@@ -2057,20 +2129,17 @@ IRCTCExt.NgetSelectors = {
     },
 
     async refreshClassAvailability(classPickerCell, card, overlay, travelClass) {
-      IRCTCExt.NgetTrainList.scrollIntoViewIfNeeded(classPickerCell);
-
-      const refresh = IRCTCExt.NgetTrainList.findClassRefreshControl(classPickerCell);
-      if (!refresh) throw new Error(`Refresh control not found for class ${travelClass}`);
-
-      IRCTCExt.NgetTrainList.setStatus(overlay, `Refreshing availability for ${travelClass}...`);
-      IRCTCExt.Events.click(refresh);
-      await IRCTCExt.Wait.delay(500);
-      await IRCTCExt.NgetTrainList.waitForDatePanel(card, overlay);
+      await IRCTCExt.NgetTrainList.clickClassRefresh(classPickerCell, overlay, travelClass);
+      await IRCTCExt.NgetTrainList.waitForDatePanel(card, overlay, {
+        classPickerCell,
+        travelClass
+      });
       return true;
     },
 
     async waitForBookableDate(card, journeyDate, travelClass, classPickerCell, overlay) {
       let attempt = 0;
+      const maxAttempts = 100;
       const dateLabel = IRCTCExt.Stations.formatDateForNgetCard(journeyDate) || journeyDate;
 
       while (await IRCTCExt.Bot.isRunning()) {
@@ -2083,7 +2152,10 @@ IRCTCExt.NgetSelectors = {
           continue;
         }
 
-        await IRCTCExt.NgetTrainList.waitForDatePanel(card, overlay);
+        await IRCTCExt.NgetTrainList.waitForDatePanel(card, overlay, {
+          classPickerCell,
+          travelClass
+        });
         await IRCTCExt.NgetTrainList.ensureClassTabActive(card, travelClass, overlay);
 
         const dateCell = IRCTCExt.NgetTrainList.findDateCell(card, journeyDate);
@@ -2103,9 +2175,12 @@ IRCTCExt.NgetSelectors = {
         }
 
         attempt += 1;
+        if (attempt > maxAttempts) {
+          throw new Error(`High load persisted on ${dateLabel} after ${maxAttempts} refresh attempts`);
+        }
         IRCTCExt.NgetTrainList.setStatus(
           overlay,
-          `High load on ${dateLabel} — refreshing (attempt ${attempt})...`
+          `High load on ${dateLabel} — refreshing (attempt ${attempt}/${maxAttempts})...`
         );
         await IRCTCExt.NgetTrainList.refreshClassAvailability(
           classPickerCell,
@@ -6030,7 +6105,9 @@ IRCTCExt.Passengers = {
       let berth = '';
       if (berthSelect?.tagName === 'SELECT') {
         const selected = berthSelect.options[berthSelect.selectedIndex];
-        berth = (selected?.textContent || berthSelect.value || '').replace(/\s+/g, ' ').trim();
+        berth = (selected?.textContent || '').replace(/\s+/g, ' ').trim();
+        if (!berth && berthSelect.value === 'WS') berth = 'Window Side';
+        else if (!berth) berth = String(berthSelect.value || '').trim();
       }
 
       return {
@@ -6384,6 +6461,7 @@ IRCTCExt.Passengers = {
         Middle: 'MB',
         'Side Lower': 'SL',
         'Side Upper': 'SU',
+        'Window Side': 'WS',
         'No Preference': '',
         '': ''
       };
@@ -6404,8 +6482,8 @@ IRCTCExt.Passengers = {
 
       const option = [...berthSelect.options].find(
         (opt) =>
-          opt.value === targetValue ||
-          labels.some((label) => passengersLib().dropdownValueMatches(opt.textContent, label))
+          labels.some((label) => passengersLib().dropdownValueMatches(opt.textContent, label)) ||
+          opt.value === targetValue
       );
       if (!option) return false;
 

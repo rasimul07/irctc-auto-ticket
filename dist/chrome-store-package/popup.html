@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IRCTC Tatkal</title>
+  <link rel="stylesheet" href="packages/core/src/theme/tokens.css">
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header class="header">
+    <div class="header-top">
+      <h1>IRCTC Tatkal Bot</h1>
+      <button type="button" id="toggleMinimizeBtn" class="icon-btn" title="Minimize" aria-label="Minimize popup">−</button>
+    </div>
+    <p id="statusBadge" class="badge">Idle</p>
+  </header>
+
+  <div id="popupBody" class="popup-body">
+  <div id="toast" class="toast toast--hidden" role="alert" aria-live="polite"></div>
+  <div class="tabs-scroll">
+    <nav class="tabs">
+      <button class="tab" data-tab="access" title="Subscription and license">Access</button>
+      <button class="tab active" data-tab="sets" title="Booking profiles">Active set</button>
+    </nav>
+  </div>
+
+  <main>
+    <section id="access" class="panel">
+      <p id="accessStatusText" class="access-status">Checking access...</p>
+      <dl class="access-details">
+        <div class="access-detail-row">
+          <dt>Subscription</dt>
+          <dd id="accessTier">—</dd>
+        </div>
+        <div class="access-detail-row">
+          <dt>Valid until</dt>
+          <dd id="accessValidUntil">—</dd>
+        </div>
+        <div class="access-detail-row">
+          <dt>Status</dt>
+          <dd id="accessActive">—</dd>
+        </div>
+      </dl>
+
+      <section class="access-privacy-notice" aria-label="Local data privacy">
+        <p><strong>Your data stays on this device.</strong></p>
+        <p>Login, journey, passenger, and payment details are saved only in this browser on your local machine. They are not uploaded or stored on any remote server.</p>
+        <p>Uninstalling or removing the extension automatically deletes all saved booking data.</p>
+      </section>
+
+      <section class="access-plans" aria-label="Subscription plans">
+        <h3 class="access-plans__title">Subscription plans</h3>
+        <p class="access-plans__priority">Plan priority: Pro &gt; Basic &gt; Coffee &gt; Trial</p>
+        <table class="access-plans__table">
+          <thead>
+            <tr>
+              <th scope="col">Plan</th>
+              <th scope="col">Extension</th>
+              <th scope="col">Mobile</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Trial</strong></td>
+              <td>Unlimited</td>
+              <td>Blocked</td>
+            </tr>
+            <tr class="access-plan-row--detail">
+              <td colspan="3">7-day free trial after BMC recurring signup</td>
+            </tr>
+            <tr>
+              <td><strong>Coffee</strong></td>
+              <td>Token-based</td>
+              <td>Blocked</td>
+            </tr>
+            <tr class="access-plan-row--detail">
+              <td colspan="3">5 tokens / 30 days for 12 months per coffee purchase; 1 token per payment page; buy again to restart</td>
+            </tr>
+            <tr>
+              <td><strong>Basic</strong></td>
+              <td>Unlimited</td>
+              <td>Blocked</td>
+            </tr>
+            <tr class="access-plan-row--detail">
+              <td colspan="3">BMC Basic membership — unlimited extension bookings</td>
+            </tr>
+            <tr>
+              <td><strong>Pro</strong></td>
+              <td>Unlimited</td>
+              <td>Allowed</td>
+            </tr>
+            <tr class="access-plan-row--detail">
+              <td colspan="3">BMC Pro membership — extension + future mobile apps</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="access-pay" aria-label="Pay on Buy Me a Coffee">
+        <h3 class="access-pay__title">Pay / subscribe</h3>
+        <div class="access-pay__actions">
+          <a id="bmcLink" class="bmc-button" href="https://buymeacoffee.com/mritools" target="_blank" rel="noopener noreferrer">
+            <span class="bmc-button__emoji" aria-hidden="true">☕</span>
+            Buy me a coffee
+          </a>
+          <div class="access-pay__qr">
+            <img src="qr-code.png" alt="Buy Me a Coffee QR code" class="access-qr">
+            <p class="access-pay__qr-caption">Or scan to pay on Buy Me a Coffee</p>
+          </div>
+        </div>
+      </section>
+
+      <p class="access-email-notice">
+        <strong>Use the same email</strong> you paid with on Buy Me a Coffee when linking access below.
+      </p>
+
+      <label>Buy Me a Coffee email
+        <input type="email" id="accessEmail" placeholder="email used on Buy Me a Coffee" autocomplete="email">
+      </label>
+      <button type="button" id="linkAccessEmailBtn" class="btn-secondary">Link email &amp; refresh</button>
+    </section>
+
+    <section id="sets" class="panel active">
+      <div id="setsPanel" class="sets-panel">
+        <div class="sets-toolbar">
+          <select id="bookingSetSelect" class="sets-toolbar__select" aria-label="Active booking set"></select>
+          <div class="sets-toolbar__actions">
+            <button type="button" id="addSetBtn" class="icon-btn--toolbar" title="Add set" aria-label="Add set">
+              <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+            </button>
+            <button type="button" id="duplicateSetBtn" class="icon-btn--toolbar" title="Duplicate set" aria-label="Duplicate set">
+              <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>
+            </button>
+            <button type="button" id="renameSetBtn" class="icon-btn--toolbar" title="Rename set" aria-label="Rename set">
+              <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1.003 1.003 0 0 0 0-1.42l-2.34-2.34a1.003 1.003 0 0 0-1.42 0l-1.83 1.83 3.75 3.75 1.84-1.82z"/></svg>
+            </button>
+            <button type="button" id="deleteSetBtn" class="icon-btn--toolbar icon-btn--danger" title="Delete set" aria-label="Delete set">
+              <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <div id="setupProgress" class="setup-progress setup-progress--inline" aria-label="Setup progress">
+          <div class="setup-progress__bar" aria-hidden="true"><span id="setupProgressFill" style="width:0%"></span></div>
+          <span id="setupProgressLabel" class="setup-progress__label">0/4 ready</span>
+        </div>
+
+        <label class="sets-site-label">IRCTC website version
+          <select id="bookingSite">
+            <option value="eticket" selected>Beta — eticket</option>
+            <option value="nget">Classic — nget</option>
+          </select>
+        </label>
+        <p class="journey-hint sets-site-hint">Classic (nget) automation coming soon. Beta (eticket) is fully supported.</p>
+
+        <div class="set-subtabs-scroll">
+          <nav class="set-subtabs" aria-label="Booking set sections">
+            <button type="button" class="set-subtab active" data-set-section="credentials" data-step="login">Login</button>
+            <button type="button" class="set-subtab" data-set-section="journey" data-step="journey">Journey</button>
+            <button type="button" class="set-subtab" data-set-section="passengers" data-step="passengers">Passengers</button>
+            <button type="button" class="set-subtab" data-set-section="payment" data-step="payment">Payment</button>
+            <button type="button" class="set-subtab" data-set-section="schedule">Timer</button>
+          </nav>
+        </div>
+
+        <div class="set-subpanels">
+          <div id="credentials" class="set-subpanel active">
+      <label>Username <input type="text" id="username" autocomplete="username"></label>
+      <label>Password
+        <div class="password-field">
+          <input type="password" id="password" autocomplete="current-password">
+          <button type="button" id="togglePasswordBtn" class="password-field__toggle" aria-label="Show password" title="Show password">
+            <svg class="password-field__icon password-field__icon--show" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path fill="currentColor" d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/>
+            </svg>
+            <svg class="password-field__icon password-field__icon--hide" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path fill="currentColor" d="M12 7c2.76 0 5 2.24 5 5 0 .65-.13 1.26-.36 1.83l2.92 2.92c1.51-1.26 2.7-2.89 3.43-4.75-1.73-4.39-6-7.5-11-7.5-1.4 0-2.74.25-3.98.7l2.16 2.16C10.74 7.13 11.35 7 12 7zM2 4.27l2.28 2.28.46.46C3.08 8.3 1.78 10.02 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 20.73 3.27 3 2 4.27zM7.53 9.8l1.55 1.55c-.05.21-.08.43-.08.65 0 1.66 1.34 3 3 3 .22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-.78 3.15 3.15.02-.16c0-1.66-1.34-3-3-3l-.17.01z"/>
+            </svg>
+          </button>
+        </div>
+      </label>
+          </div>
+
+          <div id="journey" class="set-subpanel">
+      <label>From station code (preferred) or station name <input type="text" id="fromStation" placeholder="e.g. MLDT or MALDA TOWN"></label>
+      <label>To station code (preferred) or station name <input type="text" id="toStation" placeholder="e.g. SDAH or SEALDAH"></label>
+      <label>Journey Date <input type="date" id="journeyDate" required></label>
+      <label>Train Number (preferred) <input type="text" id="trainNo" placeholder="e.g. 12345"></label>
+      <label>Train Name <input type="text" id="trainName" placeholder="e.g. GOURDAMODAR EXP"></label>
+      <p class="journey-hint">Train number or train name is required.</p>
+      <label>Class
+        <select id="travelClass">
+          <option value="SL">SL - Sleeper</option>
+          <option value="3A">3A - AC 3 Tier</option>
+          <option value="2A">2A - AC 2 Tier</option>
+          <option value="1A">1A - AC First</option>
+          <option value="CC">CC - AC Chair</option>
+          <option value="2S">2S - Second Sitting</option>
+          <option value="3E">3E - AC 3 Economy</option>
+          <option value="EC">EC - Exec. Chair Car</option>
+          <option value="EV">EV - Vistadome AC</option>
+        </select>
+      </label>
+      <label>Quota
+        <select id="quota">
+          <option value="TATKAL" selected>TATKAL</option>
+          <option value="GENERAL">GENERAL</option>
+          <option value="LADIES">LADIES</option>
+        </select>
+      </label>
+          </div>
+
+          <div id="passengers" class="set-subpanel">
+      <div id="passengerList"></div>
+      <button type="button" id="addPassenger" class="btn-secondary">+ Add Passenger</button>
+          </div>
+
+          <div id="schedule" class="set-subpanel">
+      <label class="checkbox-row">
+        <input type="checkbox" id="scheduleEnabled"> Enable Tatkal scheduler
+      </label>
+      <label>Tatkal Window
+        <select id="scheduleType">
+          <option value="ac">AC Tatkal — 10:00 AM IST</option>
+          <option value="non-ac">Non-AC Tatkal — 11:00 AM IST</option>
+        </select>
+      </label>
+      <p id="scheduleStatus" class="journey-hint">Scheduler status unavailable.</p>
+          </div>
+
+          <div id="payment" class="set-subpanel">
+      <label>Payment Method
+        <select id="paymentMethod">
+          <option value="cards">Cards / Net Banking / Wallets / EMI / UPI_CC / Others</option>
+          <option value="upi">BHIM / UPI</option>
+        </select>
+      </label>
+
+      <label class="checkbox-row">
+        <input type="checkbox" id="autoPayEnabled"> Enable auto pay
+      </label>
+
+      <div id="cardsPaymentFields" class="payment-subpanel payment-subpanel--hidden">
+        <label>Payment Provider
+          <select id="cardsProvider">
+            <option value="IRCTC iPay">IRCTC iPay</option>
+            <option value="IRCTC E-Wallet">IRCTC E-Wallet</option>
+            <option value="PhonePe" selected>PhonePe</option>
+          </select>
+        </label>
+
+        <div id="autoPayOptions" class="payment-subpanel payment-subpanel--hidden">
+          <fieldset class="payment-subsection">
+            <h4>Auto pay type</h4>
+            <label class="checkbox-row">
+              <input type="radio" name="autoPayType" value="debit" checked> Debit card
+            </label>
+            <label class="checkbox-row">
+              <input type="radio" name="autoPayType" value="credit"> Credit card
+            </label>
+            <label class="checkbox-row">
+              <input type="radio" name="autoPayType" value="qr"> QR (UPI)
+            </label>
+          </fieldset>
+        </div>
+
+        <fieldset id="debitCardFields" class="payment-subsection">
+          <h4>Debit Card</h4>
+          <label>Card Name <input type="text" id="debitCardName" autocomplete="cc-name"></label>
+          <label>Card Number <input type="text" id="debitCardNumber" inputmode="numeric" maxlength="19" placeholder="XXXX-XXXX-XXXX-XXXX" autocomplete="cc-number"></label>
+          <label>Expiry <input type="text" id="debitCardExpiry" placeholder="MM/YY" maxlength="5" autocomplete="cc-exp"></label>
+          <label>CVV <input type="password" id="debitCardCvv" maxlength="4" autocomplete="cc-csc"></label>
+        </fieldset>
+
+        <fieldset id="creditCardFields" class="payment-subsection">
+          <h4>Credit Card</h4>
+          <label>Card Name <input type="text" id="creditCardName" autocomplete="cc-name"></label>
+          <label>Card Number <input type="text" id="creditCardNumber" inputmode="numeric" maxlength="19" placeholder="XXXX-XXXX-XXXX-XXXX" autocomplete="cc-number"></label>
+          <label>Expiry <input type="text" id="creditCardExpiry" placeholder="MM/YY" maxlength="5" autocomplete="cc-exp"></label>
+          <label>CVV <input type="password" id="creditCardCvv" maxlength="4" autocomplete="cc-csc"></label>
+        </fieldset>
+      </div>
+
+      <div id="upiPaymentFields" class="payment-subpanel payment-subpanel--hidden">
+        <label>UPI Provider
+          <select id="upiProvider">
+            <option value="IRCTC iPay" selected>IRCTC iPay</option>
+            <option value="PhonePe">PhonePe (recommended)</option>
+            <option value="Razorpay">Razorpay</option>
+            <option value="PayU">PayU</option>
+            <option value="Amazon Pay">Amazon Pay</option>
+          </select>
+        </label>
+      </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="actions">
+    <div class="actions__row actions__row--primary">
+      <button type="button" id="saveBtn" class="btn-primary btn-compact">Save</button>
+      <button type="button" id="startBtn" class="btn-accent btn-compact" title="Start Auto-Booking">Start</button>
+      <button type="button" id="stopBtn" class="btn-danger btn-compact" title="Stop booking" hidden>Stop</button>
+    </div>
+    <button type="button" id="clearBtn" class="btn-danger btn-compact btn-compact--ghost">Clear all</button>
+  </footer>
+  </div>
+
+  <script src="packages/core/dist/chrome-core.iife.js"></script>
+  <script src="lib/schedule.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

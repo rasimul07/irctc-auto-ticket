@@ -197,9 +197,13 @@ export function createCapacitorCore({ preferences, clientType }: {
     };
     BookingValidation: {
         validate: typeof validateBookingConfig;
+        getTatkalJourneyDateWarning: typeof getTatkalJourneyDateWarning;
+        getClassBerthWarnings: typeof getClassBerthWarnings;
     };
 };
 export function resolveMobileClientType(platform: any): string;
 import * as network from '../api/network.js';
 import { validateBookingConfig } from '../validation/bookingValidation.js';
+import { getTatkalJourneyDateWarning } from '../validation/bookingValidation.js';
+import { getClassBerthWarnings } from '../validation/bookingValidation.js';
 //# sourceMappingURL=capacitor.d.ts.map

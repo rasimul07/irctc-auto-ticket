@@ -4,7 +4,15 @@ export { createAccessApi } from './api/accessApi.js';
 export { ACCESS_DEFAULTS, CLIENT_TYPES, getApiBase } from './api/accessConfig.js';
 export { isMobileClient, checkMobileBookingAllowed, buildMobileBookingMessage } from './api/accessApi.js';
 export * as network from './api/network.js';
-export { validateBookingConfig } from './validation/bookingValidation.js';
+export {
+  validateBookingConfig,
+  getNextIstDateIso,
+  isTatkalQuota,
+  getTatkalJourneyDateWarning,
+  isChairClass,
+  isBerthMeaningfulForClass,
+  getClassBerthWarnings
+} from './validation/bookingValidation.js';
 export { getSetupSteps, getSetupCompletion } from './validation/setupProgress.js';
 export type { SetupStep, SetupStepId, SetupCompletion } from './validation/setupProgress.js';
 export type { IrctcConfig } from './types/config.js';

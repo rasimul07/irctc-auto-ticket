@@ -3,7 +3,11 @@ import { createStorage } from '../storage/createStorage.js';
 import { createAccessApi } from '../api/accessApi.js';
 import { CLIENT_TYPES } from '../api/accessConfig.js';
 import { createChromeBridge } from '../platform/bridge.js';
-import { validateBookingConfig } from '../validation/bookingValidation.js';
+import {
+  validateBookingConfig,
+  getTatkalJourneyDateWarning,
+  getClassBerthWarnings
+} from '../validation/bookingValidation.js';
 import * as network from '../api/network.js';
 import { ACCESS_DEFAULTS, getApiBase } from '../api/accessConfig.js';
 
@@ -40,6 +44,10 @@ export function createChromeExtensionCore({ clientType = CLIENT_TYPES.CHROME_EXT
       CLIENT_TYPE: clientType,
       getApiBase: (config) => getApiBase(config, ACCESS_DEFAULTS)
     },
-    BookingValidation: { validate: validateBookingConfig }
+    BookingValidation: {
+      validate: validateBookingConfig,
+      getTatkalJourneyDateWarning,
+      getClassBerthWarnings
+    }
   };
 }
