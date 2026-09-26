@@ -180,8 +180,12 @@ export function createChromeExtensionCore({ clientType }?: {
     };
     BookingValidation: {
         validate: typeof validateBookingConfig;
+        getTatkalJourneyDateWarning: typeof getTatkalJourneyDateWarning;
+        getClassBerthWarnings: typeof getClassBerthWarnings;
     };
 };
 import * as network from '../api/network.js';
 import { validateBookingConfig } from '../validation/bookingValidation.js';
+import { getTatkalJourneyDateWarning } from '../validation/bookingValidation.js';
+import { getClassBerthWarnings } from '../validation/bookingValidation.js';
 //# sourceMappingURL=chrome.d.ts.map

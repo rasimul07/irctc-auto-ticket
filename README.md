@@ -11,6 +11,8 @@ Chrome extension (Manifest V3) that automates the live IRCTC e-ticket flow from 
 
 Reload the extension after changing JS, CSS, or `lib/accessConfig.js`.
 
+**Chrome Web Store:** submission checklist, listing copy, and permission justifications — [`docs/chrome-web-store.md`](docs/chrome-web-store.md). Privacy policy template — [`docs/privacy-policy.md`](docs/privacy-policy.md). Store upload zip: `node scripts/build-store-zip.mjs` → `dist/irctc-extension-v*.zip`.
+
 ---
 
 ## Access and API

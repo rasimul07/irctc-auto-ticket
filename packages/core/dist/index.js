@@ -648,6 +648,104 @@ function createAccessApi({ storage, clientType, defaults = ACCESS_DEFAULTS }) {
 function isCardComplete(card) {
   return !!(card?.name && card?.number && card?.expiry && card?.cvv);
 }
+function getIstDateParts(date = /* @__PURE__ */ new Date()) {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(date);
+  const get = (type) => Number(parts.find((p) => p.type === type)?.value || 0);
+  return {
+    year: get("year"),
+    month: get("month"),
+    day: get("day")
+  };
+}
+function formatIsoDate(year, month, day) {
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${year}-${pad(month)}-${pad(day)}`;
+}
+function getNextIstDateIso(date = /* @__PURE__ */ new Date()) {
+  const { year, month, day } = getIstDateParts(date);
+  const nextDay = new Date(Date.UTC(year, month - 1, day + 1));
+  return formatIsoDate(nextDay.getUTCFullYear(), nextDay.getUTCMonth() + 1, nextDay.getUTCDate());
+}
+function isTatkalQuota(quota) {
+  return String(quota || "").trim().toUpperCase() === "TATKAL";
+}
+function normalizeJourneyDateIso(dateValue) {
+  if (!dateValue) return "";
+  const iso = String(dateValue).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+  const parts = String(dateValue).split("/");
+  if (parts.length === 3) {
+    const [dd, mm, yyyy] = parts;
+    return `${yyyy}-${mm.padStart(2, "0")}-${dd.padStart(2, "0")}`;
+  }
+  return "";
+}
+function formatIstDateLabel(isoDate) {
+  const match = String(isoDate).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return isoDate;
+  return `${match[3]}/${match[2]}/${match[1]}`;
+}
+function getTatkalJourneyDateWarning(journey = {}) {
+  if (!isTatkalQuota(journey.quota) || !journey.date) return null;
+  const expected = getNextIstDateIso();
+  const actual = normalizeJourneyDateIso(journey.date);
+  if (!actual || actual === expected) return null;
+  return `Tatkal quota requires journey date to be tomorrow (${formatIstDateLabel(expected)} IST).`;
+}
+var CHAIR_CLASSES = /* @__PURE__ */ new Set(["CC", "2S", "EC", "EV"]);
+var SLEEPER_BERTH_OPTIONS = /* @__PURE__ */ new Set(["Lower", "Middle", "Upper", "Side Lower", "Side Upper"]);
+function isChairClass(travelClass) {
+  return CHAIR_CLASSES.has(String(travelClass || "").trim().toUpperCase());
+}
+function isBerthMeaningfulForClass(travelClass, berth) {
+  const normalizedBerth = String(berth || "").trim();
+  if (!normalizedBerth || normalizedBerth === "No Preference" || normalizedBerth === "Window Side") {
+    return true;
+  }
+  if (!isChairClass(travelClass)) return true;
+  return !SLEEPER_BERTH_OPTIONS.has(normalizedBerth);
+}
+function buildClassBerthMismatchMessage(travelClass, berth) {
+  return `Berth "${berth}" does not apply to class ${travelClass}. Use No Preference or Window Side.`;
+}
+function getClassBerthWarnings(config = {}) {
+  const journey = config.journey || {};
+  const passengers = config.passengers || [];
+  const travelClass = String(journey.travelClass || "").trim();
+  if (!isChairClass(travelClass)) {
+    return {
+      journey: null,
+      passengers: [],
+      blockingMessage: null,
+      tab: null,
+      focusId: null,
+      focusSelector: null
+    };
+  }
+  const passengerWarnings = passengers.map((passenger, index) => {
+    if (!(passenger.name || "").trim()) return null;
+    const berth = String(passenger.berth || "").trim();
+    if (isBerthMeaningfulForClass(travelClass, berth)) return null;
+    return {
+      index,
+      message: buildClassBerthMismatchMessage(travelClass, berth)
+    };
+  }).filter(Boolean);
+  const first = passengerWarnings[0] || null;
+  return {
+    journey: passengerWarnings.length ? `Chair class ${travelClass} only supports No Preference or Window Side berth.` : null,
+    passengers: passengerWarnings,
+    blockingMessage: first?.message || null,
+    tab: first ? "passengers" : null,
+    focusId: null,
+    focusSelector: first ? `.passenger-card[data-index="${first.index}"] .p-berth` : null
+  };
+}
 function validateBookingConfig(config) {
   const credentials = config?.credentials || {};
   const journey = config?.journey || {};
@@ -667,6 +765,19 @@ function validateBookingConfig(config) {
   }
   if (!journey.date) {
     return { tab: "journey", focusId: "journeyDate", message: "Please select the journey date." };
+  }
+  const tatkalDateWarning = getTatkalJourneyDateWarning(journey);
+  if (tatkalDateWarning) {
+    return { tab: "journey", focusId: "journeyDate", message: tatkalDateWarning };
+  }
+  const classBerthWarnings = getClassBerthWarnings(config);
+  if (classBerthWarnings.blockingMessage) {
+    return {
+      tab: classBerthWarnings.tab,
+      focusId: classBerthWarnings.focusId,
+      focusSelector: classBerthWarnings.focusSelector,
+      message: classBerthWarnings.blockingMessage
+    };
   }
   if (!journey.trainNo?.trim() && !journey.trainName?.trim()) {
     return {
@@ -851,7 +962,11 @@ function createChromeExtensionCore({ clientType = CLIENT_TYPES.CHROME_EXTENSION 
       CLIENT_TYPE: clientType,
       getApiBase: (config) => getApiBase(config, ACCESS_DEFAULTS)
     },
-    BookingValidation: { validate: validateBookingConfig }
+    BookingValidation: {
+      validate: validateBookingConfig,
+      getTatkalJourneyDateWarning,
+      getClassBerthWarnings
+    }
   };
 }
 
@@ -892,7 +1007,11 @@ function createCapacitorCore({ preferences, clientType }) {
       CLIENT_TYPE: clientType,
       getApiBase: (config) => getApiBase(config, ACCESS_DEFAULTS)
     },
-    BookingValidation: { validate: validateBookingConfig }
+    BookingValidation: {
+      validate: validateBookingConfig,
+      getTatkalJourneyDateWarning,
+      getClassBerthWarnings
+    }
   };
 }
 function resolveMobileClientType(platform) {
@@ -915,9 +1034,15 @@ export {
   createStorage,
   createWebViewBridge,
   getApiBase,
+  getClassBerthWarnings,
+  getNextIstDateIso,
   getSetupCompletion,
   getSetupSteps,
+  getTatkalJourneyDateWarning,
+  isBerthMeaningfulForClass,
+  isChairClass,
   isMobileClient,
+  isTatkalQuota,
   mergeConfig,
   network_exports as network,
   resolveMobileClientType,

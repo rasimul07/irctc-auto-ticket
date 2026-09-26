@@ -21,9 +21,11 @@ const els = {
   fromStation: document.getElementById('fromStation'),
   toStation: document.getElementById('toStation'),
   journeyDate: document.getElementById('journeyDate'),
+  journeyDateWarn: document.getElementById('journeyDateWarn'),
   trainNo: document.getElementById('trainNo'),
   trainName: document.getElementById('trainName'),
   travelClass: document.getElementById('travelClass'),
+  travelClassWarn: document.getElementById('travelClassWarn'),
   quota: document.getElementById('quota'),
   paymentMethod: document.getElementById('paymentMethod'),
   cardsPaymentFields: document.getElementById('cardsPaymentFields'),
@@ -157,6 +159,74 @@ function showToast(text, isError = false) {
 
 function validateEssentials(form) {
   return window.IRCTCExt?.BookingValidation?.validate(form) ?? null;
+}
+
+function updateJourneyDateWarning() {
+  if (!els.journeyDateWarn || !els.journeyDate) return;
+
+  const warning =
+    window.IRCTCExt?.BookingValidation?.getTatkalJourneyDateWarning?.(readForm().journey) ?? null;
+
+  if (warning) {
+    els.journeyDateWarn.textContent = warning;
+    els.journeyDateWarn.classList.remove('hidden');
+    els.journeyDate.classList.add('warn-field');
+    return;
+  }
+
+  els.journeyDateWarn.textContent = '';
+  els.journeyDateWarn.classList.add('hidden');
+  els.journeyDate.classList.remove('warn-field');
+}
+
+function updateClassBerthWarnings() {
+  const warnings =
+    window.IRCTCExt?.BookingValidation?.getClassBerthWarnings?.(readForm()) ?? {
+      journey: null,
+      passengers: []
+    };
+
+  if (els.travelClassWarn && els.travelClass) {
+    if (warnings.journey) {
+      els.travelClassWarn.textContent = warnings.journey;
+      els.travelClassWarn.classList.remove('hidden');
+      els.travelClass.classList.add('warn-field');
+    } else {
+      els.travelClassWarn.textContent = '';
+      els.travelClassWarn.classList.add('hidden');
+      els.travelClass.classList.remove('warn-field');
+    }
+  }
+
+  const warningByIndex = new Map(
+    (warnings.passengers || []).map((entry) => [String(entry.index), entry.message])
+  );
+
+  els.passengerList?.querySelectorAll('.passenger-card').forEach((card) => {
+    const warnEl = card.querySelector('.passenger-warn');
+    const berthEl = card.querySelector('.p-berth');
+    const message = warningByIndex.get(card.dataset.index || '');
+
+    if (warnEl) {
+      if (message) {
+        warnEl.textContent = message;
+        warnEl.classList.remove('hidden');
+      } else {
+        warnEl.textContent = '';
+        warnEl.classList.add('hidden');
+      }
+    }
+
+    if (berthEl) {
+      if (message) berthEl.classList.add('warn-field');
+      else berthEl.classList.remove('warn-field');
+    }
+  });
+}
+
+function updateJourneyWarnings() {
+  updateJourneyDateWarning();
+  updateClassBerthWarnings();
 }
 
 function focusField(target) {
@@ -405,12 +475,14 @@ function createPassengerRow(passenger = {}, index = 0) {
         <option ${passenger.food === 'No Food' ? 'selected' : ''}>No Food</option>
       </select>
     </label>
+    <p class="passenger-warn hidden" role="alert"></p>
   `;
   const removeBtn = card.querySelector('.remove-passenger');
   if (removeBtn) {
     removeBtn.addEventListener('click', () => {
       card.remove();
       reindexPassengers();
+      updateClassBerthWarnings();
     });
   }
   return card;
@@ -431,6 +503,7 @@ function renderPassengers(passengers) {
   els.passengerList.innerHTML = '';
   const list = passengers?.length ? passengers : DEFAULT_CONFIG.passengers;
   list.forEach((p, i) => els.passengerList.appendChild(createPassengerRow(p, i)));
+  updateClassBerthWarnings();
 }
 
 function readPassengers() {
@@ -520,6 +593,7 @@ function fillForm(config) {
   activeSetName = config.activeSetName || 'Set 1';
   updateStatusBadge(config.state?.status || 'idle', activeSetName);
   updateSetupProgress(config);
+  updateJourneyWarnings();
 }
 
 function formatStatusLabel(status) {
@@ -755,10 +829,28 @@ async function load() {
   }, 2000);
 }
 
-['username', 'password', 'fromStation', 'toStation', 'journeyDate', 'trainNo', 'trainName'].forEach((id) => {
-  document.getElementById(id)?.addEventListener('input', () => {
-    updateSetupProgress({ ...readForm(), activeSetName });
-  });
+['username', 'password', 'fromStation', 'toStation', 'journeyDate', 'trainNo', 'trainName', 'quota', 'travelClass'].forEach(
+  (id) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const handler = () => {
+      updateSetupProgress({ ...readForm(), activeSetName });
+      if (id === 'journeyDate' || id === 'quota') updateJourneyDateWarning();
+      if (id === 'travelClass') updateClassBerthWarnings();
+    };
+    el.addEventListener('input', handler);
+    if (id === 'quota' || id === 'travelClass') el.addEventListener('change', handler);
+  }
+);
+
+els.passengerList?.addEventListener('change', (event) => {
+  if (!event.target.classList.contains('p-berth')) return;
+  updateClassBerthWarnings();
+});
+
+els.passengerList?.addEventListener('input', (event) => {
+  if (!event.target.classList.contains('p-name')) return;
+  updateClassBerthWarnings();
 });
 
 async function save() {
@@ -921,6 +1013,7 @@ els.addPassenger.addEventListener('click', () => {
     return;
   }
   els.passengerList.appendChild(createPassengerRow({}, count));
+  updateClassBerthWarnings();
 });
 
 els.scheduleEnabled?.addEventListener('change', () => updateScheduleStatus());

@@ -136,6 +136,7 @@ IRCTCExt.NgetSelectors = {
     dateCell: ['div.pre-avl'],
     dateLabel: ['div.pre-avl > div:first-child strong'],
     dateStatus: ['div.pre-avl .AVAILABLE', 'div.pre-avl .RAC', 'div.pre-avl .WL', 'div.pre-avl .REGRET'],
+    highLoadClose: ['.fa.fa-close', 'span.fa-close', '.fa-close'],
     bookNowBtn: ['button.train_Search', 'button.btnDefault.train_Search'],
     bookNowEnabled: [
       'button.train_Search:not(.disable-book)',
