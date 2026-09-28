@@ -20,7 +20,8 @@ const ROOT_FILES = [
   'background.js',
   'popup.html',
   'popup.js',
-  'popup.css'
+  'popup.css',
+  'qr-code.png'
 ];
 
 const ROOT_DIRS = ['icons', 'lib', 'overlay', 'sites'];
