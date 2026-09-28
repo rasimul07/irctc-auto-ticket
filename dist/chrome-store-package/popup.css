@@ -368,6 +368,31 @@ main {
   color: var(--rt-text-muted);
 }
 
+.journey-warn {
+  margin: 4px 0 10px;
+  font-size: 11px;
+  color: var(--rt-accent);
+}
+
+.journey-warn.hidden {
+  display: none;
+}
+
+input.warn-field,
+select.warn-field {
+  border-color: var(--rt-accent);
+}
+
+.passenger-warn {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: var(--rt-accent);
+}
+
+.passenger-warn.hidden {
+  display: none;
+}
+
 label {
   display: block;
   margin-bottom: 10px;
