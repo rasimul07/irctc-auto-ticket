@@ -282,6 +282,16 @@ IRCTCExt.Bot = {
         await IRCTCExt.Storage.updateState({ passengersDone: true, currentStep: 'review' });
         return 'continue';
       }
+      const psgnPrefs = IRCTCExt.NgetPsgnPreferencesFlow;
+      const awaitingPsgnContinue =
+        config.state.psgnPaymentContinueClicked ||
+        (psgnPrefs?.isPageProcessing?.() && psgnPrefs?.findPaymentPanel?.());
+      if (awaitingPsgnContinue && psgnPrefs?.waitAfterContinueClick) {
+        await psgnPrefs.waitAfterContinueClick(overlay);
+        if (site.isPaymentPath(location.pathname)) return 'continue';
+        if (site.isReviewPath(location.pathname)) return 'continue';
+        return 'wait';
+      }
       await site.flows.BookingFlow.configurePsgninputOptions(config, overlay);
       if (site.isPaymentPath(location.pathname)) return 'continue';
       if (site.isReviewPath(location.pathname)) return 'continue';
@@ -368,6 +378,7 @@ IRCTCExt.Bot = {
     if (resetSession) {
       Object.assign(sessionReset, {
         passengersDone: false,
+        psgnPaymentContinueClicked: false,
         paymentDone: false,
         paymentPhase: null,
         paymentGateway: null,
@@ -480,6 +491,7 @@ IRCTCExt.Bot = {
       paused: false,
       status: 'running',
       passengersDone: false,
+      psgnPaymentContinueClicked: false,
       paymentDone: false,
       paymentPhase: null,
       paymentGateway: null,

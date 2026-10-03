@@ -38,6 +38,7 @@
       paused: false,
       message: '',
       passengersDone: false,
+      psgnPaymentContinueClicked: false,
       paymentDone: false,
       autoRestartCount: 0,
       paymentPhase: null,
@@ -1641,7 +1642,10 @@ IRCTCExt.NgetPaths = {
     if (state.awaitingGateway && state.paymentPhase === 'gateway') return 'gateway';
     if (IRCTCExt.NgetPaths.isPaymentPath(path)) return 'payment';
     if (IRCTCExt.NgetPaths.isReviewPath(path)) return 'review';
-    if (path.includes('psgninput')) return state.passengersDone ? 'review' : 'passengers';
+    if (path.includes('psgninput')) {
+      if (state.psgnPaymentContinueClicked) return 'review';
+      return state.passengersDone ? 'review' : 'passengers';
+    }
     if (path.includes('train-list')) return 'train-list';
     if (path.includes('train-search')) {
       if (IRCTCExt.NgetLanguageFlow?.isLanguageModalVisible?.()) return 'language';
@@ -1657,6 +1661,7 @@ IRCTCExt.NgetPaths = {
 
     if (IRCTCExt.NgetPaths.isReviewPath(path) || IRCTCExt.NgetPaths.isPaymentPath(path)) {
       updates.passengersDone = true;
+      updates.psgnPaymentContinueClicked = false;
     }
 
     if (IRCTCExt.NgetPaths.isGatewayPath(path)) {
@@ -7186,7 +7191,26 @@ IRCTCExt.Passengers = {
       );
     },
 
+    isPageProcessing() {
+      const blockers = document.querySelectorAll(
+        '.ui-blockui, .ui-blockui-document, .p-blockui, .p-blockui-document, .ui-widget-overlay'
+      );
+      for (const el of blockers) {
+        if (IRCTCExt.Wait.isVisible(el)) return true;
+      }
+
+      const dialogs = document.querySelectorAll('[role="dialog"], .ui-dialog, .p-dialog');
+      for (const dialog of dialogs) {
+        if (!IRCTCExt.Wait.isVisible(dialog)) continue;
+        const text = (dialog.textContent || '').replace(/\s+/g, ' ').trim();
+        if (/please\s*wait/i.test(text)) return true;
+      }
+
+      return false;
+    },
+
     isContinueEnabled(btn) {
+      if (IRCTCExt.NgetPsgnPreferencesFlow.isPageProcessing()) return false;
       if (!btn || !IRCTCExt.Wait.isVisible(btn)) return false;
       if (btn.disabled) return false;
       if (btn.classList.contains('disabled')) return false;
@@ -7218,6 +7242,7 @@ IRCTCExt.Passengers = {
 
       overlay.setStatus('Clicking Continue...');
       sharedPrefs().clickTarget(btn);
+      await IRCTCExt.Storage.updateState({ psgnPaymentContinueClicked: true });
       await IRCTCExt.Wait.delay(800);
 
       const navigated = await IRCTCExt.Wait.poll(
@@ -7225,10 +7250,38 @@ IRCTCExt.Passengers = {
         { timeout: 30000, interval: 300 }
       );
       if (!navigated) throw new Error('Did not leave passenger page after clicking Continue');
+      await IRCTCExt.Storage.updateState({ psgnPaymentContinueClicked: false });
+      return true;
+    },
+
+    async waitAfterContinueClick(overlay, timeout = 90000) {
+      overlay.setStatus('IRCTC is processing — please wait...');
+      const reached = await IRCTCExt.Wait.poll(
+        () => {
+          if (IRCTCExt.NgetPsgnPreferencesFlow.hasLeftPsgninput()) return true;
+          if (IRCTCExt.NgetPaths.isReviewPath(location.pathname)) return true;
+          if (IRCTCExt.NgetPaths.isPaymentPath(location.pathname)) return true;
+          if (IRCTCExt.NgetPsgnPreferencesFlow.isPageProcessing()) return null;
+          return null;
+        },
+        { timeout, interval: 400 }
+      );
+      if (!reached) {
+        throw new Error('Timed out waiting for IRCTC after Continue on payment mode');
+      }
+      await IRCTCExt.Storage.updateState({ psgnPaymentContinueClicked: false });
       return true;
     },
 
     async configure(config, overlay) {
+      const stored = await IRCTCExt.Storage.get();
+      if (
+        stored.state?.psgnPaymentContinueClicked ||
+        IRCTCExt.NgetPsgnPreferencesFlow.isPageProcessing()
+      ) {
+        return IRCTCExt.NgetPsgnPreferencesFlow.waitAfterContinueClick(overlay);
+      }
+
       overlay.setStep('Review');
       await IRCTCExt.Wait.delay(600);
 
@@ -8634,6 +8687,16 @@ IRCTCExt.Bot = {
         await IRCTCExt.Storage.updateState({ passengersDone: true, currentStep: 'review' });
         return 'continue';
       }
+      const psgnPrefs = IRCTCExt.NgetPsgnPreferencesFlow;
+      const awaitingPsgnContinue =
+        config.state.psgnPaymentContinueClicked ||
+        (psgnPrefs?.isPageProcessing?.() && psgnPrefs?.findPaymentPanel?.());
+      if (awaitingPsgnContinue && psgnPrefs?.waitAfterContinueClick) {
+        await psgnPrefs.waitAfterContinueClick(overlay);
+        if (site.isPaymentPath(location.pathname)) return 'continue';
+        if (site.isReviewPath(location.pathname)) return 'continue';
+        return 'wait';
+      }
       await site.flows.BookingFlow.configurePsgninputOptions(config, overlay);
       if (site.isPaymentPath(location.pathname)) return 'continue';
       if (site.isReviewPath(location.pathname)) return 'continue';
@@ -8720,6 +8783,7 @@ IRCTCExt.Bot = {
     if (resetSession) {
       Object.assign(sessionReset, {
         passengersDone: false,
+        psgnPaymentContinueClicked: false,
         paymentDone: false,
         paymentPhase: null,
         paymentGateway: null,
@@ -8832,6 +8896,7 @@ IRCTCExt.Bot = {
       paused: false,
       status: 'running',
       passengersDone: false,
+      psgnPaymentContinueClicked: false,
       paymentDone: false,
       paymentPhase: null,
       paymentGateway: null,

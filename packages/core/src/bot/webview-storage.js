@@ -38,6 +38,7 @@
       paused: false,
       message: '',
       passengersDone: false,
+      psgnPaymentContinueClicked: false,
       paymentDone: false,
       autoRestartCount: 0,
       paymentPhase: null,

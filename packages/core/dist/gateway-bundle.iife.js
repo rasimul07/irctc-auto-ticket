@@ -39,6 +39,7 @@
         paused: false,
         message: "",
         passengersDone: false,
+        psgnPaymentContinueClicked: false,
         paymentDone: false,
         autoRestartCount: 0,
         paymentPhase: null,
@@ -216,7 +217,10 @@
       if (state.awaitingGateway && state.paymentPhase === "gateway") return "gateway";
       if (IRCTCExt.NgetPaths.isPaymentPath(path)) return "payment";
       if (IRCTCExt.NgetPaths.isReviewPath(path)) return "review";
-      if (path.includes("psgninput")) return state.passengersDone ? "review" : "passengers";
+      if (path.includes("psgninput")) {
+        if (state.psgnPaymentContinueClicked) return "review";
+        return state.passengersDone ? "review" : "passengers";
+      }
       if (path.includes("train-list")) return "train-list";
       if (path.includes("train-search")) {
         if (IRCTCExt.NgetLanguageFlow?.isLanguageModalVisible?.()) return "language";
@@ -229,6 +233,7 @@
       const updates = {};
       if (IRCTCExt.NgetPaths.isReviewPath(path) || IRCTCExt.NgetPaths.isPaymentPath(path)) {
         updates.passengersDone = true;
+        updates.psgnPaymentContinueClicked = false;
       }
       if (IRCTCExt.NgetPaths.isGatewayPath(path)) {
         if (state.paymentPhase === "gateway" || state.awaitingGateway) {
