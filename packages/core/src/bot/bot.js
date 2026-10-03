@@ -539,6 +539,9 @@ IRCTCExt.Bot = {
 
       if (msg.type === 'START_BOOKING') {
         (async () => {
+          if (msg.config) {
+            IRCTCExt.Storage.setCachedConfig(msg.config);
+          }
           const config = await IRCTCExt.Storage.get();
           if (await IRCTCExt.Bot.wasStopped()) return;
 
@@ -546,7 +549,9 @@ IRCTCExt.Bot = {
           if (await IRCTCExt.Bot.wasStopped()) return;
 
           if (!IRCTCExt.Bot.running) {
-            await IRCTCExt.Bot.start();
+            await IRCTCExt.Bot.start({ resetSession: false });
+          } else {
+            await IRCTCExt.Bot.kickRunLoop();
           }
         })().catch((err) => console.error('[IRCTC-Bot] Start failed:', err));
         sendResponse({ ok: true });

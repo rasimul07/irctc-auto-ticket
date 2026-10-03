@@ -23,7 +23,9 @@ async function main() {
     event_id: row.event_id,
     type: row.payload?.type,
     email: row.payload?.data?.supporter_email,
-    membership_level_name: row.payload?.data?.membership_level_name
+    membership_level_name: row.payload?.data?.membership_level_name,
+    psp_id: row.payload?.data?.psp_id,
+    status: row.payload?.data?.status
   }));
 
   console.log(JSON.stringify({ email, events: summarizedEvents, licenses: licenses.rows }, null, 2));

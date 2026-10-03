@@ -295,6 +295,10 @@ function extractBmcEventId(payload) {
 }
 
 function extractBmcMembershipId(payload) {
+  const txId = payload?.data?.transaction_id;
+  if (txId && String(txId).startsWith('sub_')) {
+    return String(txId);
+  }
   return (
     payload?.data?.psp_id ||
     payload?.data?.membership_id ||
@@ -342,8 +346,8 @@ function extractCoffeeCount(payload) {
   return Number.isFinite(count) && count > 0 ? count : 1;
 }
 
-function extractMembershipPlan(payload) {
-  const levelName = String(payload?.data?.membership_level_name || '').trim();
+function extractMembershipPlanFromLevelName(levelNameRaw) {
+  const levelName = String(levelNameRaw || '').trim();
   if (!levelName) return null;
 
   const basicName = config.bmcPlanBasic.toLowerCase();
@@ -356,6 +360,64 @@ function extractMembershipPlan(payload) {
     return 'basic';
   }
   return null;
+}
+
+function extractMembershipPlan(payload) {
+  const data = payload?.data || {};
+  return (
+    extractMembershipPlanFromLevelName(data.membership_level_name) ||
+    extractMembershipPlanFromLevelName(data.membership_level) ||
+    extractMembershipPlanFromLevelName(data.tier_name) ||
+    null
+  );
+}
+
+function isMembershipPayloadActive(payload) {
+  const data = payload?.data || {};
+  const status = String(data.status || '').toLowerCase();
+  if (status === 'canceled' || status === 'paused') return false;
+  if (data.canceled === 'true' || data.paused === 'true') return false;
+  if (status === 'active') return true;
+  const eventType = String(payload?.type || '');
+  return eventType === 'membership.started' || eventType === 'membership.updated';
+}
+
+async function resolveMembershipPlan(payload, email) {
+  const direct = extractMembershipPlan(payload);
+  if (direct) return direct;
+
+  const pspId = extractBmcMembershipId(payload);
+  if (pspId) {
+    const bySub = await query(`SELECT plan FROM licenses WHERE bmc_membership_id = $1 LIMIT 1`, [pspId]);
+    if (bySub.rows[0]?.plan) {
+      return normalizePlan(bySub.rows[0].plan);
+    }
+  }
+
+  const normalized = normalizeEmail(email);
+  if (normalized) {
+    const existing = await getLicenseByEmail(normalized);
+    if (existing && (existing.plan === 'pro' || existing.plan === 'basic')) {
+      return normalizePlan(existing.plan);
+    }
+  }
+
+  return null;
+}
+
+async function needsMembershipLicenseRepair(email, payload) {
+  if (!isMembershipPayloadActive(payload)) return false;
+
+  const normalized = normalizeEmail(email);
+  if (!normalized) return false;
+
+  const incoming = await resolveMembershipPlan(payload, email);
+  if (!incoming) return false;
+
+  const license = await getLicenseByEmail(normalized);
+  if (!license || !license.active) return true;
+  if (!isLicenseActive(license)) return true;
+  return comparePlanPriority(incoming, license.plan) > 0;
 }
 
 async function recordBmcEvent(eventId, payload) {
@@ -454,7 +516,7 @@ async function handleDonationRefunded(email, payload) {
 }
 
 async function handleMembershipEvent(email, payload, active = true) {
-  const plan = extractMembershipPlan(payload);
+  const plan = await resolveMembershipPlan(payload, email);
   if (!plan) {
     return { processed: false, reason: 'unknown_membership_level' };
   }
@@ -473,14 +535,83 @@ async function handleMembershipEvent(email, payload, active = true) {
   return { processed: true, email: license.email, plan: license.plan };
 }
 
-async function processBmcWebhook(payload) {
-  const eventId = extractBmcEventId(payload);
-  const inserted = await recordBmcEvent(eventId, payload);
-  if (!inserted) {
-    return { duplicate: true, eventId };
+async function syncMembershipEventsForEmail(email) {
+  const normalized = normalizeEmail(email);
+  if (!normalized) {
+    return { processed: 0, results: [] };
   }
 
+  const rows = await query(
+    `SELECT event_id, payload
+     FROM bmc_events
+     WHERE LOWER(payload->'data'->>'supporter_email') = $1
+       AND payload->>'type' IN (
+         'membership.started',
+         'membership.updated',
+         'membership.cancelled',
+         'membership.paused'
+       )
+     ORDER BY id ASC`,
+    [normalized]
+  );
+
+  const results = [];
+  for (const row of rows.rows) {
+    const payload = row.payload;
+    const eventType = String(payload?.type || '').trim();
+    if (eventType === 'membership.cancelled' || eventType === 'membership.paused') {
+      const plan = extractMembershipPlan(payload);
+      const license = plan ? await deactivateLicense(normalized, plan) : await deactivateLicense(normalized);
+      results.push({ eventId: row.event_id, type: eventType, processed: !!license });
+      continue;
+    }
+    const result = await handleMembershipEvent(normalized, payload, true);
+    results.push({ eventId: row.event_id, type: eventType, ...result });
+  }
+
+  return { email: normalized, processed: results.length, results };
+}
+
+async function grantManualLicense({ email, plan, bmcMembershipId = null, expiresAt = null }) {
+  const normalizedPlan = normalizePlan(plan);
+  if (!['trial', 'coffee', 'basic', 'pro'].includes(normalizedPlan)) {
+    const err = new Error(`Invalid plan: ${plan}`);
+    err.code = 'INVALID_PLAN';
+    throw err;
+  }
+
+  let expiry = expiresAt;
+  if (!expiry && normalizedPlan === 'trial') {
+    expiry = addDays(new Date(), config.freeTrialDays);
+  }
+
+  return upsertLicense({
+    email,
+    plan: normalizedPlan,
+    bmcMembershipId,
+    expiresAt: expiry,
+    tokensBalance: 0,
+    tokenPeriodEnd: null,
+    active: true,
+    forcePlan: true
+  });
+}
+
+async function processBmcWebhook(payload) {
+  const eventId = extractBmcEventId(payload);
   const email = extractBmcEmail(payload);
+  const inserted = await recordBmcEvent(eventId, payload);
+  if (!inserted) {
+    const eventType = String(payload?.type || '').trim();
+    const repair =
+      (eventType === 'membership.started' || eventType === 'membership.updated') &&
+      email &&
+      (await needsMembershipLicenseRepair(email, payload));
+    if (!repair) {
+      return { duplicate: true, eventId };
+    }
+  }
+
   if (!email) {
     return { duplicate: false, eventId, processed: false, reason: 'missing_email' };
   }
@@ -671,5 +802,7 @@ module.exports = {
   resolveAccessStatus,
   linkEmail,
   processBmcWebhook,
+  syncMembershipEventsForEmail,
+  grantManualLicense,
   consumeToken
 };
