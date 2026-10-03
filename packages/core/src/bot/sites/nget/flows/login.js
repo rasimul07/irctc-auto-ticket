@@ -175,21 +175,47 @@
       return desktopBtn || IRCTCExt.NgetLoginFlow.findLoginButton({ visibleOnly: true });
     },
 
-    needsLogin() {
-      if (IRCTCExt.NgetLoginFlow.isLoginModalVisible()) return true;
-      if (IRCTCExt.Wait.queryOne(IRCTCExt.SELECTORS.loggedInProfile)) return false;
+    hasLoggedInMarker() {
+      return !!IRCTCExt.Wait.queryOne(IRCTCExt.SELECTORS.loggedInProfile);
+    },
 
+    hasVisibleLoginAffordance() {
       if (IRCTCExt.NgetLoginFlow.findDesktopLoginButton()) return true;
       if (IRCTCExt.NgetLoginFlow.findSidebarLoginButton()) return true;
-
-      const searchInput = IRCTCExt.Wait.queryOne(IRCTCExt.SELECTORS.searchFrom);
-      if (searchInput && IRCTCExt.Wait.isVisible(searchInput)) return false;
-
-      if (IRCTCExt.NgetLoginFlow.usesNarrowLoginLayout()) {
-        return !!IRCTCExt.NgetLoginFlow.hamburgerMenuTrigger();
+      if (
+        IRCTCExt.NgetLoginFlow.usesNarrowLoginLayout() &&
+        IRCTCExt.NgetLoginFlow.hamburgerMenuTrigger()
+      ) {
+        return true;
       }
-
       return false;
+    },
+
+    needsLogin() {
+      if (IRCTCExt.NgetLoginFlow.isLoginModalVisible()) return true;
+      if (IRCTCExt.NgetLoginFlow.hasLoggedInMarker()) return false;
+      return IRCTCExt.NgetLoginFlow.hasVisibleLoginAffordance();
+    },
+
+    async waitForAuthUi(overlay) {
+      overlay?.setStatus?.('Waiting for login or profile...');
+      await IRCTCExt.Wait.poll(
+        () => {
+          if (IRCTCExt.NgetLoginFlow.hasLoggedInMarker()) return true;
+          if (IRCTCExt.NgetLoginFlow.findDesktopLoginButton()) return true;
+          if (IRCTCExt.NgetLoginFlow.findSidebarLoginButton()) return true;
+          if (IRCTCExt.NgetLanguageFlow?.isLanguageModalVisible?.()) return true;
+          if (IRCTCExt.NgetLoginFlow.isLoginModalVisible()) return true;
+          if (
+            IRCTCExt.NgetLoginFlow.usesNarrowLoginLayout() &&
+            IRCTCExt.NgetLoginFlow.hamburgerMenuTrigger()
+          ) {
+            return true;
+          }
+          return null;
+        },
+        { timeout: 15000, interval: 200 }
+      );
     },
 
     getLoginSubmit(modalRoot) {
@@ -235,14 +261,9 @@
 
     async isLoggedIn() {
       if (IRCTCExt.NgetLoginFlow.isLoginModalVisible()) return false;
-
-      if (IRCTCExt.Wait.queryOne(IRCTCExt.SELECTORS.loggedInProfile)) return true;
-
-      if (IRCTCExt.NgetLoginFlow.findDesktopLoginButton()) return false;
-      if (IRCTCExt.NgetLoginFlow.findSidebarLoginButton()) return false;
-
-      const searchInput = IRCTCExt.Wait.queryOne(IRCTCExt.SELECTORS.searchFrom);
-      return !!(searchInput && IRCTCExt.Wait.isVisible(searchInput));
+      if (IRCTCExt.NgetLoginFlow.hasLoggedInMarker()) return true;
+      if (IRCTCExt.NgetLoginFlow.hasVisibleLoginAffordance()) return false;
+      return true;
     },
 
     async ensureLoginModal(overlay) {
@@ -309,19 +330,7 @@
     },
 
     async run(config, overlay) {
-      await IRCTCExt.Wait.poll(
-        () => {
-          if (IRCTCExt.NgetLoginFlow.isLoginModalVisible()) return true;
-          if (IRCTCExt.Wait.queryOne(IRCTCExt.SELECTORS.loggedInProfile)) return true;
-          if (IRCTCExt.Wait.queryOne(IRCTCExt.SELECTORS.searchFrom)) return true;
-          if (IRCTCExt.NgetLoginFlow.findDesktopLoginButton()) return true;
-          if (IRCTCExt.NgetLoginFlow.findSidebarLoginButton()) return true;
-          if (IRCTCExt.NgetLoginFlow.isSidebarOpen()) return true;
-          if (IRCTCExt.NgetLoginFlow.hamburgerMenuTrigger()) return true;
-          return null;
-        },
-        { timeout: 12000, interval: 200 }
-      );
+      await IRCTCExt.NgetLoginFlow.waitForAuthUi(overlay);
 
       if (await IRCTCExt.NgetLoginFlow.isLoggedIn()) {
         overlay.setStatus('Already logged in');
@@ -377,6 +386,7 @@
 
     async runWithRetry(config, overlay, { maxAttempts = 3 } = {}) {
       await IRCTCExt.NgetLanguageFlow.dismissPreferredLanguage(overlay);
+      await IRCTCExt.NgetLoginFlow.waitForAuthUi(overlay);
 
       if (await IRCTCExt.NgetLoginFlow.isLoggedIn()) {
         overlay.setStatus('Already logged in');

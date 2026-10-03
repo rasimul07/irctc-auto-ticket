@@ -913,8 +913,8 @@ async function startBooking() {
   }
 
   await save();
-  const siteLabel =
-    form.preferences?.bookingSite === 'nget' ? 'Classic — nget' : 'Beta — eticket';
+  const bookingSite = form.preferences?.bookingSite || 'eticket';
+  const siteLabel = bookingSite === 'nget' ? 'Classic — nget' : 'Beta — eticket';
 
   await Storage.updateState({
     running: true,
@@ -932,39 +932,42 @@ async function startBooking() {
   updateStatusBadge('running', activeSetName);
   updateRunControls(true);
   els.startBtn.disabled = true;
-  chrome.runtime.sendMessage({ type: 'START_FROM_POPUP', skipAccessCheck: true }, async (response) => {
-    els.startBtn.disabled = false;
-    if (chrome.runtime.lastError) {
-      await Storage.updateState({ running: false, status: 'idle', currentStep: 'init' });
-      updateStatusBadge('idle', activeSetName);
-      updateRunControls(false);
-      showToast(chrome.runtime.lastError.message || 'Could not start booking.', true);
-      return;
-    }
-    // Popup closes when IRCTC tab opens — response may be undefined even when start succeeded.
-    if (!response) return;
-    if (!response.ok) {
-      await Storage.updateState({ running: false, status: 'idle', currentStep: 'init' });
-      updateStatusBadge('idle', activeSetName);
-      updateRunControls(false);
-      if (response.error === 'validation_failed') {
-        handleValidationFailure(response);
-      } else if (response.error === 'access_denied') {
-        showToast('Access expired or API unavailable. Check the Access tab.', true);
-        switchTab('access', 'accessEmail');
-      } else if (response.error === 'tab_open_failed') {
-        showToast(response.message || 'Could not open IRCTC tab. Check extension permissions.', true);
-      } else if (response.error === 'content_script_not_ready') {
-        showToast('IRCTC page not ready. Reload the IRCTC tab, then click Start again.', true);
-      } else {
-        showToast('Could not start booking. Reload the extension and IRCTC tab, then try again.', true);
+  chrome.runtime.sendMessage(
+    { type: 'START_FROM_POPUP', skipAccessCheck: true, bookingSite },
+    async (response) => {
+      els.startBtn.disabled = false;
+      if (chrome.runtime.lastError) {
+        await Storage.updateState({ running: false, status: 'idle', currentStep: 'init' });
+        updateStatusBadge('idle', activeSetName);
+        updateRunControls(false);
+        showToast(chrome.runtime.lastError.message || 'Could not start booking.', true);
+        return;
       }
-      return;
+      // Popup closes when IRCTC tab opens — response may be undefined even when start succeeded.
+      if (!response) return;
+      if (!response.ok) {
+        await Storage.updateState({ running: false, status: 'idle', currentStep: 'init' });
+        updateStatusBadge('idle', activeSetName);
+        updateRunControls(false);
+        if (response.error === 'validation_failed') {
+          handleValidationFailure(response);
+        } else if (response.error === 'access_denied') {
+          showToast('Access expired or API unavailable. Check the Access tab.', true);
+          switchTab('access', 'accessEmail');
+        } else if (response.error === 'tab_open_failed') {
+          showToast(response.message || 'Could not open IRCTC tab. Check extension permissions.', true);
+        } else if (response.error === 'content_script_not_ready') {
+          showToast('IRCTC page not ready. Reload the IRCTC tab, then click Start again.', true);
+        } else {
+          showToast('Could not start booking. Reload the extension and IRCTC tab, then try again.', true);
+        }
+        return;
+      }
+      const label = response.siteLabel || siteLabel;
+      const setName = (await Storage.get()).activeSetName || 'active set';
+      showToast(`Opening ${label} with ${setName}...`);
     }
-    const label = response.siteLabel || siteLabel;
-    const setName = (await Storage.get()).activeSetName || 'active set';
-    showToast(`Opening ${label} with ${setName}...`);
-  });
+  );
 }
 
 async function stopBooking() {
@@ -1021,7 +1024,9 @@ els.scheduleType?.addEventListener('change', () => updateScheduleStatus());
 
 els.paymentMethod.addEventListener('change', togglePaymentFields);
 els.bookingSite?.addEventListener('change', () => {
-  syncCardsProviderOptions(els.bookingSite.value);
+  const bookingSite = els.bookingSite.value || 'eticket';
+  syncCardsProviderOptions(bookingSite);
+  Storage.update({ preferences: { bookingSite } }).catch(() => null);
 });
 els.autoPayEnabled.addEventListener('change', toggleAutoPayFields);
 document.querySelectorAll('input[name="autoPayType"]').forEach((radio) => {

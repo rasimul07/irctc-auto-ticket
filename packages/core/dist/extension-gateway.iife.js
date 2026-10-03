@@ -53,6 +53,19 @@
       }
       return "init";
     },
+    syncProgressFromPath(path = location.pathname, state = {}) {
+      const updates = {};
+      if (IRCTCExt.NgetPaths.isReviewPath(path) || IRCTCExt.NgetPaths.isPaymentPath(path)) {
+        updates.passengersDone = true;
+      }
+      if (IRCTCExt.NgetPaths.isGatewayPath(path)) {
+        if (state.paymentPhase === "gateway" || state.awaitingGateway) {
+          updates.awaitingGateway = true;
+          updates.paymentPhase = "gateway";
+        }
+      }
+      return updates;
+    },
     isErrorPage(path = location.pathname) {
       return path.includes(IRCTCExt.NgetConfig.errorPagePath);
     },

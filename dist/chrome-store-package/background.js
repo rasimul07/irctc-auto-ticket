@@ -80,6 +80,14 @@ async function getActiveSite() {
   return IRCTCExt.SiteRegistry.get(await getActiveConfig());
 }
 
+function resolveBookingSite(config, bookingSiteOverride = null) {
+  const siteId =
+    bookingSiteOverride === 'nget' || bookingSiteOverride === 'eticket'
+      ? bookingSiteOverride
+      : IRCTCExt.SiteRegistry.getSiteId(config);
+  return IRCTCExt.SiteRegistry.getById(siteId);
+}
+
 function isTabOnSite(tab, site) {
   if (!tab?.url || !site?.id) return false;
   const marker = site.id === 'nget' ? '/nget/' : '/eticket/';
@@ -256,7 +264,7 @@ async function stopAllBooking() {
   }
 }
 
-async function openIrctcTab({ skipAccessCheck = false } = {}) {
+async function openIrctcTab({ skipAccessCheck = false, bookingSite = null } = {}) {
   const config = await getActiveConfig();
 
   const validationError = IRCTCExt.BookingValidation.validate(config);
@@ -275,7 +283,7 @@ async function openIrctcTab({ skipAccessCheck = false } = {}) {
     }
   }
 
-  const site = IRCTCExt.SiteRegistry.get(config);
+  const site = resolveBookingSite(config, bookingSite);
   if (!site?.trainSearchUrl) {
     await resetRunningState();
     return { ok: false, error: 'site_config_missing' };
@@ -391,7 +399,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type === 'START_FROM_POPUP') {
     (async () => {
       try {
-        const opened = await openIrctcTab({ skipAccessCheck: !!msg.skipAccessCheck });
+        const opened = await openIrctcTab({
+          skipAccessCheck: !!msg.skipAccessCheck,
+          bookingSite: msg.bookingSite
+        });
         if (!opened.ok) {
           sendResponse(opened);
           return;

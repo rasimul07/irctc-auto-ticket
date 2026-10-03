@@ -4,6 +4,7 @@ IRCTCExt.EticketSite = {
   ...IRCTCExt.EticketConfig,
   selectors: IRCTCExt.EticketSelectors,
   syncStepFromPath: IRCTCExt.EticketPaths.syncStepFromPath.bind(IRCTCExt.EticketPaths),
+  syncProgressFromPath: IRCTCExt.EticketPaths.syncProgressFromPath.bind(IRCTCExt.EticketPaths),
   isErrorPage: IRCTCExt.EticketPaths.isErrorPage.bind(IRCTCExt.EticketPaths),
   isTrainListPath: IRCTCExt.EticketPaths.isTrainListPath.bind(IRCTCExt.EticketPaths),
   isSearchSubmittedPath: IRCTCExt.EticketPaths.isSearchSubmittedPath.bind(IRCTCExt.EticketPaths),
