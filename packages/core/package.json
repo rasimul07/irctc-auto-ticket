@@ -1,6 +1,6 @@
 {
   "name": "@rasimul07/core",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "Shared IRCTC Tatkal booking logic for Chrome extension and Ionic app",
   "type": "module",
   "private": false,
