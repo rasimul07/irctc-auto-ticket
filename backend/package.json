@@ -10,7 +10,10 @@
     "db:up": "docker compose up -d",
     "db:down": "docker compose down",
     "db:migrate": "node src/db/migrate.js",
-    "jobs:renew-coffee": "node src/jobs/runCoffeeRenewal.js"
+    "jobs:renew-coffee": "node src/jobs/runCoffeeRenewal.js",
+    "ops:verify-license": "node scripts/verify-license.js",
+    "ops:grant-license": "node scripts/grant-license.js",
+    "ops:replay-membership": "node scripts/replay-membership-for-email.js"
   },
   "engines": {
     "node": ">=18"

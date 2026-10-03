@@ -3,10 +3,12 @@
  * Build packages/core and create a Chrome Web Store upload zip.
  * Output: dist/irctc-extension.zip (manifest.json at zip root)
  *
- * Usage: node scripts/build-store-zip.mjs
+ * Usage: node scripts/build-store-zip.mjs [--bump=patch|minor|major] [--no-bump]
+ *
+ * By default bumps manifest.json patch version before packaging (1.1.2 → 1.1.3).
  */
 
-import { cpSync, existsSync, mkdirSync, readFileSync, rmSync } from 'fs';
+import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { execSync } from 'child_process';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -44,10 +46,87 @@ function fail(msg) {
   process.exit(1);
 }
 
-function readManifestVersion() {
-  const manifestPath = path.join(ROOT, 'manifest.json');
-  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
-  return manifest.version || '0.0.0';
+const MANIFEST_PATH = path.join(ROOT, 'manifest.json');
+
+function readManifest() {
+  const manifest = JSON.parse(readFileSync(MANIFEST_PATH, 'utf8'));
+  return manifest;
+}
+
+function writeManifest(manifest) {
+  writeFileSync(MANIFEST_PATH, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
+}
+
+function parseVersionParts(version) {
+  const parts = String(version || '0.0.0')
+    .split('.')
+    .map((segment) => parseInt(segment, 10) || 0);
+  while (parts.length < 3) parts.push(0);
+  return parts.slice(0, 4);
+}
+
+function formatVersion(parts) {
+  return parts.join('.');
+}
+
+function bumpVersion(version, level = 'patch') {
+  const parts = parseVersionParts(version);
+
+  if (level === 'major') {
+    parts[0] += 1;
+    parts[1] = 0;
+    parts[2] = 0;
+    if (parts.length > 3) parts[3] = 0;
+  } else if (level === 'minor') {
+    parts[1] += 1;
+    parts[2] = 0;
+    if (parts.length > 3) parts[3] = 0;
+  } else if (level === 'patch') {
+    parts[2] += 1;
+    if (parts.length > 3) parts[3] = 0;
+  } else {
+    fail(`invalid --bump level: ${level} (use patch, minor, or major)`);
+  }
+
+  return formatVersion(parts);
+}
+
+function parseCliArgs(argv) {
+  let bump = 'patch';
+  let noBump = false;
+
+  for (const arg of argv) {
+    if (arg === '--no-bump') {
+      noBump = true;
+      continue;
+    }
+    if (arg.startsWith('--bump=')) {
+      bump = arg.slice('--bump='.length).trim();
+      continue;
+    }
+    if (arg === '--help' || arg === '-h') {
+      console.log(`Usage: node scripts/build-store-zip.mjs [--bump=patch|minor|major] [--no-bump]`);
+      process.exit(0);
+    }
+  }
+
+  return { bump, noBump };
+}
+
+function resolveManifestVersion({ bump, noBump }) {
+  const manifest = readManifest();
+  const current = manifest.version || '0.0.0';
+
+  if (noBump) {
+    log(`version unchanged: ${current}`);
+    return current;
+  }
+
+  const next = bumpVersion(current, bump);
+  manifest.version = next;
+  writeManifest(manifest);
+  log(`manifest version ${current} → ${next}`);
+  return next;
 }
 
 function buildCore() {
@@ -105,10 +184,12 @@ function createZip(outZip) {
 }
 
 function main() {
+  const { bump, noBump } = parseCliArgs(process.argv.slice(2));
+  const version = resolveManifestVersion({ bump, noBump });
+
   buildCore();
   stagePackage();
 
-  const version = readManifestVersion();
   const zipName = `irctc-extension-v${version}.zip`;
   const outZip = path.join(DIST_DIR, zipName);
 

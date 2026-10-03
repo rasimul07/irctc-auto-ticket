@@ -295,8 +295,14 @@ npm run db:migrate
 ```bash
 cd ~/irctc-auto-ticket/backend
 docker compose -f docker-compose.prod.yml run --rm api node scripts/verify-license.js user@example.com
+docker compose -f docker-compose.prod.yml run --rm api node scripts/replay-membership-for-email.js user@example.com
+docker compose -f docker-compose.prod.yml run --rm api node scripts/grant-license.js user@example.com pro --subscription sub_xxx --expires-days 31
 docker compose -f docker-compose.prod.yml run --rm api node scripts/reprocess-bmc-event.js <event_id>
 ```
+
+`replay-membership-for-email.js` reapplies stored `membership.*` BMC events to `licenses` (no row delete).
+
+`grant-license.js` creates or updates a license when BMC webhooks were missed (use the supporter email and Stripe `sub_…` id from BMC).
 
 `reprocess-bmc-event.js` deletes the stored `bmc_events` row and replays the webhook handler (useful after a failed migration when BMC events were stored but licenses were not created).
 
