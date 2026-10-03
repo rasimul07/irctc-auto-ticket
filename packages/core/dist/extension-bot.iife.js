@@ -5164,64 +5164,334 @@
         if (!removed) throw new Error(`Passenger row was not removed: ${parsed.name || "unknown"}`);
         return true;
       },
-      visibleAutocompleteOptions() {
+      visibleAutocompletePanels() {
+        const panelSelectors = IRCTCExt.NgetSelectors?.autocompletePanel || [".ui-autocomplete-panel", "ul.ui-autocomplete-items"];
+        const panels = IRCTCExt.Wait.queryAll([
+          ".ui-autocomplete-panel",
+          ".p-autocomplete-panel",
+          ...panelSelectors
+        ]);
+        return panels.filter((panel) => IRCTCExt.Wait.isVisible(panel));
+      },
+      visibleAutocompleteOptions(nameInput) {
+        const panels = IRCTCExt.NgetPassengersFlow.visibleAutocompletePanels();
+        let scopedPanels = panels;
+        if (nameInput && panels.length > 1) {
+          const anchor = nameInput.getBoundingClientRect();
+          scopedPanels = [...panels].map((panel) => {
+            const rect = panel.getBoundingClientRect();
+            const distance = Math.abs(rect.top - anchor.bottom) + Math.abs(rect.left - anchor.left) * 0.25;
+            return { panel, distance };
+          }).filter((item) => item.distance < 400).sort((a, b) => a.distance - b.distance).map((item) => item.panel);
+        }
+        const items = [];
+        for (const panel of scopedPanels.length ? scopedPanels : panels) {
+          panel.querySelectorAll('li.ui-autocomplete-list-item, li[role="option"]').forEach((li) => {
+            if (IRCTCExt.Wait.isVisible(li)) items.push(li);
+          });
+        }
+        if (items.length) return items;
         const sel = IRCTCExt.NgetPassengersFlow.getSelectors();
-        return IRCTCExt.Wait.queryAll(sel.autocompleteOptions).filter(
-          (item) => IRCTCExt.Wait.isVisible(item)
-        );
+        return IRCTCExt.Wait.queryAll(sel.autocompleteOptions).filter((item) => IRCTCExt.Wait.isVisible(item));
+      },
+      findMasterListMatch(nameInput, passenger) {
+        const options = IRCTCExt.NgetPassengersFlow.visibleAutocompleteOptions(nameInput);
+        if (!options.length) return null;
+        const currentRow = nameInput.closest("app-passenger");
+        const candidates = options.map((opt, index) => ({ opt, index })).filter(
+          ({ opt }) => !IRCTCExt.NgetPassengersFlow.shouldSkipAutocompleteOption(opt, passenger, currentRow) && IRCTCExt.NgetPassengersFlow.optionMatchesPassenger(opt, passenger)
+        ).map(({ opt, index }) => ({
+          opt,
+          index,
+          score: IRCTCExt.NgetPassengersFlow.rankMasterListOption(opt, passenger, currentRow)
+        })).sort((a, b) => b.score - a.score);
+        return candidates[0] || null;
+      },
+      passengerWithMasterOption(passenger, optionLi) {
+        const parsed = IRCTCExt.NgetPassengersFlow.parseAutocompleteOption(optionLi);
+        return {
+          ...passenger,
+          name: passenger.name || parsed.name,
+          age: passenger.age || parsed.age,
+          gender: passenger.gender || parsed.gender
+        };
+      },
+      async applyDemographicsFromMasterOption(row, optionLi, passenger) {
+        if (!row || !optionLi) return false;
+        const merged = IRCTCExt.NgetPassengersFlow.passengerWithMasterOption(passenger, optionLi);
+        const sel = IRCTCExt.NgetPassengersFlow.getSelectors();
+        let changed = false;
+        const parsed = IRCTCExt.NgetPassengersFlow.parsePassengerRow(row);
+        const ageInput = IRCTCExt.Wait.queryOne(sel.passengerAge, row);
+        const wantAge = String(merged.age || "").trim();
+        if (wantAge && ageInput && IRCTCExt.Wait.isVisible(ageInput)) {
+          const haveAge = String(parsed.age || ageInput.value || "").trim();
+          if (haveAge !== wantAge) {
+            IRCTCExt.Events.setInputValue(ageInput, wantAge, { blur: false });
+            await IRCTCExt.Wait.delay(200);
+            changed = true;
+          }
+        }
+        const gender = IRCTCExt.NgetPassengersFlow.readGenderFromRow(row);
+        if (merged.gender && IRCTCExt.NgetPassengersFlow.isPlaceholderGender(gender)) {
+          const genderOk = await IRCTCExt.NgetPassengersFlow.selectGenderOnRow(row, merged);
+          if (genderOk) changed = true;
+        }
+        return changed;
+      },
+      passengerHasAge(passenger) {
+        return Boolean(String(passenger?.age || "").trim());
+      },
+      passengerHasGender(passenger) {
+        return Boolean(String(passenger?.gender || "").trim());
+      },
+      passengerIdentityMode(passenger) {
+        const hasAge = IRCTCExt.NgetPassengersFlow.passengerHasAge(passenger);
+        const hasGender = IRCTCExt.NgetPassengersFlow.passengerHasGender(passenger);
+        if (hasAge && hasGender) return "full";
+        if (!hasAge && !hasGender) return "nameOnly";
+        return "partial";
+      },
+      normalizeOptionGender(gender) {
+        const text = String(gender || "").replace(/fa-check-circle.*/i, "").replace(/\s+/g, " ").trim();
+        if (!text) return "";
+        const token = passengersLib().genderToken(text);
+        return token ? String(token).toLowerCase() : text.toLowerCase();
+      },
+      normalizeOptionAge(age) {
+        const digits = String(age || "").replace(/\D/g, "");
+        return digits || String(age || "").trim();
+      },
+      optionIdentityKey(parsed) {
+        const name = passengersLib().normalizeName(parsed?.name);
+        const age = IRCTCExt.NgetPassengersFlow.normalizeOptionAge(parsed?.age);
+        const gender = IRCTCExt.NgetPassengersFlow.normalizeOptionGender(parsed?.gender);
+        return `${name}|${age}|${gender}`;
+      },
+      rowIdentityKeyFromRow(row) {
+        if (!row) return "";
+        const parsed = IRCTCExt.NgetPassengersFlow.parsePassengerRow(row);
+        return IRCTCExt.NgetPassengersFlow.optionIdentityKey(parsed);
+      },
+      isMasterIdentityUsedOnAnotherRow(optionKey, currentRow) {
+        if (!optionKey || optionKey === "||") return false;
+        const rows = IRCTCExt.NgetPassengersFlow.getPassengerRows();
+        return rows.some((row) => {
+          if (row === currentRow) return false;
+          const key = IRCTCExt.NgetPassengersFlow.rowIdentityKeyFromRow(row);
+          return key === optionKey;
+        });
+      },
+      rowUsesMasterIdentity(row, optionKey) {
+        if (!row || !optionKey) return false;
+        return IRCTCExt.NgetPassengersFlow.rowIdentityKeyFromRow(row) === optionKey;
       },
       parseAutocompleteOption(li) {
-        const name = (li.querySelector("strong")?.textContent || "").replace(/\s+/g, " ").trim();
-        const parts = (li.textContent || "").replace(/\s+/g, " ").split("|").map((part) => part.trim()).filter(Boolean);
+        const strongName = (li.querySelector("strong")?.textContent || "").replace(/\s+/g, " ").trim();
+        const rawText = (li.textContent || "").replace(/fa-check-circle/gi, "").replace(/\s+/g, " ").trim();
+        const parts = rawText.split("|").map((part) => part.trim()).filter(Boolean);
+        let name = strongName;
+        if (!name && parts.length) {
+          name = parts[0];
+        }
         let age = "";
+        const agePart = parts.find((part) => /\d+\s*yrs?/i.test(part));
+        if (agePart) {
+          age = IRCTCExt.NgetPassengersFlow.normalizeOptionAge(agePart);
+        }
         let gender = "";
-        if (parts.length >= 2) {
-          const agePart = parts.find((part) => /\d+\s*yrs?/i.test(part)) || parts[1];
-          age = agePart.replace(/\s*yrs?/i, "").trim();
-        }
-        if (parts.length >= 3) {
-          gender = parts[parts.length - 1].replace(/fa-check-circle.*/i, "").trim();
-        }
-        if (!gender && parts.length >= 2) {
-          const last = parts[parts.length - 1];
-          if (!/\d/.test(last)) gender = last.replace(/fa-check-circle.*/i, "").trim();
+        for (let i = parts.length - 1; i >= 0; i -= 1) {
+          const part = parts[i].replace(/fa-check-circle.*/i, "").trim();
+          if (!part || /\d+\s*yrs?/i.test(part)) continue;
+          if (passengersLib().normalizeName(part) === passengersLib().normalizeName(name)) continue;
+          if (/^\d+$/.test(part)) continue;
+          gender = part;
+          break;
         }
         return { name, age, gender };
       },
-      shouldSkipAutocompleteOption(li, passenger, currentRow) {
-        if (!li.querySelector(".fa-check-circle")) return false;
-        const rows = IRCTCExt.NgetPassengersFlow.getPassengerRows();
-        return rows.some(
-          (row) => row !== currentRow && IRCTCExt.NgetPassengersFlow.rowMatchesPassenger(row, passenger)
+      optionGenderMatchesPassenger(parsed, passenger) {
+        if (!parsed?.gender || !passenger?.gender) return false;
+        return passengersLib().segmentMatches(
+          parsed.gender,
+          passengersLib().genderToken(passenger.gender)
         );
+      },
+      shouldSkipAutocompleteOption(li, passenger, currentRow) {
+        const parsed = IRCTCExt.NgetPassengersFlow.parseAutocompleteOption(li);
+        const optionKey = IRCTCExt.NgetPassengersFlow.optionIdentityKey(parsed);
+        return IRCTCExt.NgetPassengersFlow.isMasterIdentityUsedOnAnotherRow(optionKey, currentRow);
       },
       optionMatchesPassenger(li, passenger) {
         const parsed = IRCTCExt.NgetPassengersFlow.parseAutocompleteOption(li);
-        if (passengersLib().normalizeName(parsed.name) !== passengersLib().normalizeName(passenger.name)) return false;
-        if (passenger.age && String(parsed.age).trim() !== String(passenger.age).trim()) return false;
-        if (passenger.gender && parsed.gender && !passengersLib().segmentMatches(parsed.gender, passengersLib().genderToken(passenger.gender))) {
+        if (!parsed.name) return false;
+        if (passengersLib().normalizeName(parsed.name) !== passengersLib().normalizeName(passenger.name)) {
           return false;
         }
+        const mode = IRCTCExt.NgetPassengersFlow.passengerIdentityMode(passenger);
+        if (mode === "nameOnly") return true;
+        if (IRCTCExt.NgetPassengersFlow.passengerHasAge(passenger)) {
+          const want = IRCTCExt.NgetPassengersFlow.normalizeOptionAge(passenger.age);
+          const got = IRCTCExt.NgetPassengersFlow.normalizeOptionAge(parsed.age);
+          if (want !== got) return false;
+        }
+        if (IRCTCExt.NgetPassengersFlow.passengerHasGender(passenger)) {
+          if (!parsed.gender) return false;
+          if (!IRCTCExt.NgetPassengersFlow.optionGenderMatchesPassenger(parsed, passenger)) return false;
+        }
+        if (mode === "full") {
+          if (!parsed.age || !parsed.gender) return false;
+        }
         return true;
+      },
+      rankMasterListOption(opt, passenger, currentRow) {
+        const parsed = IRCTCExt.NgetPassengersFlow.parseAutocompleteOption(opt);
+        const optionKey = IRCTCExt.NgetPassengersFlow.optionIdentityKey(parsed);
+        const usedElsewhere = IRCTCExt.NgetPassengersFlow.isMasterIdentityUsedOnAnotherRow(
+          optionKey,
+          currentRow
+        );
+        let score = 0;
+        if (!usedElsewhere) score += 20;
+        if (IRCTCExt.NgetPassengersFlow.passengerIdentityMode(passenger) === "full") {
+          if (parsed.age && parsed.gender) score += 10;
+        }
+        if (!opt.querySelector(".fa-check-circle")) score += 2;
+        return score;
       },
       nameInputMatches(nameInput, passengerName) {
         return passengersLib().normalizeName(nameInput?.value || "") === passengersLib().normalizeName(passengerName);
       },
-      async pickMasterListOption(nameInput, passenger) {
-        const options = IRCTCExt.NgetPassengersFlow.visibleAutocompleteOptions();
-        if (!options.length) return false;
-        const currentRow = nameInput.closest("app-passenger");
-        const match = options.find(
-          (opt) => !IRCTCExt.NgetPassengersFlow.shouldSkipAutocompleteOption(opt, passenger, currentRow) && IRCTCExt.NgetPassengersFlow.optionMatchesPassenger(opt, passenger)
+      clickMasterListOption(li) {
+        if (!li) return;
+        IRCTCExt.Events.click(li);
+        IRCTCExt.Events.clickWithMouse(li);
+      },
+      async selectMasterListOptionByKeyboard(nameInput, optionIndex) {
+        if (!nameInput || optionIndex < 0) return;
+        nameInput.focus();
+        for (let i = 0; i <= optionIndex; i += 1) {
+          IRCTCExt.Events.pressKey(nameInput, "ArrowDown");
+          await IRCTCExt.Wait.delay(90);
+        }
+        IRCTCExt.Events.pressKey(nameInput, "Enter");
+        await IRCTCExt.Wait.delay(350);
+      },
+      async clearNameInputForMasterList(nameInput) {
+        if (!nameInput) return;
+        nameInput.focus();
+        IRCTCExt.Events.setInputValue(nameInput, "", { blur: false });
+        await IRCTCExt.Wait.delay(120);
+        if (String(nameInput.value || "").trim()) {
+          IRCTCExt.Events.setNativeValue(nameInput, "");
+          nameInput.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "deleteContentBackward" }));
+          nameInput.dispatchEvent(new Event("input", { bubbles: true }));
+          nameInput.dispatchEvent(new Event("change", { bubbles: true }));
+          await IRCTCExt.Wait.delay(120);
+        }
+      },
+      async focusNameInputForMasterList(nameInput) {
+        if (!nameInput) return;
+        nameInput.focus();
+        IRCTCExt.Events.click(nameInput);
+        const wrapper = nameInput.closest("p-autocomplete, .ui-autocomplete");
+        if (wrapper && wrapper !== nameInput) {
+          IRCTCExt.Events.click(wrapper);
+        }
+        await IRCTCExt.Wait.delay(200);
+      },
+      async waitForMasterRowComplete(row, passenger, timeout = 2500) {
+        return IRCTCExt.Wait.poll(
+          () => IRCTCExt.NgetPassengersFlow.isRowIdentityComplete(row, passenger) ? true : null,
+          { timeout, interval: 120 }
         );
-        if (!match) return false;
-        IRCTCExt.Events.click(match.querySelector("strong") || match);
-        await IRCTCExt.Wait.delay(400);
-        const row = nameInput.closest("app-passenger");
-        return row ? IRCTCExt.NgetPassengersFlow.isRowIdentityComplete(row, passenger) : IRCTCExt.NgetPassengersFlow.nameInputMatches(nameInput, passenger.name);
+      },
+      async commitMasterListSelection(nameInput, passenger, row, matchEntry) {
+        if (!nameInput || !row || !matchEntry?.opt) return false;
+        const effective = IRCTCExt.NgetPassengersFlow.passengerWithMasterOption(
+          passenger,
+          matchEntry.opt
+        );
+        IRCTCExt.NgetPassengersFlow.clickMasterListOption(matchEntry.opt);
+        await IRCTCExt.Wait.delay(350);
+        if (await IRCTCExt.NgetPassengersFlow.waitForMasterRowComplete(row, effective, 2500)) {
+          return true;
+        }
+        await IRCTCExt.NgetPassengersFlow.selectMasterListOptionByKeyboard(nameInput, matchEntry.index);
+        if (await IRCTCExt.NgetPassengersFlow.waitForMasterRowComplete(row, effective, 2500)) {
+          return true;
+        }
+        await IRCTCExt.NgetPassengersFlow.applyDemographicsFromMasterOption(row, matchEntry.opt, passenger);
+        return IRCTCExt.NgetPassengersFlow.isRowIdentityComplete(row, effective);
+      },
+      async pollMasterListPick(nameInput, passenger, row, timeout = 5e3) {
+        let committed = false;
+        let lastMatch = null;
+        const picked = await IRCTCExt.Wait.poll(
+          async () => {
+            if (committed && row) {
+              const effective3 = lastMatch ? IRCTCExt.NgetPassengersFlow.passengerWithMasterOption(passenger, lastMatch.opt) : passenger;
+              if (IRCTCExt.NgetPassengersFlow.isRowIdentityComplete(row, effective3)) return true;
+              if (lastMatch) {
+                await IRCTCExt.NgetPassengersFlow.applyDemographicsFromMasterOption(
+                  row,
+                  lastMatch.opt,
+                  passenger
+                );
+                if (IRCTCExt.NgetPassengersFlow.isRowIdentityComplete(row, effective3)) return true;
+              }
+              return null;
+            }
+            const match = IRCTCExt.NgetPassengersFlow.findMasterListMatch(nameInput, passenger);
+            if (!match) {
+              if (!String(nameInput.value || "").trim()) {
+                await IRCTCExt.NgetPassengersFlow.focusNameInputForMasterList(nameInput);
+              }
+              return null;
+            }
+            if (!committed) {
+              committed = true;
+              lastMatch = match;
+              await IRCTCExt.NgetPassengersFlow.commitMasterListSelection(
+                nameInput,
+                passenger,
+                row,
+                match
+              );
+            }
+            const effective2 = IRCTCExt.NgetPassengersFlow.passengerWithMasterOption(
+              passenger,
+              match.opt
+            );
+            if (IRCTCExt.NgetPassengersFlow.isRowIdentityComplete(row, effective2)) return true;
+            return null;
+          },
+          { timeout, interval: 200 }
+        );
+        const effective = lastMatch ? IRCTCExt.NgetPassengersFlow.passengerWithMasterOption(passenger, lastMatch.opt) : passenger;
+        const success = Boolean(picked) || row && IRCTCExt.NgetPassengersFlow.isRowIdentityComplete(row, effective);
+        return { success, lastMatch };
+      },
+      rowHasRequiredDemographics(row) {
+        const parsed = IRCTCExt.NgetPassengersFlow.parsePassengerRow(row);
+        if (!parsed.name) return false;
+        const sel = IRCTCExt.NgetPassengersFlow.getSelectors();
+        const ageInput = IRCTCExt.Wait.queryOne(sel.passengerAge, row);
+        if (ageInput && IRCTCExt.Wait.isVisible(ageInput)) {
+          const ageText = String(parsed.age || ageInput.value || "").replace(/\D/g, "");
+          const age = parseInt(ageText, 10);
+          if (!Number.isFinite(age) || age < 1 || age > 125) return false;
+        }
+        const gender = IRCTCExt.NgetPassengersFlow.readGenderFromRow(row);
+        if (IRCTCExt.NgetPassengersFlow.isPlaceholderGender(gender)) {
+          const genderEl = IRCTCExt.NgetPassengersFlow.findEditableGenderElement(row);
+          if (genderEl) return false;
+        }
+        return true;
       },
       isRowIdentityComplete(row, passenger) {
         if (!IRCTCExt.NgetPassengersFlow.rowMatchesPassenger(row, passenger)) return false;
+        if (!IRCTCExt.NgetPassengersFlow.rowHasRequiredDemographics(row)) return false;
         const parsed = IRCTCExt.NgetPassengersFlow.parsePassengerRow(row);
         if (passenger.age && !parsed.age) return false;
         if (passenger.gender && !parsed.gender) return false;
@@ -5233,46 +5503,47 @@
         if (IRCTCExt.NgetPassengersFlow.isRowIdentityComplete(row, passenger)) {
           return true;
         }
-        nameInput.focus();
-        IRCTCExt.Events.setInputValue(nameInput, name, { blur: false });
-        await IRCTCExt.Wait.delay(200);
-        if (IRCTCExt.NgetPassengersFlow.isRowIdentityComplete(row, passenger)) {
-          return true;
-        }
-        const pickedAfterSet = await IRCTCExt.Wait.poll(
-          async () => {
-            if (await IRCTCExt.NgetPassengersFlow.pickMasterListOption(nameInput, passenger)) return true;
-            return null;
-          },
-          { timeout: 2e3, interval: 150 }
+        await IRCTCExt.NgetPassengersFlow.clearNameInputForMasterList(nameInput);
+        await IRCTCExt.NgetPassengersFlow.focusNameInputForMasterList(nameInput);
+        const pickResult = await IRCTCExt.NgetPassengersFlow.pollMasterListPick(
+          nameInput,
+          passenger,
+          row,
+          6e3
         );
-        if (pickedAfterSet) return true;
-        const prefix = name.slice(0, Math.min(4, name.length));
-        if (prefix) {
-          IRCTCExt.Events.setInputValue(nameInput, "", { blur: false });
-          await IRCTCExt.Events.typeSlowly(nameInput, prefix, 25);
-          await IRCTCExt.Wait.delay(250);
-          if (await IRCTCExt.NgetPassengersFlow.pickMasterListOption(nameInput, passenger)) return true;
-        }
-        IRCTCExt.Events.setInputValue(nameInput, name, { blur: false });
-        await IRCTCExt.Wait.delay(200);
-        if (await IRCTCExt.NgetPassengersFlow.pickMasterListOption(nameInput, passenger)) return true;
-        return await IRCTCExt.NgetPassengersFlow.fillPassengerNameManual(nameInput, passenger, row);
+        if (pickResult.success) return true;
+        return await IRCTCExt.NgetPassengersFlow.fillPassengerNameManual(
+          nameInput,
+          passenger,
+          row,
+          pickResult.lastMatch?.opt || null
+        );
       },
-      async fillPassengerNameManual(nameInput, passenger, row) {
+      async fillPassengerNameManual(nameInput, passenger, row, masterOptionLi = null) {
         const sel = IRCTCExt.NgetPassengersFlow.getSelectors();
-        const name = String(passenger.name || "").trim();
-        IRCTCExt.Events.setInputValue(nameInput, name, { blur: false });
-        const ageInput = IRCTCExt.Wait.queryOne(sel.passengerAge, row);
-        if (ageInput && !ageInput.readOnly && passenger.age) {
-          IRCTCExt.Events.setInputValue(ageInput, String(passenger.age).trim());
+        const merged = masterOptionLi ? IRCTCExt.NgetPassengersFlow.passengerWithMasterOption(passenger, masterOptionLi) : passenger;
+        const name = String(merged.name || "").trim();
+        const parsed = IRCTCExt.NgetPassengersFlow.parsePassengerRow(row);
+        if (!parsed.name && name) {
+          IRCTCExt.Events.setInputValue(nameInput, name, { blur: false });
         }
-        const genderOk = await IRCTCExt.NgetPassengersFlow.selectGenderOnRow(row, passenger);
-        if (!genderOk && passenger.gender) {
-          throw new Error(`Could not select gender: ${passengersLib().genderLabel(passenger.gender)}`);
+        if (masterOptionLi) {
+          await IRCTCExt.NgetPassengersFlow.applyDemographicsFromMasterOption(row, masterOptionLi, passenger);
+        }
+        const ageInput = IRCTCExt.Wait.queryOne(sel.passengerAge, row);
+        const wantAge = String(merged.age || "").trim();
+        if (ageInput && IRCTCExt.Wait.isVisible(ageInput) && wantAge) {
+          const haveAge = String(parsed.age || ageInput.value || "").trim();
+          if (haveAge !== wantAge) {
+            IRCTCExt.Events.setInputValue(ageInput, wantAge, { blur: false });
+          }
+        }
+        const genderOk = await IRCTCExt.NgetPassengersFlow.selectGenderOnRow(row, merged);
+        if (!genderOk && merged.gender) {
+          throw new Error(`Could not select gender: ${passengersLib().genderLabel(merged.gender)}`);
         }
         await IRCTCExt.Wait.delay(200);
-        return IRCTCExt.NgetPassengersFlow.isRowIdentityComplete(row, passenger);
+        return IRCTCExt.NgetPassengersFlow.isRowIdentityComplete(row, merged);
       },
       genderSelectValue(gender) {
         const token = String(gender || "").trim();
@@ -5402,22 +5673,74 @@
         if (!berthOk && passengersLib().berthLabelsToTry(passenger?.berth).length) {
           throw new Error(`Could not select berth: ${passengersLib().berthLabel(passenger.berth)}`);
         }
-        if (!IRCTCExt.NgetPassengersFlow.rowMatchesPassenger(row, passenger)) {
+        if (!IRCTCExt.NgetPassengersFlow.passengerRowIsCorrect(row, passenger)) {
           const parsed = IRCTCExt.NgetPassengersFlow.parsePassengerRow(row);
           throw new Error(
-            `Passenger row mismatch for ${passenger.name} (got name="${parsed.name}", age="${parsed.age}", gender="${parsed.gender}")`
+            `Passenger row incomplete for ${passenger.name} (got name="${parsed.name}", age="${parsed.age}", gender="${parsed.gender}")`
           );
         }
         return true;
+      },
+      rowCompletenessScore(row) {
+        const parsed = IRCTCExt.NgetPassengersFlow.parsePassengerRow(row);
+        let score = 0;
+        if (parsed.name) score += 10;
+        if (parsed.age) score += 6;
+        if (!IRCTCExt.NgetPassengersFlow.isPlaceholderGender(parsed.gender)) score += 6;
+        if (parsed.berth) score += 1;
+        return score;
+      },
+      async dedupeConfigPassengerRows(passengers, overlay) {
+        const allowByName = /* @__PURE__ */ new Map();
+        for (const passenger of passengers) {
+          const key = passengersLib().normalizeName(passenger.name);
+          allowByName.set(key, (allowByName.get(key) || 0) + 1);
+        }
+        const buckets = /* @__PURE__ */ new Map();
+        for (const row of IRCTCExt.NgetPassengersFlow.getPassengerRows()) {
+          const parsed = IRCTCExt.NgetPassengersFlow.parsePassengerRow(row);
+          const key = passengersLib().normalizeName(parsed.name);
+          if (!key || !allowByName.has(key)) continue;
+          if (!buckets.has(key)) buckets.set(key, []);
+          buckets.get(key).push(row);
+        }
+        for (const [key, rows] of buckets) {
+          const allow = allowByName.get(key) || 1;
+          if (rows.length <= allow) continue;
+          rows.sort(
+            (a, b) => IRCTCExt.NgetPassengersFlow.rowCompletenessScore(b) - IRCTCExt.NgetPassengersFlow.rowCompletenessScore(a)
+          );
+          for (let i = allow; i < rows.length; i += 1) {
+            overlay?.setStatus(`Removing duplicate passenger: ${key}...`);
+            await IRCTCExt.NgetPassengersFlow.deletePassengerRow(rows[i], overlay);
+          }
+        }
       },
       findEmptyRow(usedRows = /* @__PURE__ */ new Set()) {
         const rows = IRCTCExt.NgetPassengersFlow.getPassengerRows();
         return rows.find((row) => !usedRows.has(row) && IRCTCExt.NgetPassengersFlow.isRowEmpty(row)) || null;
       },
+      findIncompleteRowByName(passenger, usedRows = /* @__PURE__ */ new Set()) {
+        const configName = passengersLib().normalizeName(passenger.name);
+        const rows = IRCTCExt.NgetPassengersFlow.getPassengerRows();
+        return rows.find((row) => {
+          if (usedRows.has(row) || IRCTCExt.NgetPassengersFlow.isRowEmpty(row)) return false;
+          const parsed = IRCTCExt.NgetPassengersFlow.parsePassengerRow(row);
+          if (passengersLib().normalizeName(parsed.name) !== configName) return false;
+          return !IRCTCExt.NgetPassengersFlow.passengerRowIsCorrect(row, passenger);
+        }) || null;
+      },
+      findRowForPassenger(passenger, usedRows = /* @__PURE__ */ new Set()) {
+        const correct = IRCTCExt.NgetPassengersFlow.findMatchingRow(passenger, usedRows);
+        if (correct) return correct;
+        const empty = IRCTCExt.NgetPassengersFlow.findEmptyRow(usedRows);
+        if (empty) return empty;
+        return IRCTCExt.NgetPassengersFlow.findIncompleteRowByName(passenger, usedRows);
+      },
       findMatchingRow(passenger, usedRows = /* @__PURE__ */ new Set()) {
         const rows = IRCTCExt.NgetPassengersFlow.getPassengerRows();
         return rows.find(
-          (row) => !usedRows.has(row) && !IRCTCExt.NgetPassengersFlow.isRowEmpty(row) && IRCTCExt.NgetPassengersFlow.rowMatchesPassenger(row, passenger)
+          (row) => !usedRows.has(row) && !IRCTCExt.NgetPassengersFlow.isRowEmpty(row) && IRCTCExt.NgetPassengersFlow.passengerRowIsCorrect(row, passenger)
         ) || null;
       },
       partitionRows(passengers) {
@@ -5430,9 +5753,15 @@
           if (row) {
             matched.push({ passenger, row });
             usedRows.add(row);
-          } else {
-            unmatchedPassengers.push(passenger);
+            continue;
           }
+          const incomplete = IRCTCExt.NgetPassengersFlow.findIncompleteRowByName(passenger, usedRows);
+          if (incomplete) {
+            matched.push({ passenger, row: incomplete });
+            usedRows.add(incomplete);
+            continue;
+          }
+          unmatchedPassengers.push(passenger);
         }
         const extraRows = rows.filter((row) => !usedRows.has(row));
         return { matched, unmatchedPassengers, extraRows };
@@ -5445,6 +5774,14 @@
         if (!empty) throw new Error("Could not find empty passenger row after adding");
         return empty;
       },
+      async getOrCreateRowForPassenger(passenger, usedRows) {
+        const existing = IRCTCExt.NgetPassengersFlow.findRowForPassenger(passenger, usedRows);
+        if (existing) return existing;
+        await IRCTCExt.NgetPassengersFlow.clickAddPassenger();
+        const row = IRCTCExt.NgetPassengersFlow.findEmptyRow(usedRows) || IRCTCExt.NgetPassengersFlow.findRowForPassenger(passenger, usedRows);
+        if (!row) throw new Error(`Could not find row for passenger: ${passenger.name}`);
+        return row;
+      },
       findRowByName(passenger, usedRows = /* @__PURE__ */ new Set()) {
         const configName = passengersLib().normalizeName(passenger.name);
         const rows = IRCTCExt.NgetPassengersFlow.getPassengerRows();
@@ -5455,13 +5792,19 @@
         }) || null;
       },
       passengerRowIsCorrect(row, passenger) {
-        return IRCTCExt.NgetPassengersFlow.rowMatchesPassenger(row, passenger) && IRCTCExt.NgetPassengersFlow.rowBerthMatches(row, passenger);
+        return IRCTCExt.NgetPassengersFlow.rowMatchesPassenger(row, passenger) && IRCTCExt.NgetPassengersFlow.rowHasRequiredDemographics(row) && IRCTCExt.NgetPassengersFlow.rowBerthMatches(row, passenger);
       },
       getFailingPassengers(passengers) {
-        return passengers.filter((passenger) => {
-          const row = IRCTCExt.NgetPassengersFlow.findMatchingRow(passenger);
-          return !row || !IRCTCExt.NgetPassengersFlow.passengerRowIsCorrect(row, passenger);
-        });
+        const usedRows = /* @__PURE__ */ new Set();
+        const failing = [];
+        for (const passenger of passengers) {
+          const row = IRCTCExt.NgetPassengersFlow.findRowForPassenger(passenger, usedRows);
+          if (row) usedRows.add(row);
+          if (!row || !IRCTCExt.NgetPassengersFlow.passengerRowIsCorrect(row, passenger)) {
+            failing.push(passenger);
+          }
+        }
+        return failing;
       },
       async fixPassengerRow(passenger, overlay, usedRows = /* @__PURE__ */ new Set()) {
         overlay.setStatus(`Fixing passenger: ${passenger.name}...`);
@@ -5470,13 +5813,7 @@
           usedRows.add(matchingRow);
           return matchingRow;
         }
-        const nameRow = IRCTCExt.NgetPassengersFlow.findRowByName(passenger, usedRows);
-        if (nameRow) {
-          await IRCTCExt.NgetPassengersFlow.deletePassengerRow(nameRow, overlay);
-        } else if (matchingRow) {
-          await IRCTCExt.NgetPassengersFlow.deletePassengerRow(matchingRow, overlay);
-        }
-        const row = await IRCTCExt.NgetPassengersFlow.getOrCreateEmptyRow(usedRows);
+        const row = await IRCTCExt.NgetPassengersFlow.getOrCreateRowForPassenger(passenger, usedRows);
         usedRows.add(row);
         await IRCTCExt.NgetPassengersFlow.fillPassengerRow(row, passenger, overlay);
         return row;
@@ -5487,9 +5824,11 @@
       async verifyAndReconcilePassengerList(config, overlay) {
         const passengers = (config.passengers || []).filter((p) => p.name && String(p.name).trim());
         const maxPasses = 3;
+        await IRCTCExt.NgetPassengersFlow.dedupeConfigPassengerRows(passengers, overlay);
         for (let pass = 1; pass <= maxPasses; pass += 1) {
           overlay.setStatus(`Verifying passenger list (${pass}/${maxPasses})...`);
           await IRCTCExt.Wait.delay(400);
+          await IRCTCExt.NgetPassengersFlow.dedupeConfigPassengerRows(passengers, overlay);
           let changed = false;
           let { matched, unmatchedPassengers, extraRows } = IRCTCExt.NgetPassengersFlow.partitionRows(passengers);
           for (const row of extraRows) {
@@ -5509,6 +5848,12 @@
             ({ matched, unmatchedPassengers, extraRows } = IRCTCExt.NgetPassengersFlow.partitionRows(passengers));
           }
           for (const { passenger, row } of matched) {
+            if (!IRCTCExt.NgetPassengersFlow.passengerRowIsCorrect(row, passenger)) {
+              overlay.setStatus(`Completing passenger: ${passenger.name}...`);
+              await IRCTCExt.NgetPassengersFlow.fillPassengerRow(row, passenger, overlay);
+              changed = true;
+              continue;
+            }
             if (!IRCTCExt.NgetPassengersFlow.rowBerthMatches(row, passenger)) {
               overlay.setStatus(`Updating berth for ${passenger.name}...`);
               const berthOk = await IRCTCExt.NgetPassengersFlow.selectBerthOnRow(row, passenger);
@@ -5521,7 +5866,7 @@
           const usedRows = new Set(matched.map((item) => item.row));
           for (const passenger of unmatchedPassengers) {
             overlay.setStatus(`Adding missing passenger: ${passenger.name}...`);
-            const row = await IRCTCExt.NgetPassengersFlow.getOrCreateEmptyRow(usedRows);
+            const row = await IRCTCExt.NgetPassengersFlow.getOrCreateRowForPassenger(passenger, usedRows);
             usedRows.add(row);
             await IRCTCExt.NgetPassengersFlow.fillPassengerRow(row, passenger, overlay);
             changed = true;
@@ -5557,18 +5902,19 @@
         const passengers = (config.passengers || []).filter((p) => p.name && String(p.name).trim());
         if (!passengers.length) throw new Error("No passengers configured with names");
         await IRCTCExt.NgetPassengersFlow.ensurePassengerRows(1);
+        await IRCTCExt.NgetPassengersFlow.dedupeConfigPassengerRows(passengers, overlay);
         const usedRows = /* @__PURE__ */ new Set();
         for (let i = 0; i < passengers.length; i += 1) {
           const passenger = passengers[i];
           overlay.setStatus(`Adding passenger ${i + 1}/${passengers.length}: ${passenger.name}...`);
-          let row = IRCTCExt.NgetPassengersFlow.findMatchingRow(passenger, usedRows);
+          let row = IRCTCExt.NgetPassengersFlow.findRowForPassenger(passenger, usedRows);
           if (!row) {
-            row = await IRCTCExt.NgetPassengersFlow.getOrCreateEmptyRow(usedRows);
+            row = await IRCTCExt.NgetPassengersFlow.getOrCreateRowForPassenger(passenger, usedRows);
+          }
+          if (!IRCTCExt.NgetPassengersFlow.passengerRowIsCorrect(row, passenger)) {
             await IRCTCExt.NgetPassengersFlow.fillPassengerRow(row, passenger, overlay);
-          } else {
-            if (!IRCTCExt.NgetPassengersFlow.rowBerthMatches(row, passenger)) {
-              await IRCTCExt.NgetPassengersFlow.selectBerthOnRow(row, passenger);
-            }
+          } else if (!IRCTCExt.NgetPassengersFlow.rowBerthMatches(row, passenger)) {
+            await IRCTCExt.NgetPassengersFlow.selectBerthOnRow(row, passenger);
           }
           usedRows.add(row);
         }
