@@ -34,10 +34,28 @@ IRCTCExt.NgetPaths = {
     if (path.includes('train-list')) return 'train-list';
     if (path.includes('train-search')) {
       if (IRCTCExt.NgetLanguageFlow?.isLanguageModalVisible?.()) return 'language';
+      // Search step only when needsLogin() is false (profile or no login affordance).
       if (IRCTCExt.NgetLoginFlow?.needsLogin?.()) return 'login';
       return 'search';
     }
     return 'init';
+  },
+
+  syncProgressFromPath(path = location.pathname, state = {}) {
+    const updates = {};
+
+    if (IRCTCExt.NgetPaths.isReviewPath(path) || IRCTCExt.NgetPaths.isPaymentPath(path)) {
+      updates.passengersDone = true;
+    }
+
+    if (IRCTCExt.NgetPaths.isGatewayPath(path)) {
+      if (state.paymentPhase === 'gateway' || state.awaitingGateway) {
+        updates.awaitingGateway = true;
+        updates.paymentPhase = 'gateway';
+      }
+    }
+
+    return updates;
   },
 
   isErrorPage(path = location.pathname) {

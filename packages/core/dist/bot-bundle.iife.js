@@ -232,6 +232,13 @@
       if (IRCTCExt.EticketPaths.isTrainSearchPath(path)) return "search";
       return "init";
     },
+    syncProgressFromPath(path = location.pathname) {
+      const updates = {};
+      if (IRCTCExt.EticketPaths.isReviewPath(path) || IRCTCExt.EticketPaths.isPaymentPath(path)) {
+        updates.passengersDone = true;
+      }
+      return updates;
+    },
     isErrorPage(path = location.pathname) {
       return path.includes(IRCTCExt.EticketConfig.errorPagePath);
     },
@@ -1324,6 +1331,7 @@
     ...IRCTCExt.EticketConfig,
     selectors: IRCTCExt.EticketSelectors,
     syncStepFromPath: IRCTCExt.EticketPaths.syncStepFromPath.bind(IRCTCExt.EticketPaths),
+    syncProgressFromPath: IRCTCExt.EticketPaths.syncProgressFromPath.bind(IRCTCExt.EticketPaths),
     isErrorPage: IRCTCExt.EticketPaths.isErrorPage.bind(IRCTCExt.EticketPaths),
     isTrainListPath: IRCTCExt.EticketPaths.isTrainListPath.bind(IRCTCExt.EticketPaths),
     isSearchSubmittedPath: IRCTCExt.EticketPaths.isSearchSubmittedPath.bind(IRCTCExt.EticketPaths),
@@ -1390,6 +1398,19 @@
         return "search";
       }
       return "init";
+    },
+    syncProgressFromPath(path = location.pathname, state = {}) {
+      const updates = {};
+      if (IRCTCExt.NgetPaths.isReviewPath(path) || IRCTCExt.NgetPaths.isPaymentPath(path)) {
+        updates.passengersDone = true;
+      }
+      if (IRCTCExt.NgetPaths.isGatewayPath(path)) {
+        if (state.paymentPhase === "gateway" || state.awaitingGateway) {
+          updates.awaitingGateway = true;
+          updates.paymentPhase = "gateway";
+        }
+      }
+      return updates;
     },
     isErrorPage(path = location.pathname) {
       return path.includes(IRCTCExt.NgetConfig.errorPagePath);
@@ -1531,8 +1552,9 @@
       trainHeading: [".train-heading strong"],
       classCell: ["div.pre-avl"],
       classLabel: ["div.pre-avl strong"],
-      classRefreshLink: ["div.pre-avl .col-xs-12.link", "div.pre-avl .link"],
-      classRefreshIcon: ["div.pre-avl .fa-repeat", "div.pre-avl .fa.fa-repeat"],
+      classRefreshLink: ["div.pre-avl .col-xs-12.link", "div.pre-avl .link", "div.link"],
+      classRefreshIcon: ["div.pre-avl .fa-repeat", "div.pre-avl .fa.fa-repeat", ".fa.fa-repeat"],
+      classPickerRow: ["tr td div.pre-avl"],
       classStatus: ["div.pre-avl"],
       classPickerCell: ["div.pre-avl"],
       classTabMenu: ["p-tabmenu", ".ui-tabmenu"],
@@ -1759,20 +1781,58 @@
         if (new RegExp(`\\b${normalizedClass}\\b`).test(text.toUpperCase())) return true;
         return false;
       },
+      looksLikeClassLabel(label) {
+        const text = String(label || "").trim();
+        if (!text) return false;
+        if (/\b(mon|tue|wed|thu|fri|sat|sun)\b/i.test(text)) return false;
+        return /\([A-Z0-9]{1,3}\)/.test(text) && /sleeper|tier|class|chair|sitting|economy|anubhuti|vistadome/i.test(text) || /sleeper\s*\(|tier\s*\(|chair\s*\(/i.test(text);
+      },
+      looksLikeJourneyDateLabel(label) {
+        const text = String(label || "").trim();
+        if (!text) return false;
+        if (IRCTCExt.NgetTrainList.looksLikeClassLabel(text)) return false;
+        return /\b(mon|tue|wed|thu|fri|sat|sun)\b/i.test(text) || /\d{1,2}\s*,/i.test(text);
+      },
+      hasRefreshInElement(root2) {
+        if (!root2) return false;
+        return !!IRCTCExt.NgetTrainList.findRefreshInElement(root2);
+      },
+      findRefreshInElement(root2) {
+        if (!root2) return null;
+        const sel = IRCTCExt.SELECTORS.trainList;
+        const links = IRCTCExt.Wait.queryAll(sel.classRefreshLink, root2);
+        const link = links.find(
+          (el) => /refresh/i.test(el.textContent || "") && IRCTCExt.Wait.isVisible(el)
+        );
+        if (link) return link;
+        const icons = IRCTCExt.Wait.queryAll(sel.classRefreshIcon, root2);
+        const icon = icons.find((el) => IRCTCExt.Wait.isVisible(el));
+        if (icon) {
+          const linkParent = icon.closest(".link");
+          if (linkParent && IRCTCExt.Wait.isVisible(linkParent)) return linkParent;
+          return icon;
+        }
+        if (root2.matches?.("div.pre-avl") && /refresh/i.test(root2.textContent || "") && IRCTCExt.Wait.isVisible(root2)) {
+          return root2;
+        }
+        return null;
+      },
       isClassPickerCell(cell) {
         if (!cell || IRCTCExt.NgetTrainList.isDateAvailabilityCell(cell)) return false;
-        if (IRCTCExt.NgetTrainList.findClassRefreshControl(cell)) return true;
+        if (IRCTCExt.NgetTrainList.hasRefreshInElement(cell)) return true;
         const strong = cell.querySelector("div:first-child strong, strong");
         const label = (strong?.textContent || "").trim();
         if (!label) return false;
-        if (/\b(mon|tue|wed|thu|fri|sat|sun)\b/i.test(label)) return false;
-        return /\([A-Z0-9]{1,3}\)/.test(label) || /sleeper|tier|class|chair|sitting|economy|anubhuti|vistadome/i.test(label);
+        if (IRCTCExt.NgetTrainList.looksLikeJourneyDateLabel(label)) return false;
+        return IRCTCExt.NgetTrainList.looksLikeClassLabel(label);
       },
       isDateAvailabilityCell(cell) {
         if (!cell) return false;
-        if (cell.querySelector(".AVAILABLE, .RAC, .WL, .REGRET")) return true;
         const label = IRCTCExt.NgetTrainList.getDateCellLabel(cell);
-        return /\b(mon|tue|wed|thu|fri|sat|sun)\b/i.test(label);
+        if (IRCTCExt.NgetTrainList.looksLikeClassLabel(label)) return false;
+        if (IRCTCExt.NgetTrainList.hasRefreshInElement(cell)) return false;
+        if (cell.querySelector(".AVAILABLE, .RAC, .WL, .REGRET")) return true;
+        return IRCTCExt.NgetTrainList.looksLikeJourneyDateLabel(label);
       },
       getClassPickerCells(card) {
         const sel = IRCTCExt.SELECTORS.trainList;
@@ -1787,16 +1847,30 @@
         return IRCTCExt.Wait.queryOne(sel.datePanel, card);
       },
       getDateAvailabilityCells(card) {
-        const panel = IRCTCExt.NgetTrainList.getDatePanel(card);
-        if (!panel) return [];
-        const container = panel.closest(".col-xs-12") || card;
-        const cells = [...container.querySelectorAll("div.pre-avl")];
+        const sel = IRCTCExt.SELECTORS.trainList;
+        const cells = [...card.querySelectorAll(sel.classPickerCell?.[0] || "div.pre-avl")];
         return cells.filter((cell) => IRCTCExt.NgetTrainList.isDateAvailabilityCell(cell));
+      },
+      hasDatePanelLoaded(card, journeyDate = "") {
+        const cells = IRCTCExt.NgetTrainList.getDateAvailabilityCells(card);
+        if (!cells.length) return false;
+        if (journeyDate) {
+          const dateCell = IRCTCExt.NgetTrainList.findDateCell(card, journeyDate);
+          if (!dateCell) return false;
+          const status = IRCTCExt.NgetTrainList.parseDateCellStatus(dateCell);
+          return !!status.type;
+        }
+        return true;
       },
       getDateCellLabel(dateCell) {
         const sel = IRCTCExt.SELECTORS.trainList;
         const labelEl = IRCTCExt.Wait.queryOne(sel.dateLabel, dateCell) || dateCell.querySelector("strong");
         return (labelEl?.textContent || "").trim();
+      },
+      findClassTab(card, travelClass) {
+        const sel = IRCTCExt.SELECTORS.trainList;
+        const tabs = IRCTCExt.Wait.queryAll(sel.classTabItem, card);
+        return tabs.find((tab) => IRCTCExt.NgetTrainList.classTabMatchesTravelClass(tab, travelClass)) || null;
       },
       findClassCell(card, travelClass) {
         for (const classCell of IRCTCExt.NgetTrainList.getClassPickerCells(card)) {
@@ -1804,6 +1878,8 @@
             return classCell;
           }
         }
+        const tab = IRCTCExt.NgetTrainList.findClassTab(card, travelClass);
+        if (tab) return tab;
         return null;
       },
       async findClassCellWithScroll(card, travelClass, overlay) {
@@ -1826,17 +1902,26 @@
         if (classCell) IRCTCExt.NgetTrainList.scrollIntoViewIfNeeded(classCell);
         return classCell;
       },
-      findClassRefreshControl(classCell) {
-        if (!classCell) return null;
-        const sel = IRCTCExt.SELECTORS.trainList;
-        const links = IRCTCExt.Wait.queryAll(sel.classRefreshLink, classCell);
-        const link = links.find(
-          (el) => /refresh/i.test(el.textContent || "") && IRCTCExt.Wait.isVisible(el)
-        );
-        if (link) return link;
-        const icons = IRCTCExt.Wait.queryAll(sel.classRefreshIcon, classCell);
-        const icon = icons.find((el) => IRCTCExt.Wait.isVisible(el));
-        if (icon) return icon;
+      async resolveClassContext(card, travelClass, overlay) {
+        const anchor = await IRCTCExt.NgetTrainList.findClassCellWithScroll(card, travelClass, overlay);
+        if (!anchor) return null;
+        const kind = anchor.matches?.(".ui-tabmenuitem") || anchor.closest?.(".ui-tabmenuitem") ? "tab" : "picker";
+        if (kind === "tab") {
+          await IRCTCExt.NgetTrainList.ensureClassTabActive(card, travelClass, overlay);
+        }
+        return { kind, anchor };
+      },
+      findClassRefreshControl(classAnchor, card, travelClass) {
+        if (classAnchor) {
+          const inAnchor = IRCTCExt.NgetTrainList.findRefreshInElement(classAnchor);
+          if (inAnchor) return inAnchor;
+        }
+        if (!card || !travelClass) return null;
+        for (const cell of card.querySelectorAll("div.pre-avl")) {
+          if (!IRCTCExt.NgetTrainList.classCellMatchesTravelClass(cell, travelClass)) continue;
+          const refresh = IRCTCExt.NgetTrainList.findRefreshInElement(cell);
+          if (refresh) return refresh;
+        }
         return null;
       },
       hasHighLoadInCard(card) {
@@ -1863,9 +1948,15 @@
         await IRCTCExt.Wait.delay(300);
         return true;
       },
-      async clickClassRefresh(classPickerCell, overlay, travelClass) {
-        IRCTCExt.NgetTrainList.scrollIntoViewIfNeeded(classPickerCell);
-        const refresh = IRCTCExt.NgetTrainList.findClassRefreshControl(classPickerCell);
+      async clickClassRefresh(card, overlay, travelClass) {
+        const ctx = await IRCTCExt.NgetTrainList.resolveClassContext(card, travelClass, overlay);
+        if (!ctx) throw new Error(`Class ${travelClass} not found for refresh`);
+        IRCTCExt.NgetTrainList.scrollIntoViewIfNeeded(ctx.anchor);
+        const refresh = IRCTCExt.NgetTrainList.findClassRefreshControl(
+          ctx.anchor,
+          card,
+          travelClass
+        );
         if (!refresh) throw new Error(`Refresh control not found for class ${travelClass}`);
         IRCTCExt.NgetTrainList.setStatus(overlay, `Refreshing availability for ${travelClass}...`);
         IRCTCExt.Events.click(refresh);
@@ -1873,23 +1964,15 @@
         return true;
       },
       async waitForDatePanel(card, overlay, options = {}) {
-        const {
-          classPickerCell = null,
-          travelClass = "",
-          maxAttempts = 100
-        } = options;
+        const { travelClass = "", journeyDate = "", maxAttempts = 100 } = options;
         for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
           const loaded = await IRCTCExt.Wait.poll(
-            () => {
-              const panel = IRCTCExt.NgetTrainList.getDatePanel(card);
-              if (!panel || !IRCTCExt.Wait.isVisible(panel)) return null;
-              return IRCTCExt.NgetTrainList.getDateAvailabilityCells(card).length > 0 ? true : null;
-            },
+            () => IRCTCExt.NgetTrainList.hasDatePanelLoaded(card, journeyDate) ? true : null,
             { timeout: attempt === 1 ? 1e4 : 8e3, interval: 200 }
           );
           if (loaded) return true;
           const highLoad = IRCTCExt.NgetTrainList.hasHighLoadInCard(card);
-          if (!classPickerCell && !highLoad) {
+          if (!travelClass && !highLoad) {
             throw new Error("Date availability panel did not load");
           }
           IRCTCExt.NgetTrainList.setStatus(
@@ -1897,10 +1980,10 @@
             highLoad ? `High load \u2014 close & refresh (attempt ${attempt}/${maxAttempts})...` : `Date panel loading \u2014 refresh (attempt ${attempt}/${maxAttempts})...`
           );
           await IRCTCExt.NgetTrainList.dismissHighLoadError(card, overlay);
-          if (!classPickerCell) {
+          if (!travelClass) {
             throw new Error("Date availability panel did not load");
           }
-          await IRCTCExt.NgetTrainList.clickClassRefresh(classPickerCell, overlay, travelClass);
+          await IRCTCExt.NgetTrainList.clickClassRefresh(card, overlay, travelClass);
         }
         throw new Error(`Date availability panel did not load after ${maxAttempts} attempts`);
       },
@@ -1958,15 +2041,15 @@
       isBookableStatus(statusType) {
         return statusType === "AVAILABLE" || statusType === "RAC";
       },
-      async refreshClassAvailability(classPickerCell, card, overlay, travelClass) {
-        await IRCTCExt.NgetTrainList.clickClassRefresh(classPickerCell, overlay, travelClass);
+      async refreshClassAvailability(card, overlay, travelClass, journeyDate = "") {
+        await IRCTCExt.NgetTrainList.clickClassRefresh(card, overlay, travelClass);
         await IRCTCExt.NgetTrainList.waitForDatePanel(card, overlay, {
-          classPickerCell,
-          travelClass
+          travelClass,
+          journeyDate
         });
         return true;
       },
-      async waitForBookableDate(card, journeyDate, travelClass, classPickerCell, overlay) {
+      async waitForBookableDate(card, journeyDate, travelClass, overlay) {
         let attempt = 0;
         const maxAttempts = 100;
         const dateLabel = IRCTCExt.Stations.formatDateForNgetCard(journeyDate) || journeyDate;
@@ -1980,8 +2063,8 @@
             continue;
           }
           await IRCTCExt.NgetTrainList.waitForDatePanel(card, overlay, {
-            classPickerCell,
-            travelClass
+            travelClass,
+            journeyDate
           });
           await IRCTCExt.NgetTrainList.ensureClassTabActive(card, travelClass, overlay);
           const dateCell = IRCTCExt.NgetTrainList.findDateCell(card, journeyDate);
@@ -2006,10 +2089,10 @@
             `High load on ${dateLabel} \u2014 refreshing (attempt ${attempt}/${maxAttempts})...`
           );
           await IRCTCExt.NgetTrainList.refreshClassAvailability(
-            classPickerCell,
             card,
             overlay,
-            travelClass
+            travelClass,
+            journeyDate
           );
           await IRCTCExt.Wait.delay(400);
         }
@@ -2058,20 +2141,26 @@
         const matchedName = IRCTCExt.NgetTrainList.getCardTrainName(card);
         const foundLabel = trainNum && matchedName ? `Found train ${trainNum} \u2014 ${matchedName}` : matchedName ? `Found train ${matchedName}` : `Found train ${trainNum}`;
         IRCTCExt.NgetTrainList.setStatus(overlay, foundLabel);
-        const classPickerCell = await IRCTCExt.NgetTrainList.findClassCellWithScroll(card, travelClass, overlay);
-        if (!classPickerCell) throw new Error(`Class ${travelClass} not found for train ${trainNum}`);
+        const classCtx = await IRCTCExt.NgetTrainList.resolveClassContext(card, travelClass, overlay);
+        if (!classCtx) throw new Error(`Class ${travelClass} not found for train ${trainNum}`);
         if (!journey.date) throw new Error("Journey date is required for nget train-list booking");
-        await IRCTCExt.NgetTrainList.refreshClassAvailability(
-          classPickerCell,
-          card,
-          overlay,
-          travelClass
-        );
+        await IRCTCExt.NgetTrainList.ensureClassTabActive(card, travelClass, overlay);
+        const existingDateCell = IRCTCExt.NgetTrainList.findDateCell(card, journey.date);
+        const existingStatus = existingDateCell ? IRCTCExt.NgetTrainList.parseDateCellStatus(existingDateCell) : null;
+        if (!existingDateCell || !existingStatus?.type) {
+          await IRCTCExt.NgetTrainList.refreshClassAvailability(
+            card,
+            overlay,
+            travelClass,
+            journey.date
+          );
+        } else {
+          IRCTCExt.NgetTrainList.setStatus(overlay, "Availability already loaded for journey date...");
+        }
         const { dateCell, status } = await IRCTCExt.NgetTrainList.waitForBookableDate(
           card,
           journey.date,
           travelClass,
-          classPickerCell,
           overlay
         );
         const dateLabel = IRCTCExt.NgetTrainList.getDateCellLabel(dateCell) || IRCTCExt.Stations.formatDateForNgetCard(journey.date);
@@ -2331,17 +2420,38 @@
         }
         return desktopBtn || IRCTCExt.NgetLoginFlow.findLoginButton({ visibleOnly: true });
       },
-      needsLogin() {
-        if (IRCTCExt.NgetLoginFlow.isLoginModalVisible()) return true;
-        if (IRCTCExt.Wait.queryOne(IRCTCExt.SELECTORS.loggedInProfile)) return false;
+      hasLoggedInMarker() {
+        return !!IRCTCExt.Wait.queryOne(IRCTCExt.SELECTORS.loggedInProfile);
+      },
+      hasVisibleLoginAffordance() {
         if (IRCTCExt.NgetLoginFlow.findDesktopLoginButton()) return true;
         if (IRCTCExt.NgetLoginFlow.findSidebarLoginButton()) return true;
-        const searchInput = IRCTCExt.Wait.queryOne(IRCTCExt.SELECTORS.searchFrom);
-        if (searchInput && IRCTCExt.Wait.isVisible(searchInput)) return false;
-        if (IRCTCExt.NgetLoginFlow.usesNarrowLoginLayout()) {
-          return !!IRCTCExt.NgetLoginFlow.hamburgerMenuTrigger();
+        if (IRCTCExt.NgetLoginFlow.usesNarrowLoginLayout() && IRCTCExt.NgetLoginFlow.hamburgerMenuTrigger()) {
+          return true;
         }
         return false;
+      },
+      needsLogin() {
+        if (IRCTCExt.NgetLoginFlow.isLoginModalVisible()) return true;
+        if (IRCTCExt.NgetLoginFlow.hasLoggedInMarker()) return false;
+        return IRCTCExt.NgetLoginFlow.hasVisibleLoginAffordance();
+      },
+      async waitForAuthUi(overlay) {
+        overlay?.setStatus?.("Waiting for login or profile...");
+        await IRCTCExt.Wait.poll(
+          () => {
+            if (IRCTCExt.NgetLoginFlow.hasLoggedInMarker()) return true;
+            if (IRCTCExt.NgetLoginFlow.findDesktopLoginButton()) return true;
+            if (IRCTCExt.NgetLoginFlow.findSidebarLoginButton()) return true;
+            if (IRCTCExt.NgetLanguageFlow?.isLanguageModalVisible?.()) return true;
+            if (IRCTCExt.NgetLoginFlow.isLoginModalVisible()) return true;
+            if (IRCTCExt.NgetLoginFlow.usesNarrowLoginLayout() && IRCTCExt.NgetLoginFlow.hamburgerMenuTrigger()) {
+              return true;
+            }
+            return null;
+          },
+          { timeout: 15e3, interval: 200 }
+        );
       },
       getLoginSubmit(modalRoot) {
         const root2 = modalRoot || IRCTCExt.NgetLoginFlow.getLoginModalRoot();
@@ -2371,11 +2481,9 @@
       },
       async isLoggedIn() {
         if (IRCTCExt.NgetLoginFlow.isLoginModalVisible()) return false;
-        if (IRCTCExt.Wait.queryOne(IRCTCExt.SELECTORS.loggedInProfile)) return true;
-        if (IRCTCExt.NgetLoginFlow.findDesktopLoginButton()) return false;
-        if (IRCTCExt.NgetLoginFlow.findSidebarLoginButton()) return false;
-        const searchInput = IRCTCExt.Wait.queryOne(IRCTCExt.SELECTORS.searchFrom);
-        return !!(searchInput && IRCTCExt.Wait.isVisible(searchInput));
+        if (IRCTCExt.NgetLoginFlow.hasLoggedInMarker()) return true;
+        if (IRCTCExt.NgetLoginFlow.hasVisibleLoginAffordance()) return false;
+        return true;
       },
       async ensureLoginModal(overlay) {
         if (IRCTCExt.NgetLoginFlow.isLoginModalVisible()) {
@@ -2428,19 +2536,7 @@
         });
       },
       async run(config, overlay) {
-        await IRCTCExt.Wait.poll(
-          () => {
-            if (IRCTCExt.NgetLoginFlow.isLoginModalVisible()) return true;
-            if (IRCTCExt.Wait.queryOne(IRCTCExt.SELECTORS.loggedInProfile)) return true;
-            if (IRCTCExt.Wait.queryOne(IRCTCExt.SELECTORS.searchFrom)) return true;
-            if (IRCTCExt.NgetLoginFlow.findDesktopLoginButton()) return true;
-            if (IRCTCExt.NgetLoginFlow.findSidebarLoginButton()) return true;
-            if (IRCTCExt.NgetLoginFlow.isSidebarOpen()) return true;
-            if (IRCTCExt.NgetLoginFlow.hamburgerMenuTrigger()) return true;
-            return null;
-          },
-          { timeout: 12e3, interval: 200 }
-        );
+        await IRCTCExt.NgetLoginFlow.waitForAuthUi(overlay);
         if (await IRCTCExt.NgetLoginFlow.isLoggedIn()) {
           overlay.setStatus("Already logged in");
           return true;
@@ -2486,6 +2582,7 @@
       },
       async runWithRetry(config, overlay, { maxAttempts = 3 } = {}) {
         await IRCTCExt.NgetLanguageFlow.dismissPreferredLanguage(overlay);
+        await IRCTCExt.NgetLoginFlow.waitForAuthUi(overlay);
         if (await IRCTCExt.NgetLoginFlow.isLoggedIn()) {
           overlay.setStatus("Already logged in");
           return true;
@@ -2641,6 +2738,9 @@
         throw new Error("Search did not open train list");
       },
       async run(config, overlay) {
+        if (IRCTCExt.NgetLoginFlow.needsLogin() || !await IRCTCExt.NgetLoginFlow.isLoggedIn()) {
+          throw new Error("Login required before search");
+        }
         overlay.setStep("Search");
         overlay.setStatus("Filling journey details...");
         await IRCTCExt.Storage.updateState({ currentStep: "search" });
@@ -3202,6 +3302,7 @@
       ...IRCTCExt.NgetConfig,
       selectors: IRCTCExt.NgetSelectors,
       syncStepFromPath: IRCTCExt.NgetPaths.syncStepFromPath.bind(IRCTCExt.NgetPaths),
+      syncProgressFromPath: IRCTCExt.NgetPaths.syncProgressFromPath.bind(IRCTCExt.NgetPaths),
       isErrorPage: IRCTCExt.NgetPaths.isErrorPage.bind(IRCTCExt.NgetPaths),
       isTrainListPath: IRCTCExt.NgetPaths.isTrainListPath.bind(IRCTCExt.NgetPaths),
       isTrainSearchPath: IRCTCExt.NgetPaths.isTrainSearchPath.bind(IRCTCExt.NgetPaths),
@@ -6580,6 +6681,26 @@
     isAutoPayAvailable() {
       return !!IRCTCExt.BkgPayment?.handleCardsPayment;
     },
+    async applyProgressFromPath() {
+      const config = await IRCTCExt.Storage.get();
+      const site = await IRCTCExt.Bot.getSite(config);
+      const updates = site.syncProgressFromPath?.(location.pathname, config.state);
+      if (updates && Object.keys(updates).length) {
+        await IRCTCExt.Storage.updateState(updates);
+        Object.assign(config.state, updates);
+      }
+      return config;
+    },
+    async kickRunLoop() {
+      if (this.running) return;
+      const config = await IRCTCExt.Storage.get();
+      if (!config.state.running || config.state.status === "stopped") return;
+      try {
+        await IRCTCExt.Bot.start({ resetSession: false });
+      } catch (err) {
+        console.error("[IRCTC-Bot] kickRunLoop failed:", err);
+      }
+    },
     async handleErrorPageIfNeeded(overlay) {
       const config = await IRCTCExt.Storage.get();
       const site = await IRCTCExt.Bot.getSite(config);
@@ -6731,7 +6852,7 @@
       return "done";
     },
     async runForCurrentPath(overlay) {
-      const config = await IRCTCExt.Storage.get();
+      const config = await IRCTCExt.Bot.applyProgressFromPath();
       const site = await IRCTCExt.Bot.getSite(config);
       const path = location.pathname;
       if (site.isErrorPage(path)) {
@@ -6781,12 +6902,15 @@
       overlay.setStatus("Waiting for next booking page...");
       return "wait";
     },
-    async start() {
+    async start({ resetSession = true } = {}) {
       if (this.running) return;
       const config = await IRCTCExt.Storage.get();
       if (await IRCTCExt.Bot.wasStopped()) return;
       await IRCTCExt.Bot.waitForSiteReady(config);
       if (await IRCTCExt.Bot.wasStopped()) return;
+      if (!resetSession) {
+        await IRCTCExt.Bot.applyProgressFromPath();
+      }
       const access = await IRCTCExt.PlatformBridge.sendMessage("CHECK_ACCESS", { forceRefresh: false }).catch(() => null);
       if (!access?.allowed) {
         const overlay2 = await IRCTCExt.Overlay.show().catch(() => null);
@@ -6812,19 +6936,24 @@
         this.running = false;
         return;
       }
-      await IRCTCExt.Storage.updateState({
+      const sessionReset = {
         running: true,
         paused: false,
         status: "running",
-        lastRun: (/* @__PURE__ */ new Date()).toISOString(),
-        passengersDone: false,
-        paymentDone: false,
-        paymentPhase: null,
-        paymentGateway: null,
-        awaitingGateway: false,
-        bookingSessionId: crypto.randomUUID(),
-        tokenConsumed: false
-      });
+        lastRun: (/* @__PURE__ */ new Date()).toISOString()
+      };
+      if (resetSession) {
+        Object.assign(sessionReset, {
+          passengersDone: false,
+          paymentDone: false,
+          paymentPhase: null,
+          paymentGateway: null,
+          awaitingGateway: false,
+          bookingSessionId: crypto.randomUUID(),
+          tokenConsumed: false
+        });
+      }
+      await IRCTCExt.Storage.updateState(sessionReset);
       try {
         let attempts = 0;
         const maxRetries = 3;
@@ -6839,6 +6968,7 @@
           }
           try {
             const result = await IRCTCExt.Bot.runForCurrentPath(overlay);
+            attempts = 0;
             if (result === "done") break;
             if (result === "wait") break;
             if (result === "continue") continue;
@@ -6847,7 +6977,19 @@
             attempts += 1;
             console.error("[IRCTC-Bot]", err);
             overlay.setError(err.message || String(err));
-            if (attempts >= maxRetries) throw err;
+            if (attempts >= maxRetries) {
+              await IRCTCExt.Storage.updateState({
+                paused: true,
+                status: "paused",
+                running: true,
+                message: err.message || String(err)
+              });
+              overlay.setStatus(
+                "Paused \u2014 finish this step manually, then open the next page or click Resume."
+              );
+              overlay.setStep("Paused");
+              break;
+            }
             overlay.setStatus(`Retry ${attempts}/${maxRetries}...`);
             await IRCTCExt.Wait.delay(1500);
           }
@@ -6857,6 +6999,8 @@
           overlay.setStatus("Automation sequence completed.");
           overlay.setStep("Done");
           IRCTCExt.PlatformBridge?.sendMessage("BOOKING_STATUS", { status: "done" });
+        } else if (finalConfig.state.paused && finalConfig.state.running) {
+          overlay.setStep("Paused");
         } else if (finalConfig.state.running) {
           overlay.setStatus(`Waiting at step: ${finalConfig.state.currentStep}`);
           overlay.setStep(finalConfig.state.currentStep);
@@ -6878,7 +7022,7 @@
       const config = await IRCTCExt.Storage.get();
       if (!config.state.running || config.state.paused || config.state.status === "stopped" || this.running) return;
       try {
-        await IRCTCExt.Bot.start();
+        await IRCTCExt.Bot.start({ resetSession: false });
       } catch (err) {
         console.error("[IRCTC-Bot] Resume failed:", err);
       }
@@ -6921,11 +7065,25 @@
       IRCTCExt.Wait.installIrctcNoiseFilter?.();
       IRCTCExt.Modals.init();
       IRCTCExt.Overlay.init().catch((err) => console.warn("[IRCTC-Bot] Overlay init:", err));
-      this.unwatchPath = IRCTCExt.Wait.watchPath(async () => {
+      this.unwatchPath = IRCTCExt.Wait.watchPath(async (newPath, prevPath) => {
         const overlay = await IRCTCExt.Overlay.show().catch(() => null);
         if (await IRCTCExt.Bot.handleErrorPageIfNeeded(overlay)) return;
         const config = await IRCTCExt.Storage.get();
-        if (!config.state.running || config.state.paused) return;
+        if (!config.state.running || config.state.status === "stopped") return;
+        if (config.state.paused && prevPath && newPath !== prevPath) {
+          const site = await IRCTCExt.Bot.getSite(config).catch(() => null);
+          const progress = site?.syncProgressFromPath?.(newPath, config.state) || {};
+          await IRCTCExt.Storage.updateState({
+            ...progress,
+            paused: false,
+            status: "running"
+          });
+          overlay?.setError("");
+          overlay?.setStatus("Resumed after page change \u2014 continuing...");
+          await IRCTCExt.Bot.kickRunLoop();
+          return;
+        }
+        if (config.state.paused) return;
         await IRCTCExt.Bot.resumeIfNeeded();
       });
       const handleMessage = (msg, sendResponse) => {
@@ -6956,7 +7114,15 @@
           return true;
         }
         if (msg.type === "CONTINUE_BOOKING") {
-          IRCTCExt.Storage.updateState({ paused: false }).then(() => sendResponse({ ok: true }));
+          (async () => {
+            await IRCTCExt.Storage.updateState({ paused: false, status: "running" });
+            await IRCTCExt.Bot.applyProgressFromPath();
+            await IRCTCExt.Bot.kickRunLoop();
+            sendResponse({ ok: true });
+          })().catch((err) => {
+            console.error("[IRCTC-Bot] Continue failed:", err);
+            sendResponse({ ok: false, error: err.message });
+          });
           return true;
         }
         if (msg.type === "PAUSE_BOOKING") {

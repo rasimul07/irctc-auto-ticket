@@ -170,6 +170,13 @@
     },
 
     async run(config, overlay) {
+      if (
+        IRCTCExt.NgetLoginFlow.needsLogin() ||
+        !(await IRCTCExt.NgetLoginFlow.isLoggedIn())
+      ) {
+        throw new Error('Login required before search');
+      }
+
       overlay.setStep('Search');
       overlay.setStatus('Filling journey details...');
       await IRCTCExt.Storage.updateState({ currentStep: 'search' });

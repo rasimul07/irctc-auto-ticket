@@ -47,6 +47,28 @@ IRCTCExt.Bot = {
     return !!IRCTCExt.BkgPayment?.handleCardsPayment;
   },
 
+  async applyProgressFromPath() {
+    const config = await IRCTCExt.Storage.get();
+    const site = await IRCTCExt.Bot.getSite(config);
+    const updates = site.syncProgressFromPath?.(location.pathname, config.state);
+    if (updates && Object.keys(updates).length) {
+      await IRCTCExt.Storage.updateState(updates);
+      Object.assign(config.state, updates);
+    }
+    return config;
+  },
+
+  async kickRunLoop() {
+    if (this.running) return;
+    const config = await IRCTCExt.Storage.get();
+    if (!config.state.running || config.state.status === 'stopped') return;
+    try {
+      await IRCTCExt.Bot.start({ resetSession: false });
+    } catch (err) {
+      console.error('[IRCTC-Bot] kickRunLoop failed:', err);
+    }
+  },
+
   async handleErrorPageIfNeeded(overlay) {
     const config = await IRCTCExt.Storage.get();
     const site = await IRCTCExt.Bot.getSite(config);
@@ -227,7 +249,7 @@ IRCTCExt.Bot = {
   },
 
   async runForCurrentPath(overlay) {
-    const config = await IRCTCExt.Storage.get();
+    const config = await IRCTCExt.Bot.applyProgressFromPath();
     const site = await IRCTCExt.Bot.getSite(config);
     const path = location.pathname;
 
@@ -286,7 +308,7 @@ IRCTCExt.Bot = {
     return 'wait';
   },
 
-  async start() {
+  async start({ resetSession = true } = {}) {
     if (this.running) return;
 
     const config = await IRCTCExt.Storage.get();
@@ -294,6 +316,10 @@ IRCTCExt.Bot = {
 
     await IRCTCExt.Bot.waitForSiteReady(config);
     if (await IRCTCExt.Bot.wasStopped()) return;
+
+    if (!resetSession) {
+      await IRCTCExt.Bot.applyProgressFromPath();
+    }
 
     const access = await IRCTCExt.PlatformBridge
       .sendMessage('CHECK_ACCESS', { forceRefresh: false })
@@ -332,19 +358,26 @@ IRCTCExt.Bot = {
       return;
     }
 
-    await IRCTCExt.Storage.updateState({
+    const sessionReset = {
       running: true,
       paused: false,
       status: 'running',
-      lastRun: new Date().toISOString(),
-      passengersDone: false,
-      paymentDone: false,
-      paymentPhase: null,
-      paymentGateway: null,
-      awaitingGateway: false,
-      bookingSessionId: crypto.randomUUID(),
-      tokenConsumed: false
-    });
+      lastRun: new Date().toISOString()
+    };
+
+    if (resetSession) {
+      Object.assign(sessionReset, {
+        passengersDone: false,
+        paymentDone: false,
+        paymentPhase: null,
+        paymentGateway: null,
+        awaitingGateway: false,
+        bookingSessionId: crypto.randomUUID(),
+        tokenConsumed: false
+      });
+    }
+
+    await IRCTCExt.Storage.updateState(sessionReset);
 
     try {
       let attempts = 0;
@@ -362,6 +395,7 @@ IRCTCExt.Bot = {
 
         try {
           const result = await IRCTCExt.Bot.runForCurrentPath(overlay);
+          attempts = 0;
           if (result === 'done') break;
           if (result === 'wait') break;
           if (result === 'continue') continue;
@@ -370,7 +404,19 @@ IRCTCExt.Bot = {
           attempts += 1;
           console.error('[IRCTC-Bot]', err);
           overlay.setError(err.message || String(err));
-          if (attempts >= maxRetries) throw err;
+          if (attempts >= maxRetries) {
+            await IRCTCExt.Storage.updateState({
+              paused: true,
+              status: 'paused',
+              running: true,
+              message: err.message || String(err)
+            });
+            overlay.setStatus(
+              'Paused — finish this step manually, then open the next page or click Resume.'
+            );
+            overlay.setStep('Paused');
+            break;
+          }
           overlay.setStatus(`Retry ${attempts}/${maxRetries}...`);
           await IRCTCExt.Wait.delay(1500);
         }
@@ -381,6 +427,8 @@ IRCTCExt.Bot = {
         overlay.setStatus('Automation sequence completed.');
         overlay.setStep('Done');
         IRCTCExt.PlatformBridge?.sendMessage('BOOKING_STATUS', { status: 'done' });
+      } else if (finalConfig.state.paused && finalConfig.state.running) {
+        overlay.setStep('Paused');
       } else if (finalConfig.state.running) {
         overlay.setStatus(`Waiting at step: ${finalConfig.state.currentStep}`);
         overlay.setStep(finalConfig.state.currentStep);
@@ -404,7 +452,7 @@ IRCTCExt.Bot = {
     const config = await IRCTCExt.Storage.get();
     if (!config.state.running || config.state.paused || config.state.status === 'stopped' || this.running) return;
     try {
-      await IRCTCExt.Bot.start();
+      await IRCTCExt.Bot.start({ resetSession: false });
     } catch (err) {
       console.error('[IRCTC-Bot] Resume failed:', err);
     }
@@ -457,12 +505,28 @@ IRCTCExt.Bot = {
     IRCTCExt.Modals.init();
     IRCTCExt.Overlay.init().catch((err) => console.warn('[IRCTC-Bot] Overlay init:', err));
 
-    this.unwatchPath = IRCTCExt.Wait.watchPath(async () => {
+    this.unwatchPath = IRCTCExt.Wait.watchPath(async (newPath, prevPath) => {
       const overlay = await IRCTCExt.Overlay.show().catch(() => null);
       if (await IRCTCExt.Bot.handleErrorPageIfNeeded(overlay)) return;
 
       const config = await IRCTCExt.Storage.get();
-      if (!config.state.running || config.state.paused) return;
+      if (!config.state.running || config.state.status === 'stopped') return;
+
+      if (config.state.paused && prevPath && newPath !== prevPath) {
+        const site = await IRCTCExt.Bot.getSite(config).catch(() => null);
+        const progress = site?.syncProgressFromPath?.(newPath, config.state) || {};
+        await IRCTCExt.Storage.updateState({
+          ...progress,
+          paused: false,
+          status: 'running'
+        });
+        overlay?.setError('');
+        overlay?.setStatus('Resumed after page change — continuing...');
+        await IRCTCExt.Bot.kickRunLoop();
+        return;
+      }
+
+      if (config.state.paused) return;
 
       await IRCTCExt.Bot.resumeIfNeeded();
     });
@@ -501,7 +565,15 @@ IRCTCExt.Bot = {
       }
 
       if (msg.type === 'CONTINUE_BOOKING') {
-        IRCTCExt.Storage.updateState({ paused: false }).then(() => sendResponse({ ok: true }));
+        (async () => {
+          await IRCTCExt.Storage.updateState({ paused: false, status: 'running' });
+          await IRCTCExt.Bot.applyProgressFromPath();
+          await IRCTCExt.Bot.kickRunLoop();
+          sendResponse({ ok: true });
+        })().catch((err) => {
+          console.error('[IRCTC-Bot] Continue failed:', err);
+          sendResponse({ ok: false, error: err.message });
+        });
         return true;
       }
 

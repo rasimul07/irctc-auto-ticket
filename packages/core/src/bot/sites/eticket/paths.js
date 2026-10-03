@@ -12,6 +12,16 @@ IRCTCExt.EticketPaths = {
     return 'init';
   },
 
+  syncProgressFromPath(path = location.pathname) {
+    const updates = {};
+
+    if (IRCTCExt.EticketPaths.isReviewPath(path) || IRCTCExt.EticketPaths.isPaymentPath(path)) {
+      updates.passengersDone = true;
+    }
+
+    return updates;
+  },
+
   isErrorPage(path = location.pathname) {
     return path.includes(IRCTCExt.EticketConfig.errorPagePath);
   },

@@ -5,6 +5,7 @@
     ...IRCTCExt.NgetConfig,
     selectors: IRCTCExt.NgetSelectors,
     syncStepFromPath: IRCTCExt.NgetPaths.syncStepFromPath.bind(IRCTCExt.NgetPaths),
+    syncProgressFromPath: IRCTCExt.NgetPaths.syncProgressFromPath.bind(IRCTCExt.NgetPaths),
     isErrorPage: IRCTCExt.NgetPaths.isErrorPage.bind(IRCTCExt.NgetPaths),
     isTrainListPath: IRCTCExt.NgetPaths.isTrainListPath.bind(IRCTCExt.NgetPaths),
     isTrainSearchPath: IRCTCExt.NgetPaths.isTrainSearchPath.bind(IRCTCExt.NgetPaths),
