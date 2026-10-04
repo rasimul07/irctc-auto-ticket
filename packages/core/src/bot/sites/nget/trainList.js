@@ -296,7 +296,16 @@
       return cells.filter((cell) => IRCTCExt.NgetTrainList.isDateAvailabilityCell(cell));
     },
 
-    hasDatePanelLoaded(card, journeyDate = '') {
+    hasDatePanelLoaded(card, journeyDate = '', travelClass = '') {
+      if (travelClass) {
+        const classCell = IRCTCExt.NgetTrainList.findClassCell(card, travelClass);
+        if (classCell) {
+          const directStatus = IRCTCExt.NgetTrainList.parseDateCellStatus(classCell);
+          if (directStatus.type && directStatus.type !== 'HIGH_LOAD') return true;
+        }
+      }
+      if (IRCTCExt.NgetTrainList.findBookNowButton(card)) return true;
+
       const cells = IRCTCExt.NgetTrainList.getDateAvailabilityCells(card);
       if (!cells.length) return false;
 
@@ -432,12 +441,34 @@
         card,
         travelClass
       );
-      if (!refresh) throw new Error(`Refresh control not found for class ${travelClass}`);
+      if (refresh) {
+        IRCTCExt.NgetTrainList.setStatus(overlay, `Refreshing availability for ${travelClass}...`);
+        IRCTCExt.Events.click(refresh);
+        await IRCTCExt.Wait.delay(500);
+        return true;
+      }
 
-      IRCTCExt.NgetTrainList.setStatus(overlay, `Refreshing availability for ${travelClass}...`);
-      IRCTCExt.Events.click(refresh);
-      await IRCTCExt.Wait.delay(500);
-      return true;
+      // If no refresh icon found, check if availability is already displayed on the card (e.g. AVAILABLE-0136)
+      const directStatus = IRCTCExt.NgetTrainList.parseDateCellStatus(ctx.anchor);
+      if (directStatus?.type && IRCTCExt.NgetTrainList.isBookableStatus(directStatus.type)) {
+        IRCTCExt.NgetTrainList.setStatus(
+          overlay,
+          `Class ${travelClass} is already ${directStatus.text || directStatus.type}...`
+        );
+        IRCTCExt.Events.click(ctx.anchor);
+        await IRCTCExt.Wait.delay(300);
+        return true;
+      }
+
+      // If no refresh control icon, clicking the class card itself triggers/selects availability in IRCTC
+      if (ctx.anchor && IRCTCExt.Wait.isVisible(ctx.anchor)) {
+        IRCTCExt.NgetTrainList.setStatus(overlay, `Selecting class ${travelClass}...`);
+        IRCTCExt.Events.click(ctx.anchor);
+        await IRCTCExt.Wait.delay(500);
+        return true;
+      }
+
+      throw new Error(`Refresh control not found for class ${travelClass}`);
     },
 
     async waitForDatePanel(card, overlay, options = {}) {
@@ -446,7 +477,7 @@
       for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
         const loaded = await IRCTCExt.Wait.poll(
           () =>
-            IRCTCExt.NgetTrainList.hasDatePanelLoaded(card, journeyDate) ? true : null,
+            IRCTCExt.NgetTrainList.hasDatePanelLoaded(card, journeyDate, travelClass) ? true : null,
           { timeout: attempt === 1 ? 10000 : 8000, interval: 200 }
         );
 
@@ -575,20 +606,34 @@
         });
         await IRCTCExt.NgetTrainList.ensureClassTabActive(card, travelClass, overlay);
 
+        // 1. Check if class card itself has direct bookable availability (single-date view like AVAILABLE-0136)
+        const classCell = IRCTCExt.NgetTrainList.findClassCell(card, travelClass);
+        if (classCell) {
+          const directStatus = IRCTCExt.NgetTrainList.parseDateCellStatus(classCell);
+          if (IRCTCExt.NgetTrainList.isBookableStatus(directStatus.type)) {
+            return { dateCell: classCell, status: directStatus };
+          }
+        }
+
+        // 2. Check multi-date grid
         const dateCell = IRCTCExt.NgetTrainList.findDateCell(card, journeyDate);
-        if (!dateCell) {
+        if (dateCell) {
+          const status = IRCTCExt.NgetTrainList.parseDateCellStatus(dateCell);
+          if (IRCTCExt.NgetTrainList.isBookableStatus(status.type)) {
+            return { dateCell, status };
+          }
+
+          if (!IRCTCExt.NgetTrainList.isRetryableAvailabilityError(status)) {
+            throw new Error(
+              `${dateLabel} shows ${status.text || status.type || 'not available'} — not bookable`
+            );
+          }
+        } else if (IRCTCExt.NgetTrainList.findBookNowButton(card)) {
+          const directStatus = classCell ? IRCTCExt.NgetTrainList.parseDateCellStatus(classCell) : null;
+          const status = directStatus?.type ? directStatus : { type: 'AVAILABLE', text: 'Available' };
+          return { dateCell: classCell || card, status };
+        } else {
           throw new Error(`Journey date not found in availability (${dateLabel})`);
-        }
-
-        const status = IRCTCExt.NgetTrainList.parseDateCellStatus(dateCell);
-        if (IRCTCExt.NgetTrainList.isBookableStatus(status.type)) {
-          return { dateCell, status };
-        }
-
-        if (!IRCTCExt.NgetTrainList.isRetryableAvailabilityError(status)) {
-          throw new Error(
-            `${dateLabel} shows ${status.text || status.type || 'not available'} — not bookable`
-          );
         }
 
         attempt += 1;
@@ -646,6 +691,10 @@
       const deadline = Date.now() + 25000;
       while (Date.now() < deadline) {
         if (location.pathname.includes('psgninput')) return true;
+        const waf = IRCTCExt.Modals?.detectWafOrServerError?.();
+        if (waf) {
+          throw new Error(`Akamai WAF block: ${waf.message || 'Unable to Process Request !!'}`);
+        }
         await IRCTCExt.Wait.delay(100);
       }
 
@@ -688,7 +737,14 @@
         ? IRCTCExt.NgetTrainList.parseDateCellStatus(existingDateCell)
         : null;
 
-      if (!existingDateCell || !existingStatus?.type) {
+      // Check if class card already has direct availability (like AVAILABLE-0136 in class box)
+      const directClassCell = IRCTCExt.NgetTrainList.findClassCell(card, travelClass);
+      const directStatus = directClassCell
+        ? IRCTCExt.NgetTrainList.parseDateCellStatus(directClassCell)
+        : null;
+      const isAlreadyAvailable = directStatus?.type && directStatus.type !== 'HIGH_LOAD';
+
+      if (!existingDateCell && !isAlreadyAvailable && !IRCTCExt.NgetTrainList.findBookNowButton(card)) {
         await IRCTCExt.NgetTrainList.refreshClassAvailability(
           card,
           overlay,

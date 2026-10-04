@@ -63,7 +63,9 @@ IRCTCExt.NgetPaths = {
   },
 
   isErrorPage(path = location.pathname) {
-    return path.includes(IRCTCExt.NgetConfig.errorPagePath);
+    if (path.includes(IRCTCExt.NgetConfig.errorPagePath)) return true;
+    if (IRCTCExt.Modals?.detectWafOrServerError?.()) return true;
+    return false;
   },
 
   isTrainListPath(path = location.pathname) {

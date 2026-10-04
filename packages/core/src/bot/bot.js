@@ -74,6 +74,24 @@ IRCTCExt.Bot = {
     const site = await IRCTCExt.Bot.getSite(config);
     if (!site.isErrorPage()) return false;
 
+    // Check specifically for Akamai / WAF IP block ("Unable to Process Request !!")
+    const wafError = IRCTCExt.Modals?.detectWafOrServerError?.();
+    if (wafError) {
+      const ip = wafError.clientIp || 'your IP';
+      const ref = wafError.reference ? ` [Ref: ${wafError.reference}]` : '';
+      const msg = `Akamai WAF blocked connection${ref}. Client IP (${ip}) is flagged. Please switch network/mobile hotspot and restart.`;
+      overlay?.setError(msg);
+      overlay?.setStatus('Booking blocked by Akamai WAF.');
+      overlay?.setStep('WAF Block');
+      await IRCTCExt.Storage.updateState({
+        running: false,
+        status: 'error',
+        lastWafError: wafError
+      });
+      IRCTCExt.Bot.running = false;
+      return true;
+    }
+
     if (!config.state.running || config.state.paused) return false;
     if (IRCTCExt.Bot._errorRestartInFlight) return true;
 
@@ -277,6 +295,10 @@ IRCTCExt.Bot = {
     }
 
     if (site.isPassengerPath(path)) {
+      if (IRCTCExt.Modals?.detectWafOrServerError?.()) {
+        await IRCTCExt.Bot.handleErrorPageIfNeeded(overlay);
+        return 'wait';
+      }
       if (!config.state.passengersDone) {
         await site.flows.BookingFlow.fillPassengers(config, overlay);
         await IRCTCExt.Storage.updateState({ passengersDone: true, currentStep: 'review' });

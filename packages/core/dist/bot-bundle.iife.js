@@ -241,7 +241,9 @@
       return updates;
     },
     isErrorPage(path = location.pathname) {
-      return path.includes(IRCTCExt.EticketConfig.errorPagePath);
+      if (path.includes(IRCTCExt.EticketConfig.errorPagePath)) return true;
+      if (IRCTCExt.Modals?.detectWafOrServerError?.()) return true;
+      return false;
     },
     isTrainListPath(path = location.pathname) {
       const listPath = IRCTCExt.EticketConfig.trainListPath;
@@ -1418,7 +1420,9 @@
       return updates;
     },
     isErrorPage(path = location.pathname) {
-      return path.includes(IRCTCExt.NgetConfig.errorPagePath);
+      if (path.includes(IRCTCExt.NgetConfig.errorPagePath)) return true;
+      if (IRCTCExt.Modals?.detectWafOrServerError?.()) return true;
+      return false;
     },
     isTrainListPath(path = location.pathname) {
       return path.includes("train-list");
@@ -1856,7 +1860,15 @@
         const cells = [...card.querySelectorAll(sel.classPickerCell?.[0] || "div.pre-avl")];
         return cells.filter((cell) => IRCTCExt.NgetTrainList.isDateAvailabilityCell(cell));
       },
-      hasDatePanelLoaded(card, journeyDate = "") {
+      hasDatePanelLoaded(card, journeyDate = "", travelClass = "") {
+        if (travelClass) {
+          const classCell = IRCTCExt.NgetTrainList.findClassCell(card, travelClass);
+          if (classCell) {
+            const directStatus = IRCTCExt.NgetTrainList.parseDateCellStatus(classCell);
+            if (directStatus.type && directStatus.type !== "HIGH_LOAD") return true;
+          }
+        }
+        if (IRCTCExt.NgetTrainList.findBookNowButton(card)) return true;
         const cells = IRCTCExt.NgetTrainList.getDateAvailabilityCells(card);
         if (!cells.length) return false;
         if (journeyDate) {
@@ -1962,17 +1974,35 @@
           card,
           travelClass
         );
-        if (!refresh) throw new Error(`Refresh control not found for class ${travelClass}`);
-        IRCTCExt.NgetTrainList.setStatus(overlay, `Refreshing availability for ${travelClass}...`);
-        IRCTCExt.Events.click(refresh);
-        await IRCTCExt.Wait.delay(500);
-        return true;
+        if (refresh) {
+          IRCTCExt.NgetTrainList.setStatus(overlay, `Refreshing availability for ${travelClass}...`);
+          IRCTCExt.Events.click(refresh);
+          await IRCTCExt.Wait.delay(500);
+          return true;
+        }
+        const directStatus = IRCTCExt.NgetTrainList.parseDateCellStatus(ctx.anchor);
+        if (directStatus?.type && IRCTCExt.NgetTrainList.isBookableStatus(directStatus.type)) {
+          IRCTCExt.NgetTrainList.setStatus(
+            overlay,
+            `Class ${travelClass} is already ${directStatus.text || directStatus.type}...`
+          );
+          IRCTCExt.Events.click(ctx.anchor);
+          await IRCTCExt.Wait.delay(300);
+          return true;
+        }
+        if (ctx.anchor && IRCTCExt.Wait.isVisible(ctx.anchor)) {
+          IRCTCExt.NgetTrainList.setStatus(overlay, `Selecting class ${travelClass}...`);
+          IRCTCExt.Events.click(ctx.anchor);
+          await IRCTCExt.Wait.delay(500);
+          return true;
+        }
+        throw new Error(`Refresh control not found for class ${travelClass}`);
       },
       async waitForDatePanel(card, overlay, options = {}) {
         const { travelClass = "", journeyDate = "", maxAttempts = 100 } = options;
         for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
           const loaded = await IRCTCExt.Wait.poll(
-            () => IRCTCExt.NgetTrainList.hasDatePanelLoaded(card, journeyDate) ? true : null,
+            () => IRCTCExt.NgetTrainList.hasDatePanelLoaded(card, journeyDate, travelClass) ? true : null,
             { timeout: attempt === 1 ? 1e4 : 8e3, interval: 200 }
           );
           if (loaded) return true;
@@ -2072,18 +2102,30 @@
             journeyDate
           });
           await IRCTCExt.NgetTrainList.ensureClassTabActive(card, travelClass, overlay);
+          const classCell = IRCTCExt.NgetTrainList.findClassCell(card, travelClass);
+          if (classCell) {
+            const directStatus = IRCTCExt.NgetTrainList.parseDateCellStatus(classCell);
+            if (IRCTCExt.NgetTrainList.isBookableStatus(directStatus.type)) {
+              return { dateCell: classCell, status: directStatus };
+            }
+          }
           const dateCell = IRCTCExt.NgetTrainList.findDateCell(card, journeyDate);
-          if (!dateCell) {
+          if (dateCell) {
+            const status = IRCTCExt.NgetTrainList.parseDateCellStatus(dateCell);
+            if (IRCTCExt.NgetTrainList.isBookableStatus(status.type)) {
+              return { dateCell, status };
+            }
+            if (!IRCTCExt.NgetTrainList.isRetryableAvailabilityError(status)) {
+              throw new Error(
+                `${dateLabel} shows ${status.text || status.type || "not available"} \u2014 not bookable`
+              );
+            }
+          } else if (IRCTCExt.NgetTrainList.findBookNowButton(card)) {
+            const directStatus = classCell ? IRCTCExt.NgetTrainList.parseDateCellStatus(classCell) : null;
+            const status = directStatus?.type ? directStatus : { type: "AVAILABLE", text: "Available" };
+            return { dateCell: classCell || card, status };
+          } else {
             throw new Error(`Journey date not found in availability (${dateLabel})`);
-          }
-          const status = IRCTCExt.NgetTrainList.parseDateCellStatus(dateCell);
-          if (IRCTCExt.NgetTrainList.isBookableStatus(status.type)) {
-            return { dateCell, status };
-          }
-          if (!IRCTCExt.NgetTrainList.isRetryableAvailabilityError(status)) {
-            throw new Error(
-              `${dateLabel} shows ${status.text || status.type || "not available"} \u2014 not bookable`
-            );
           }
           attempt += 1;
           if (attempt > maxAttempts) {
@@ -2128,6 +2170,10 @@
         const deadline = Date.now() + 25e3;
         while (Date.now() < deadline) {
           if (location.pathname.includes("psgninput")) return true;
+          const waf = IRCTCExt.Modals?.detectWafOrServerError?.();
+          if (waf) {
+            throw new Error(`Akamai WAF block: ${waf.message || "Unable to Process Request !!"}`);
+          }
           await IRCTCExt.Wait.delay(100);
         }
         if (location.pathname.includes("psgninput")) return true;
@@ -2152,7 +2198,10 @@
         await IRCTCExt.NgetTrainList.ensureClassTabActive(card, travelClass, overlay);
         const existingDateCell = IRCTCExt.NgetTrainList.findDateCell(card, journey.date);
         const existingStatus = existingDateCell ? IRCTCExt.NgetTrainList.parseDateCellStatus(existingDateCell) : null;
-        if (!existingDateCell || !existingStatus?.type) {
+        const directClassCell = IRCTCExt.NgetTrainList.findClassCell(card, travelClass);
+        const directStatus = directClassCell ? IRCTCExt.NgetTrainList.parseDateCellStatus(directClassCell) : null;
+        const isAlreadyAvailable = directStatus?.type && directStatus.type !== "HIGH_LOAD";
+        if (!existingDateCell && !isAlreadyAvailable && !IRCTCExt.NgetTrainList.findBookNowButton(card)) {
           await IRCTCExt.NgetTrainList.refreshClassAvailability(
             card,
             overlay,
@@ -3539,6 +3588,38 @@
       dismissed += this.dismissBookNowConfirmation(root);
       return dismissed;
     },
+    detectWafOrServerError(root = document) {
+      if (!root) return null;
+      const bodyText = (root.body ? root.body.textContent : root.textContent) || "";
+      if (/unable\s*to\s*process\s*request/i.test(bodyText)) {
+        const refMatch = bodyText.match(/\b(0\.[0-9a-fA-F]{6,12}\.\d{8,12}\.[0-9a-fA-F]{4,12})\b/);
+        const ipMatch = bodyText.match(/Client\s*IP:\s*([0-9a-fA-F:.]+)/i);
+        return {
+          type: "akamai_waf",
+          reference: refMatch ? refMatch[1] : null,
+          clientIp: ipMatch ? ipMatch[1].trim() : null,
+          message: "Unable to Process Request !! (Akamai WAF blocked request)"
+        };
+      }
+      const candidates = root.querySelectorAll?.(
+        '.ui-dialog, .p-dialog, [role="dialog"], .ui-toast-message, .p-toast-message, .alert-danger, .toast'
+      ) || [];
+      for (const dialog of candidates) {
+        if (!IRCTCExt.Wait?.isVisible?.(dialog)) continue;
+        const text = (dialog.textContent || "").replace(/\s+/g, " ");
+        if (/unable\s*to\s*process\s*request/i.test(text)) {
+          const refMatch = text.match(/\b(0\.[0-9a-fA-F]{6,12}\.\d{8,12}\.[0-9a-fA-F]{4,12})\b/);
+          const ipMatch = text.match(/Client\s*IP:\s*([0-9a-fA-F:.]+)/i);
+          return {
+            type: "akamai_waf",
+            reference: refMatch ? refMatch[1] : null,
+            clientIp: ipMatch ? ipMatch[1].trim() : null,
+            message: "Unable to Process Request !! (Akamai WAF blocked request)"
+          };
+        }
+      }
+      return null;
+    },
     scheduleScan() {
       if (this._scanTimer) return;
       this._scanTimer = setTimeout(() => {
@@ -3574,12 +3655,20 @@
   IRCTCExt.Events = {
     mouseEventOpts(el) {
       const rect = el.getBoundingClientRect();
+      const jitterX = rect.width > 6 ? (Math.random() - 0.5) * (rect.width * 0.4) : 0;
+      const jitterY = rect.height > 6 ? (Math.random() - 0.5) * (rect.height * 0.4) : 0;
+      const clientX = Math.round(rect.left + rect.width / 2 + jitterX);
+      const clientY = Math.round(rect.top + rect.height / 2 + jitterY);
+      const screenX = (window.screenX || 0) + clientX;
+      const screenY = (window.screenY || 0) + clientY;
       return {
         bubbles: true,
         cancelable: true,
         view: window,
-        clientX: rect.left + rect.width / 2,
-        clientY: rect.top + rect.height / 2,
+        clientX,
+        clientY,
+        screenX,
+        screenY,
         buttons: 1
       };
     },
@@ -3609,11 +3698,23 @@
     click(el) {
       if (!el) return;
       el.scrollIntoView({ block: "center", inline: "nearest" });
+      const opts = IRCTCExt.Events.mouseEventOpts(el);
+      try {
+        window.dispatchEvent(new MouseEvent("mousemove", opts));
+        el.dispatchEvent(new MouseEvent("mousemove", opts));
+        el.dispatchEvent(new MouseEvent("mouseover", opts));
+        el.dispatchEvent(new MouseEvent("mousedown", opts));
+        el.dispatchEvent(new MouseEvent("mouseup", { ...opts, buttons: 0 }));
+      } catch (_) {
+      }
       if (typeof el.click === "function") {
         el.click();
         return;
       }
-      IRCTCExt.Events.clickWithMouse(el);
+      try {
+        el.dispatchEvent(new MouseEvent("click", { ...opts, buttons: 0 }));
+      } catch (_) {
+      }
     },
     setNativeValue(el, value) {
       if (!el) return;
@@ -6212,20 +6313,36 @@
         overlay.setStatus("Waiting for Continue button...");
         const btn = await IRCTCExt.Wait.poll(
           () => {
+            const waf = IRCTCExt.Modals?.detectWafOrServerError?.();
+            if (waf) return "waf_blocked";
             const candidate = IRCTCExt.NgetPsgnPreferencesFlow.findContinueButton();
             return candidate && IRCTCExt.NgetPsgnPreferencesFlow.isContinueEnabled(candidate) ? candidate : null;
           },
           { timeout: 2e4, interval: 250 }
         );
+        if (btn === "waf_blocked") {
+          const waf = IRCTCExt.Modals?.detectWafOrServerError?.();
+          throw new Error(`Akamai WAF block: ${waf?.message || "Unable to Process Request !!"}`);
+        }
         if (!btn) throw new Error("Continue button not found or still disabled");
+        overlay.setStatus("Pacing before submit to avoid bot detection...");
+        await IRCTCExt.Wait.delay(1200 + Math.floor(Math.random() * 600));
         overlay.setStatus("Clicking Continue...");
         sharedPrefs().clickTarget(btn);
         await IRCTCExt.Storage.updateState({ psgnPaymentContinueClicked: true });
         await IRCTCExt.Wait.delay(800);
         const navigated = await IRCTCExt.Wait.poll(
-          () => IRCTCExt.NgetPsgnPreferencesFlow.hasLeftPsgninput() ? true : null,
+          () => {
+            const waf = IRCTCExt.Modals?.detectWafOrServerError?.();
+            if (waf) return "waf_blocked";
+            return IRCTCExt.NgetPsgnPreferencesFlow.hasLeftPsgninput() ? true : null;
+          },
           { timeout: 3e4, interval: 300 }
         );
+        if (navigated === "waf_blocked") {
+          const waf = IRCTCExt.Modals?.detectWafOrServerError?.();
+          throw new Error(`Akamai WAF block: ${waf?.message || "Unable to Process Request !!"}`);
+        }
         if (!navigated) throw new Error("Did not leave passenger page after clicking Continue");
         await IRCTCExt.Storage.updateState({ psgnPaymentContinueClicked: false });
         return true;
@@ -6234,6 +6351,8 @@
         overlay.setStatus("IRCTC is processing \u2014 please wait...");
         const reached = await IRCTCExt.Wait.poll(
           () => {
+            const waf = IRCTCExt.Modals?.detectWafOrServerError?.();
+            if (waf) return "waf_blocked";
             if (IRCTCExt.NgetPsgnPreferencesFlow.hasLeftPsgninput()) return true;
             if (IRCTCExt.NgetPaths.isReviewPath(location.pathname)) return true;
             if (IRCTCExt.NgetPaths.isPaymentPath(location.pathname)) return true;
@@ -6242,6 +6361,10 @@
           },
           { timeout, interval: 400 }
         );
+        if (reached === "waf_blocked") {
+          const waf = IRCTCExt.Modals?.detectWafOrServerError?.();
+          throw new Error(`Akamai WAF block: ${waf?.message || "Unable to Process Request !!"}`);
+        }
         if (!reached) {
           throw new Error("Timed out waiting for IRCTC after Continue on payment mode");
         }
@@ -6258,7 +6381,7 @@
         await IRCTCExt.NgetPassengersFlow.reviewPassengers(config, overlay);
         await IRCTCExt.Wait.delay(400);
         await IRCTCExt.NgetPsgnPreferencesFlow.selectPaymentMethod(config, overlay);
-        await IRCTCExt.Wait.delay(400);
+        await IRCTCExt.Wait.delay(1e3 + Math.floor(Math.random() * 500));
         await IRCTCExt.NgetPsgnPreferencesFlow.clickContinue(overlay);
         overlay.setStatus("Passenger review complete \u2014 continuing...");
         return true;
@@ -6320,22 +6443,16 @@
     clickPrimeNgRadio(optionEl) {
       if (!optionEl) return;
       optionEl.scrollIntoView({ block: "center", inline: "nearest" });
-      const label = optionEl.querySelector(".loyalty-label, .payment-label, label");
       const box = optionEl.querySelector('.ui-radiobutton-box, [role="radio"]');
-      const icon = optionEl.querySelector(".ui-radiobutton-icon");
+      const label = optionEl.querySelector(".loyalty-label, .payment-label, label");
       const input = optionEl.querySelector('input[type="radio"]');
-      if (label) this.clickTarget(label);
-      if (box) this.clickTarget(box);
-      if (icon) this.clickTarget(icon);
-      if (input) {
-        this.clickTarget(input);
-        if (!input.checked) {
-          input.checked = true;
-          input.dispatchEvent(new Event("input", { bubbles: true }));
-          input.dispatchEvent(new Event("change", { bubbles: true }));
-        }
+      const target = box || label || input || optionEl;
+      this.clickTarget(target);
+      if (input && !input.checked) {
+        input.checked = true;
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        input.dispatchEvent(new Event("change", { bubbles: true }));
       }
-      this.clickTarget(optionEl);
     },
     async selectRadioWithRetry(optionRow, label, maxAttempts = 6) {
       for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
@@ -6416,9 +6533,17 @@
       if (existing) return existing;
       overlay.setStatus("Waiting for review or payment page...");
       const destination = await IRCTCExt.Wait.poll(
-        () => this.getPostCalculateFareDestination(),
+        () => {
+          const waf = IRCTCExt.Modals?.detectWafOrServerError?.();
+          if (waf) return "waf_blocked";
+          return this.getPostCalculateFareDestination();
+        },
         { timeout, interval: 500 }
       );
+      if (destination === "waf_blocked") {
+        const waf = IRCTCExt.Modals?.detectWafOrServerError?.();
+        throw new Error(`Akamai WAF block: ${waf?.message || "Unable to Process Request !!"}`);
+      }
       if (!destination) {
         throw new Error("Did not reach review booking or payment page after Calculate Fare");
       }
@@ -6506,6 +6631,8 @@
       overlay.setStatus("Waiting for Calculate Fare button...");
       const btn = await IRCTCExt.Wait.poll(
         () => {
+          const waf = IRCTCExt.Modals?.detectWafOrServerError?.();
+          if (waf) return "waf_blocked";
           const candidate = this.findCalculateFareButton();
           if (!candidate) return null;
           if (this.isCalculateFareProcessing(candidate)) return "processing";
@@ -6514,11 +6641,17 @@
         },
         { timeout: 2e4, interval: 250 }
       );
+      if (btn === "waf_blocked") {
+        const waf = IRCTCExt.Modals?.detectWafOrServerError?.();
+        throw new Error(`Akamai WAF block: ${waf?.message || "Unable to Process Request !!"}`);
+      }
       if (btn === "processing") {
         overlay.setStatus("Calculate Fare is processing...");
         return this.waitForPostCalculateFarePage(overlay);
       }
       if (!btn) throw new Error("Calculate Fare button not found or still disabled");
+      overlay.setStatus("Pacing before fare calculation to avoid bot detection...");
+      await IRCTCExt.Wait.delay(1200 + Math.floor(Math.random() * 600));
       overlay.setStatus("Clicking Calculate Fare...");
       this.clickTarget(btn);
       return this.waitForPostCalculateFarePage(overlay);
@@ -6552,17 +6685,27 @@
       overlay.setStatus("Waiting for Continue To Payment button...");
       const btn = await IRCTCExt.Wait.poll(
         () => {
+          const waf = IRCTCExt.Modals?.detectWafOrServerError?.();
+          if (waf) return "waf_blocked";
           const candidate = this.findContinueToPaymentButton();
           return candidate && this.isContinueToPaymentEnabled(candidate) ? candidate : null;
         },
         { timeout: 2e4, interval: 250 }
       );
+      if (btn === "waf_blocked") {
+        const waf = IRCTCExt.Modals?.detectWafOrServerError?.();
+        throw new Error(`Akamai WAF block: ${waf?.message || "Unable to Process Request !!"}`);
+      }
       if (!btn) throw new Error("Continue To Payment button not found or still disabled");
+      overlay.setStatus("Pacing before payment transition...");
+      await IRCTCExt.Wait.delay(1e3 + Math.floor(Math.random() * 500));
       overlay.setStatus("Clicking Continue To Payment...");
       this.clickTarget(btn);
       await IRCTCExt.Wait.delay(800);
       const afterClick = await IRCTCExt.Wait.poll(
         () => {
+          const waf = IRCTCExt.Modals?.detectWafOrServerError?.();
+          if (waf) return "waf_blocked";
           if (location.pathname.includes("bkgPaymentOptions")) return "payment";
           const modal = this.findReviewConfirmModal();
           if (modal) return modal;
@@ -6570,6 +6713,10 @@
         },
         { timeout: 2e4, interval: 250 }
       );
+      if (afterClick === "waf_blocked") {
+        const waf = IRCTCExt.Modals?.detectWafOrServerError?.();
+        throw new Error(`Akamai WAF block: ${waf?.message || "Unable to Process Request !!"}`);
+      }
       if (afterClick === "payment") {
         return this.waitForPaymentPage(overlay);
       }
@@ -6583,7 +6730,7 @@
       await this.selectLoyaltySkip(overlay);
       await IRCTCExt.Wait.delay(400);
       await this.selectPaymentMethod(config, overlay);
-      await IRCTCExt.Wait.delay(500);
+      await IRCTCExt.Wait.delay(1e3 + Math.floor(Math.random() * 500));
       const destination = await this.clickCalculateFare(overlay);
       overlay.setStatus(
         destination === "payment" ? "Fare calculated \u2014 on payment page." : "Fare calculated."
@@ -7096,6 +7243,22 @@
       const config = await IRCTCExt.Storage.get();
       const site = await IRCTCExt.Bot.getSite(config);
       if (!site.isErrorPage()) return false;
+      const wafError = IRCTCExt.Modals?.detectWafOrServerError?.();
+      if (wafError) {
+        const ip = wafError.clientIp || "your IP";
+        const ref = wafError.reference ? ` [Ref: ${wafError.reference}]` : "";
+        const msg = `Akamai WAF blocked connection${ref}. Client IP (${ip}) is flagged. Please switch network/mobile hotspot and restart.`;
+        overlay?.setError(msg);
+        overlay?.setStatus("Booking blocked by Akamai WAF.");
+        overlay?.setStep("WAF Block");
+        await IRCTCExt.Storage.updateState({
+          running: false,
+          status: "error",
+          lastWafError: wafError
+        });
+        IRCTCExt.Bot.running = false;
+        return true;
+      }
       if (!config.state.running || config.state.paused) return false;
       if (IRCTCExt.Bot._errorRestartInFlight) return true;
       const count = config.state.autoRestartCount || 0;
@@ -7266,6 +7429,10 @@
         return "wait";
       }
       if (site.isPassengerPath(path)) {
+        if (IRCTCExt.Modals?.detectWafOrServerError?.()) {
+          await IRCTCExt.Bot.handleErrorPageIfNeeded(overlay);
+          return "wait";
+        }
         if (!config.state.passengersDone) {
           await site.flows.BookingFlow.fillPassengers(config, overlay);
           await IRCTCExt.Storage.updateState({ passengersDone: true, currentStep: "review" });

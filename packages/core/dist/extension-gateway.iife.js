@@ -71,7 +71,9 @@
       return updates;
     },
     isErrorPage(path = location.pathname) {
-      return path.includes(IRCTCExt.NgetConfig.errorPagePath);
+      if (path.includes(IRCTCExt.NgetConfig.errorPagePath)) return true;
+      if (IRCTCExt.Modals?.detectWafOrServerError?.()) return true;
+      return false;
     },
     isTrainListPath(path = location.pathname) {
       return path.includes("train-list");
@@ -565,12 +567,20 @@
   IRCTCExt.Events = {
     mouseEventOpts(el) {
       const rect = el.getBoundingClientRect();
+      const jitterX = rect.width > 6 ? (Math.random() - 0.5) * (rect.width * 0.4) : 0;
+      const jitterY = rect.height > 6 ? (Math.random() - 0.5) * (rect.height * 0.4) : 0;
+      const clientX = Math.round(rect.left + rect.width / 2 + jitterX);
+      const clientY = Math.round(rect.top + rect.height / 2 + jitterY);
+      const screenX = (window.screenX || 0) + clientX;
+      const screenY = (window.screenY || 0) + clientY;
       return {
         bubbles: true,
         cancelable: true,
         view: window,
-        clientX: rect.left + rect.width / 2,
-        clientY: rect.top + rect.height / 2,
+        clientX,
+        clientY,
+        screenX,
+        screenY,
         buttons: 1
       };
     },
@@ -600,11 +610,23 @@
     click(el) {
       if (!el) return;
       el.scrollIntoView({ block: "center", inline: "nearest" });
+      const opts = IRCTCExt.Events.mouseEventOpts(el);
+      try {
+        window.dispatchEvent(new MouseEvent("mousemove", opts));
+        el.dispatchEvent(new MouseEvent("mousemove", opts));
+        el.dispatchEvent(new MouseEvent("mouseover", opts));
+        el.dispatchEvent(new MouseEvent("mousedown", opts));
+        el.dispatchEvent(new MouseEvent("mouseup", { ...opts, buttons: 0 }));
+      } catch (_) {
+      }
       if (typeof el.click === "function") {
         el.click();
         return;
       }
-      IRCTCExt.Events.clickWithMouse(el);
+      try {
+        el.dispatchEvent(new MouseEvent("click", { ...opts, buttons: 0 }));
+      } catch (_) {
+      }
     },
     setNativeValue(el, value) {
       if (!el) return;
