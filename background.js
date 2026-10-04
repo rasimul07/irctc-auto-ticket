@@ -48,8 +48,8 @@ function isGatewayUrl(url) {
   return url.includes('irctcipay.com') || url.includes('irctcpayments.com') || url.includes('phonepe.com');
 }
 
-async function scheduleAlarms(schedule) {
-  return IRCTCExt.Schedule.scheduleAlarms(schedule);
+async function scheduleAlarms(schedule, options = {}) {
+  return IRCTCExt.Schedule.scheduleAlarms(schedule, options);
 }
 
 async function restoreScheduleAlarms() {
@@ -379,7 +379,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     }
 
     const latest = await getActiveConfig();
-    await scheduleAlarms(latest.schedule || config.schedule);
+    await scheduleAlarms(latest.schedule || config.schedule, { forceNextDay: true });
   } catch (err) {
     console.error('[IRCTC-Bot] Scheduled start error:', err);
     await resetRunningState();

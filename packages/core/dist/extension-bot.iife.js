@@ -774,8 +774,8 @@
       }
       throw new Error("Booking stopped");
     },
-    async loadAvailability(card, overlay, travelClass, maxAttempts = 3) {
-      if (IRCTCExt.EticketTrainList.hasClassCards(card)) {
+    async loadAvailability(card, overlay, travelClass, maxAttempts = 3, forceRefresh = false) {
+      if (!forceRefresh && IRCTCExt.EticketTrainList.hasClassCards(card)) {
         IRCTCExt.EticketTrainList.setStatus(
           overlay,
           `Availability already loaded \u2014 selecting class ${travelClass}...`
@@ -783,22 +783,35 @@
         return true;
       }
       IRCTCExt.EticketTrainList.scrollIntoViewIfNeeded(card);
+      if (forceRefresh && IRCTCExt.EticketTrainList.hasClassCards(card)) {
+        const classCard = IRCTCExt.EticketTrainList.findClassCard(card, travelClass);
+        const refreshControl = IRCTCExt.EticketTrainList.findAvailabilityRefreshControl(card, classCard) || IRCTCExt.EticketTrainList.findRefreshAvailabilityButton(card);
+        if (refreshControl) {
+          IRCTCExt.EticketTrainList.setStatus(
+            overlay,
+            `Tatkal window open \u2014 refreshing availability for class ${travelClass}...`
+          );
+          IRCTCExt.Events.click(refreshControl);
+          await IRCTCExt.Wait.delay(500);
+          return true;
+        }
+      }
       for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-        if (IRCTCExt.EticketTrainList.hasClassCards(card)) {
+        if (!forceRefresh && IRCTCExt.EticketTrainList.hasClassCards(card)) {
           IRCTCExt.EticketTrainList.setStatus(
             overlay,
             `Availability loaded \u2014 selecting class ${travelClass}...`
           );
           return true;
         }
-        const btn = IRCTCExt.EticketTrainList.findAvailabilityButton(card);
+        const btn = IRCTCExt.EticketTrainList.findRefreshAvailabilityButton(card) || IRCTCExt.EticketTrainList.findAvailabilityButton(card);
         if (!btn) {
           if (IRCTCExt.EticketTrainList.hasClassCards(card)) return true;
           throw new Error("Check Availability button not found");
         }
         IRCTCExt.EticketTrainList.setStatus(
           overlay,
-          attempt === 0 ? "Clicking Check Availability..." : `Retrying Check Availability (${attempt + 1}/${maxAttempts})...`
+          attempt === 0 ? "Clicking Check/Refresh Availability..." : `Retrying Check/Refresh Availability (${attempt + 1}/${maxAttempts})...`
         );
         IRCTCExt.Events.click(btn);
         await IRCTCExt.Wait.delay(attempt === 0 ? 350 : 500);
@@ -828,6 +841,28 @@
       }
       return IRCTCExt.EticketTrainList.findClassCard(card, travelClass);
     },
+    async waitForTatkalWindowIfNeeded(config, overlay) {
+      const isTatkal = IRCTCExt.Stations?.isTatkalQuota?.(config.journey?.quota) || !!config.schedule?.enabled;
+      if (!isTatkal) return false;
+      const info = IRCTCExt.Stations?.getTatkalOpeningTime?.(config);
+      if (!info || !info.isPending || info.remainingMs <= 0) return false;
+      overlay?.setStep("Waiting for Tatkal");
+      while (Date.now() < info.targetMs) {
+        if (await IRCTCExt.Bot.wasStopped()) return false;
+        const remainingMs = info.targetMs - Date.now();
+        if (remainingMs <= 0) break;
+        const remainingSec = Math.max(0, Math.ceil(remainingMs / 1e3));
+        overlay?.setStatus(
+          `Train found! Tatkal window opens at ${info.targetTimeStr} IST. Refreshing availability in ${remainingSec}s...`
+        );
+        const pollInterval = remainingMs < 1e3 ? 50 : remainingMs < 5e3 ? 150 : 350;
+        await IRCTCExt.Wait.delay(pollInterval);
+      }
+      overlay?.setStatus("Tatkal window open! Refreshing availability now...");
+      overlay?.setStep("Train List");
+      await IRCTCExt.Wait.delay(200);
+      return true;
+    },
     async bookTrain(config, overlay) {
       const { journey } = config;
       overlay?.setStep("Train List");
@@ -841,7 +876,17 @@
       const matchedName = IRCTCExt.EticketTrainList.getCardTrainName(card);
       const foundLabel = trainNum && matchedName ? `Found train ${trainNum} \u2014 ${matchedName}` : matchedName ? `Found train ${matchedName}` : `Found train ${trainNum}`;
       IRCTCExt.EticketTrainList.setStatus(overlay, foundLabel);
-      await IRCTCExt.EticketTrainList.loadAvailability(card, overlay, travelClass);
+      const wasTatkalPending = await IRCTCExt.EticketTrainList.waitForTatkalWindowIfNeeded(
+        config,
+        overlay
+      );
+      await IRCTCExt.EticketTrainList.loadAvailability(
+        card,
+        overlay,
+        travelClass,
+        3,
+        wasTatkalPending
+      );
       const classCard = await IRCTCExt.EticketTrainList.findClassCardWithScroll(card, travelClass, overlay);
       if (!classCard) throw new Error(`Class ${travelClass} not found for train ${trainNum}`);
       const status = await IRCTCExt.EticketTrainList.waitForBookableClass(
@@ -2006,6 +2051,28 @@
         if (location.pathname.includes("psgninput")) return true;
         throw new Error("Did not reach passenger input page after booking");
       },
+      async waitForTatkalWindowIfNeeded(config, overlay) {
+        const isTatkal = IRCTCExt.Stations?.isTatkalQuota?.(config.journey?.quota) || !!config.schedule?.enabled;
+        if (!isTatkal) return false;
+        const info = IRCTCExt.Stations?.getTatkalOpeningTime?.(config);
+        if (!info || !info.isPending || info.remainingMs <= 0) return false;
+        overlay?.setStep("Waiting for Tatkal");
+        while (Date.now() < info.targetMs) {
+          if (await IRCTCExt.Bot.wasStopped()) return false;
+          const remainingMs = info.targetMs - Date.now();
+          if (remainingMs <= 0) break;
+          const remainingSec = Math.max(0, Math.ceil(remainingMs / 1e3));
+          overlay?.setStatus(
+            `Train found! Tatkal window opens at ${info.targetTimeStr} IST. Refreshing availability in ${remainingSec}s...`
+          );
+          const pollInterval = remainingMs < 1e3 ? 50 : remainingMs < 5e3 ? 150 : 350;
+          await IRCTCExt.Wait.delay(pollInterval);
+        }
+        overlay?.setStatus("Tatkal window open! Refreshing availability now...");
+        overlay?.setStep("Train List");
+        await IRCTCExt.Wait.delay(200);
+        return true;
+      },
       async bookTrain(config, overlay) {
         const { journey } = config;
         overlay?.setStep("Train List");
@@ -2023,12 +2090,16 @@
         if (!classCtx) throw new Error(`Class ${travelClass} not found for train ${trainNum}`);
         if (!journey.date) throw new Error("Journey date is required for nget train-list booking");
         await IRCTCExt.NgetTrainList.ensureClassTabActive(card, travelClass, overlay);
+        const wasTatkalPending = await IRCTCExt.NgetTrainList.waitForTatkalWindowIfNeeded(
+          config,
+          overlay
+        );
         const existingDateCell = IRCTCExt.NgetTrainList.findDateCell(card, journey.date);
         const existingStatus = existingDateCell ? IRCTCExt.NgetTrainList.parseDateCellStatus(existingDateCell) : null;
         const directClassCell = IRCTCExt.NgetTrainList.findClassCell(card, travelClass);
         const directStatus = directClassCell ? IRCTCExt.NgetTrainList.parseDateCellStatus(directClassCell) : null;
         const isAlreadyAvailable = directStatus?.type && directStatus.type !== "HIGH_LOAD";
-        if (!existingDateCell && !isAlreadyAvailable && !IRCTCExt.NgetTrainList.findBookNowButton(card)) {
+        if (wasTatkalPending || !existingDateCell && !isAlreadyAvailable && !IRCTCExt.NgetTrainList.findBookNowButton(card)) {
           await IRCTCExt.NgetTrainList.refreshClassAvailability(
             card,
             overlay,
@@ -3925,6 +3996,71 @@
     },
     normalizeQuota(quota) {
       return String(quota || "").trim().toUpperCase();
+    },
+    isTatkalQuota(quota) {
+      const key = IRCTCExt.Stations.normalizeQuota(quota);
+      return key === "TATKAL" || key === "PREMIUM TATKAL" || key === "PREMIUM_TATKAL";
+    },
+    isAcClass(travelClass) {
+      const c = String(travelClass || "").toUpperCase().trim();
+      return IRCTCExt.Stations.AC_CLASSES.includes(c);
+    },
+    getTatkalOpeningTime(config = {}) {
+      const journey = config.journey || {};
+      const schedule = config.schedule || {};
+      const isAc = schedule.type === "ac" || schedule.type !== "non-ac" && IRCTCExt.Stations.isAcClass(journey.travelClass);
+      const targetHour = isAc ? 10 : 11;
+      const targetMinute = 0;
+      let year = 0;
+      let month = 0;
+      let day = 0;
+      let hour = 0;
+      let minute = 0;
+      let second = 0;
+      try {
+        const istParts = new Intl.DateTimeFormat("en-GB", {
+          timeZone: "Asia/Kolkata",
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+          hour12: false
+        }).formatToParts(/* @__PURE__ */ new Date());
+        const get = (type) => Number(istParts.find((p) => p.type === type)?.value || 0);
+        year = get("year");
+        month = get("month");
+        day = get("day");
+        hour = get("hour") % 24;
+        minute = get("minute");
+        second = get("second");
+      } catch (_) {
+        const now = /* @__PURE__ */ new Date();
+        year = now.getFullYear();
+        month = now.getMonth() + 1;
+        day = now.getDate();
+        hour = now.getHours();
+        minute = now.getMinutes();
+        second = now.getSeconds();
+      }
+      const pad = (n) => String(n).padStart(2, "0");
+      const targetMs = (/* @__PURE__ */ new Date(
+        `${year}-${pad(month)}-${pad(day)}T${pad(targetHour)}:${pad(targetMinute)}:00+05:30`
+      )).getTime();
+      const nowSeconds = hour * 3600 + minute * 60 + second;
+      const targetSeconds = targetHour * 3600 + targetMinute * 60;
+      const diffSeconds = targetSeconds - nowSeconds;
+      const isPending = diffSeconds > 0 && diffSeconds <= 15 * 60;
+      return {
+        isAc,
+        targetHour,
+        targetMinute,
+        targetTimeStr: `${pad(targetHour)}:${pad(targetMinute)}:00 AM`,
+        targetMs,
+        isPending,
+        remainingMs: targetMs - Date.now()
+      };
     },
     quotaOptionText(quota) {
       const key = IRCTCExt.Stations.normalizeQuota(quota);

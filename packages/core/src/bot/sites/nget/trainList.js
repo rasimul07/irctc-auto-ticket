@@ -702,6 +702,37 @@
       throw new Error('Did not reach passenger input page after booking');
     },
 
+    async waitForTatkalWindowIfNeeded(config, overlay) {
+      const isTatkal =
+        IRCTCExt.Stations?.isTatkalQuota?.(config.journey?.quota) || !!config.schedule?.enabled;
+      if (!isTatkal) return false;
+
+      const info = IRCTCExt.Stations?.getTatkalOpeningTime?.(config);
+      if (!info || !info.isPending || info.remainingMs <= 0) return false;
+
+      overlay?.setStep('Waiting for Tatkal');
+
+      while (Date.now() < info.targetMs) {
+        if (await IRCTCExt.Bot.wasStopped()) return false;
+
+        const remainingMs = info.targetMs - Date.now();
+        if (remainingMs <= 0) break;
+
+        const remainingSec = Math.max(0, Math.ceil(remainingMs / 1000));
+        overlay?.setStatus(
+          `Train found! Tatkal window opens at ${info.targetTimeStr} IST. Refreshing availability in ${remainingSec}s...`
+        );
+
+        const pollInterval = remainingMs < 1000 ? 50 : remainingMs < 5000 ? 150 : 350;
+        await IRCTCExt.Wait.delay(pollInterval);
+      }
+
+      overlay?.setStatus('Tatkal window open! Refreshing availability now...');
+      overlay?.setStep('Train List');
+      await IRCTCExt.Wait.delay(200);
+      return true;
+    },
+
     async bookTrain(config, overlay) {
       const { journey } = config;
 
@@ -732,6 +763,11 @@
 
       await IRCTCExt.NgetTrainList.ensureClassTabActive(card, travelClass, overlay);
 
+      const wasTatkalPending = await IRCTCExt.NgetTrainList.waitForTatkalWindowIfNeeded(
+        config,
+        overlay
+      );
+
       const existingDateCell = IRCTCExt.NgetTrainList.findDateCell(card, journey.date);
       const existingStatus = existingDateCell
         ? IRCTCExt.NgetTrainList.parseDateCellStatus(existingDateCell)
@@ -744,7 +780,10 @@
         : null;
       const isAlreadyAvailable = directStatus?.type && directStatus.type !== 'HIGH_LOAD';
 
-      if (!existingDateCell && !isAlreadyAvailable && !IRCTCExt.NgetTrainList.findBookNowButton(card)) {
+      if (
+        wasTatkalPending ||
+        (!existingDateCell && !isAlreadyAvailable && !IRCTCExt.NgetTrainList.findBookNowButton(card))
+      ) {
         await IRCTCExt.NgetTrainList.refreshClassAvailability(
           card,
           overlay,

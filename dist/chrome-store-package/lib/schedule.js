@@ -2,8 +2,20 @@
   root.IRCTCExt = root.IRCTCExt || {};
 
   const SCHEDULE_WINDOWS = {
-    ac: { hour: 10, minute: 0, label: 'AC Tatkal — 10:00 AM IST' },
-    'non-ac': { hour: 11, minute: 0, label: 'Non-AC Tatkal — 11:00 AM IST' }
+    ac: {
+      tatkalHour: 10,
+      tatkalMinute: 0,
+      hour: 9,
+      minute: 59,
+      label: 'AC Tatkal — 10:00 AM IST (Starts at 09:59 AM)'
+    },
+    'non-ac': {
+      tatkalHour: 11,
+      tatkalMinute: 0,
+      hour: 10,
+      minute: 59,
+      label: 'Non-AC Tatkal — 11:00 AM IST (Starts at 10:59 AM)'
+    }
   };
 
   IRCTCExt.Schedule = {
@@ -38,14 +50,24 @@
       };
     },
 
-    getNextIstTime(hour, minute = 0, second = 0) {
+    getNextIstTime(hour, minute = 0, second = 0, options = {}) {
       const istNow = IRCTCExt.Schedule.getIstParts();
       let { year, month, day } = istNow;
 
       const nowSeconds = istNow.hour * 3600 + istNow.minute * 60 + istNow.second;
       const targetSeconds = hour * 3600 + minute * 60 + second;
+      const tatkalSeconds =
+        typeof options.tatkalHour === 'number'
+          ? options.tatkalHour * 3600 + (options.tatkalMinute || 0) * 60
+          : targetSeconds;
 
-      if (targetSeconds <= nowSeconds) {
+      // If user enables or saves during the 1-minute pre-window (e.g. 09:59:00 - 09:59:59),
+      // launch immediately so the bot navigates to train-list before the window opens.
+      if (!options.forceNextDay && nowSeconds >= targetSeconds && nowSeconds < tatkalSeconds) {
+        return Date.now() + 1000;
+      }
+
+      if (options.forceNextDay || targetSeconds <= nowSeconds) {
         const nextDay = new Date(Date.UTC(year, month - 1, day + 1));
         year = nextDay.getUTCFullYear();
         month = nextDay.getUTCMonth() + 1;
@@ -74,7 +96,7 @@
       return schedule?.type === 'ac' ? IRCTCExt.Schedule.ALARM_AC : IRCTCExt.Schedule.ALARM_NON_AC;
     },
 
-    async scheduleAlarms(schedule) {
+    async scheduleAlarms(schedule, options = {}) {
       if (!chrome?.alarms) return null;
 
       await chrome.alarms.clear(IRCTCExt.Schedule.ALARM_AC);
@@ -83,7 +105,11 @@
       if (!schedule?.enabled) return null;
 
       const window = IRCTCExt.Schedule.getWindow(schedule);
-      const when = IRCTCExt.Schedule.getNextIstTime(window.hour, window.minute);
+      const when = IRCTCExt.Schedule.getNextIstTime(window.hour, window.minute, 0, {
+        forceNextDay: !!options.forceNextDay,
+        tatkalHour: window.tatkalHour,
+        tatkalMinute: window.tatkalMinute
+      });
       const name = IRCTCExt.Schedule.getAlarmName(schedule);
 
       await chrome.alarms.create(name, { when });
@@ -93,7 +119,7 @@
       return { name, when, label: window.label };
     },
 
-    async ensureAlarmScheduled(schedule) {
+    async ensureAlarmScheduled(schedule, options = {}) {
       if (!schedule?.enabled || !chrome?.alarms) return null;
 
       const name = IRCTCExt.Schedule.getAlarmName(schedule);
@@ -107,7 +133,7 @@
         };
       }
 
-      return IRCTCExt.Schedule.scheduleAlarms(schedule);
+      return IRCTCExt.Schedule.scheduleAlarms(schedule, options);
     },
 
     async getScheduledAlarmInfo(schedule) {

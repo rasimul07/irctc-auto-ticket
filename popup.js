@@ -12,10 +12,12 @@ const els = {
   accessValidUntil: document.getElementById('accessValidUntil'),
   accessActive: document.getElementById('accessActive'),
   accessEmail: document.getElementById('accessEmail'),
+  toggleAccessEmailBtn: document.getElementById('toggleAccessEmailBtn'),
   bookingSite: document.getElementById('bookingSite'),
   linkAccessEmailBtn: document.getElementById('linkAccessEmailBtn'),
   bmcLink: document.getElementById('bmcLink'),
   username: document.getElementById('username'),
+  toggleUsernameBtn: document.getElementById('toggleUsernameBtn'),
   password: document.getElementById('password'),
   togglePasswordBtn: document.getElementById('togglePasswordBtn'),
   fromStation: document.getElementById('fromStation'),
@@ -37,13 +39,19 @@ const els = {
   debitCardFields: document.getElementById('debitCardFields'),
   creditCardFields: document.getElementById('creditCardFields'),
   debitCardName: document.getElementById('debitCardName'),
+  toggleDebitCardNameBtn: document.getElementById('toggleDebitCardNameBtn'),
   debitCardNumber: document.getElementById('debitCardNumber'),
+  toggleDebitCardNumberBtn: document.getElementById('toggleDebitCardNumberBtn'),
   debitCardExpiry: document.getElementById('debitCardExpiry'),
   debitCardCvv: document.getElementById('debitCardCvv'),
+  toggleDebitCardCvvBtn: document.getElementById('toggleDebitCardCvvBtn'),
   creditCardName: document.getElementById('creditCardName'),
+  toggleCreditCardNameBtn: document.getElementById('toggleCreditCardNameBtn'),
   creditCardNumber: document.getElementById('creditCardNumber'),
+  toggleCreditCardNumberBtn: document.getElementById('toggleCreditCardNumberBtn'),
   creditCardExpiry: document.getElementById('creditCardExpiry'),
   creditCardCvv: document.getElementById('creditCardCvv'),
+  toggleCreditCardCvvBtn: document.getElementById('toggleCreditCardCvvBtn'),
   passengerList: document.getElementById('passengerList'),
   addPassenger: document.getElementById('addPassenger'),
   scheduleEnabled: document.getElementById('scheduleEnabled'),
@@ -108,18 +116,52 @@ function syncCardsProviderOptions(bookingSite, preferredValue = null) {
   els.cardsProvider.value = fallback.value;
 }
 
+function setFieldMaskVisible(inputEl, btnEl, visible, labelBase) {
+  if (!inputEl || !btnEl) return;
+  inputEl.type = visible ? 'text' : 'password';
+  btnEl.classList.toggle('password-field__toggle--visible', visible);
+  const label = visible ? `Hide ${labelBase}` : `Show ${labelBase}`;
+  btnEl.setAttribute('aria-label', label);
+  btnEl.title = label;
+}
+
+function setUsernameVisible(visible) {
+  setFieldMaskVisible(els.username, els.toggleUsernameBtn, visible, 'username');
+}
+
+function toggleUsernameVisibility() {
+  if (!els.username) return;
+  setUsernameVisible(els.username.type === 'password');
+}
+
 function setPasswordVisible(visible) {
-  if (!els.password || !els.togglePasswordBtn) return;
-  els.password.type = visible ? 'text' : 'password';
-  els.togglePasswordBtn.classList.toggle('password-field__toggle--visible', visible);
-  const label = visible ? 'Hide password' : 'Show password';
-  els.togglePasswordBtn.setAttribute('aria-label', label);
-  els.togglePasswordBtn.title = label;
+  setFieldMaskVisible(els.password, els.togglePasswordBtn, visible, 'password');
 }
 
 function togglePasswordVisibility() {
   if (!els.password) return;
   setPasswordVisible(els.password.type === 'password');
+}
+
+function setAccessEmailVisible(visible) {
+  setFieldMaskVisible(els.accessEmail, els.toggleAccessEmailBtn, visible, 'Buy Me a Coffee email');
+}
+
+function toggleAccessEmailVisibility() {
+  if (!els.accessEmail) return;
+  setAccessEmailVisible(els.accessEmail.type === 'password');
+}
+
+function setAllSecretFieldsVisible(visible = false) {
+  setUsernameVisible(visible);
+  setPasswordVisible(visible);
+  setAccessEmailVisible(visible);
+  setFieldMaskVisible(els.debitCardName, els.toggleDebitCardNameBtn, visible, 'card name');
+  setFieldMaskVisible(els.debitCardNumber, els.toggleDebitCardNumberBtn, visible, 'card number');
+  setFieldMaskVisible(els.debitCardCvv, els.toggleDebitCardCvvBtn, visible, 'CVV');
+  setFieldMaskVisible(els.creditCardName, els.toggleCreditCardNameBtn, visible, 'card name');
+  setFieldMaskVisible(els.creditCardNumber, els.toggleCreditCardNumberBtn, visible, 'card number');
+  setFieldMaskVisible(els.creditCardCvv, els.toggleCreditCardCvvBtn, visible, 'CVV');
 }
 
 function setLinkAccessEmailLoading(loading, loadingLabel = 'Loading...') {
@@ -810,7 +852,7 @@ async function load() {
   activeSetId = config.activeSetId || null;
   fillForm(config);
   await renderSetSelector();
-  setPasswordVisible(false);
+  setAllSecretFieldsVisible(false);
   await armScheduleIfEnabled(config.schedule);
   await updateScheduleStatus(config.schedule);
   await refreshAccess();
@@ -995,6 +1037,7 @@ async function clearAll() {
   activeSetId = config.activeSetId || null;
   fillForm(config);
   await renderSetSelector();
+  setAllSecretFieldsVisible(false);
   showToast('All data cleared.');
 }
 
@@ -1068,7 +1111,26 @@ els.startBtn.addEventListener('click', startBooking);
 els.stopBtn?.addEventListener('click', stopBooking);
 els.clearBtn.addEventListener('click', clearAll);
 els.linkAccessEmailBtn?.addEventListener('click', linkAccessEmail);
+els.toggleAccessEmailBtn?.addEventListener('click', toggleAccessEmailVisibility);
+els.toggleUsernameBtn?.addEventListener('click', toggleUsernameVisibility);
 els.togglePasswordBtn?.addEventListener('click', togglePasswordVisibility);
+
+[
+  { input: () => els.debitCardName, btn: () => els.toggleDebitCardNameBtn, label: 'card name' },
+  { input: () => els.debitCardNumber, btn: () => els.toggleDebitCardNumberBtn, label: 'card number' },
+  { input: () => els.debitCardCvv, btn: () => els.toggleDebitCardCvvBtn, label: 'CVV' },
+  { input: () => els.creditCardName, btn: () => els.toggleCreditCardNameBtn, label: 'card name' },
+  { input: () => els.creditCardNumber, btn: () => els.toggleCreditCardNumberBtn, label: 'card number' },
+  { input: () => els.creditCardCvv, btn: () => els.toggleCreditCardCvvBtn, label: 'CVV' }
+].forEach(({ input, btn, label }) => {
+  btn()?.addEventListener('click', () => {
+    const el = input();
+    const b = btn();
+    if (!el || !b) return;
+    setFieldMaskVisible(el, b, el.type === 'password', label);
+  });
+});
+
 els.toggleMinimizeBtn.addEventListener('click', () => {
   setMinimized(!document.body.classList.contains('popup-minimized'));
 });
