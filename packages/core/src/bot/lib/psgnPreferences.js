@@ -66,25 +66,20 @@ IRCTCExt.PsgnPreferences = {
     if (!optionEl) return;
     optionEl.scrollIntoView({ block: 'center', inline: 'nearest' });
 
-    const label = optionEl.querySelector('.loyalty-label, .payment-label, label');
+    // Pick single primary target instead of rapid multi-clicking
     const box = optionEl.querySelector('.ui-radiobutton-box, [role="radio"]');
-    const icon = optionEl.querySelector('.ui-radiobutton-icon');
+    const label = optionEl.querySelector('.loyalty-label, .payment-label, label');
     const input = optionEl.querySelector('input[type="radio"]');
+    const target = box || label || input || optionEl;
 
-    if (label) this.clickTarget(label);
-    if (box) this.clickTarget(box);
-    if (icon) this.clickTarget(icon);
+    this.clickTarget(target);
 
-    if (input) {
-      this.clickTarget(input);
-      if (!input.checked) {
-        input.checked = true;
-        input.dispatchEvent(new Event('input', { bubbles: true }));
-        input.dispatchEvent(new Event('change', { bubbles: true }));
-      }
+    // Sync input state if needed without extra synthetic spam
+    if (input && !input.checked) {
+      input.checked = true;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
     }
-
-    this.clickTarget(optionEl);
   },
 
   async selectRadioWithRetry(optionRow, label, maxAttempts = 6) {
@@ -185,9 +180,17 @@ IRCTCExt.PsgnPreferences = {
 
     overlay.setStatus('Waiting for review or payment page...');
     const destination = await IRCTCExt.Wait.poll(
-      () => this.getPostCalculateFareDestination(),
+      () => {
+        const waf = IRCTCExt.Modals?.detectWafOrServerError?.();
+        if (waf) return 'waf_blocked';
+        return this.getPostCalculateFareDestination();
+      },
       { timeout, interval: 500 }
     );
+    if (destination === 'waf_blocked') {
+      const waf = IRCTCExt.Modals?.detectWafOrServerError?.();
+      throw new Error(`Akamai WAF block: ${waf?.message || 'Unable to Process Request !!'}`);
+    }
     if (!destination) {
       throw new Error('Did not reach review booking or payment page after Calculate Fare');
     }
@@ -298,6 +301,8 @@ IRCTCExt.PsgnPreferences = {
 
     const btn = await IRCTCExt.Wait.poll(
       () => {
+        const waf = IRCTCExt.Modals?.detectWafOrServerError?.();
+        if (waf) return 'waf_blocked';
         const candidate = this.findCalculateFareButton();
         if (!candidate) return null;
         if (this.isCalculateFareProcessing(candidate)) return 'processing';
@@ -307,11 +312,19 @@ IRCTCExt.PsgnPreferences = {
       { timeout: 20000, interval: 250 }
     );
 
+    if (btn === 'waf_blocked') {
+      const waf = IRCTCExt.Modals?.detectWafOrServerError?.();
+      throw new Error(`Akamai WAF block: ${waf?.message || 'Unable to Process Request !!'}`);
+    }
     if (btn === 'processing') {
       overlay.setStatus('Calculate Fare is processing...');
       return this.waitForPostCalculateFarePage(overlay);
     }
     if (!btn) throw new Error('Calculate Fare button not found or still disabled');
+
+    // Anti-bot pacing: satisfy Akamai minimum dwell time threshold
+    overlay.setStatus('Pacing before fare calculation to avoid bot detection...');
+    await IRCTCExt.Wait.delay(1200 + Math.floor(Math.random() * 600));
 
     overlay.setStatus('Clicking Calculate Fare...');
     this.clickTarget(btn);
@@ -356,12 +369,22 @@ IRCTCExt.PsgnPreferences = {
 
     const btn = await IRCTCExt.Wait.poll(
       () => {
+        const waf = IRCTCExt.Modals?.detectWafOrServerError?.();
+        if (waf) return 'waf_blocked';
         const candidate = this.findContinueToPaymentButton();
         return candidate && this.isContinueToPaymentEnabled(candidate) ? candidate : null;
       },
       { timeout: 20000, interval: 250 }
     );
+    if (btn === 'waf_blocked') {
+      const waf = IRCTCExt.Modals?.detectWafOrServerError?.();
+      throw new Error(`Akamai WAF block: ${waf?.message || 'Unable to Process Request !!'}`);
+    }
     if (!btn) throw new Error('Continue To Payment button not found or still disabled');
+
+    // Anti-bot pacing
+    overlay.setStatus('Pacing before payment transition...');
+    await IRCTCExt.Wait.delay(1000 + Math.floor(Math.random() * 500));
 
     overlay.setStatus('Clicking Continue To Payment...');
     this.clickTarget(btn);
@@ -369,6 +392,8 @@ IRCTCExt.PsgnPreferences = {
 
     const afterClick = await IRCTCExt.Wait.poll(
       () => {
+        const waf = IRCTCExt.Modals?.detectWafOrServerError?.();
+        if (waf) return 'waf_blocked';
         if (location.pathname.includes('bkgPaymentOptions')) return 'payment';
         const modal = this.findReviewConfirmModal();
         if (modal) return modal;
@@ -377,6 +402,10 @@ IRCTCExt.PsgnPreferences = {
       { timeout: 20000, interval: 250 }
     );
 
+    if (afterClick === 'waf_blocked') {
+      const waf = IRCTCExt.Modals?.detectWafOrServerError?.();
+      throw new Error(`Akamai WAF block: ${waf?.message || 'Unable to Process Request !!'}`);
+    }
     if (afterClick === 'payment') {
       return this.waitForPaymentPage(overlay);
     }
@@ -392,7 +421,7 @@ IRCTCExt.PsgnPreferences = {
     await this.selectLoyaltySkip(overlay);
     await IRCTCExt.Wait.delay(400);
     await this.selectPaymentMethod(config, overlay);
-    await IRCTCExt.Wait.delay(500);
+    await IRCTCExt.Wait.delay(1000 + Math.floor(Math.random() * 500));
     const destination = await this.clickCalculateFare(overlay);
     overlay.setStatus(
       destination === 'payment' ? 'Fare calculated — on payment page.' : 'Fare calculated.'

@@ -128,6 +128,44 @@ IRCTCExt.Modals = {
     return dismissed;
   },
 
+  detectWafOrServerError(root = document) {
+    if (!root) return null;
+
+    // 1. Direct page content (e.g. Akamai HTML error page replacement)
+    const bodyText = (root.body ? root.body.textContent : root.textContent) || '';
+    if (/unable\s*to\s*process\s*request/i.test(bodyText)) {
+      const refMatch = bodyText.match(/\b(0\.[0-9a-fA-F]{6,12}\.\d{8,12}\.[0-9a-fA-F]{4,12})\b/);
+      const ipMatch = bodyText.match(/Client\s*IP:\s*([0-9a-fA-F:.]+)/i);
+      return {
+        type: 'akamai_waf',
+        reference: refMatch ? refMatch[1] : null,
+        clientIp: ipMatch ? ipMatch[1].trim() : null,
+        message: 'Unable to Process Request !! (Akamai WAF blocked request)'
+      };
+    }
+
+    // 2. IRCTC modal/toast dialogs (PrimeNG / UI dialogs)
+    const candidates = root.querySelectorAll?.(
+      '.ui-dialog, .p-dialog, [role="dialog"], .ui-toast-message, .p-toast-message, .alert-danger, .toast'
+    ) || [];
+    for (const dialog of candidates) {
+      if (!IRCTCExt.Wait?.isVisible?.(dialog)) continue;
+      const text = (dialog.textContent || '').replace(/\s+/g, ' ');
+      if (/unable\s*to\s*process\s*request/i.test(text)) {
+        const refMatch = text.match(/\b(0\.[0-9a-fA-F]{6,12}\.\d{8,12}\.[0-9a-fA-F]{4,12})\b/);
+        const ipMatch = text.match(/Client\s*IP:\s*([0-9a-fA-F:.]+)/i);
+        return {
+          type: 'akamai_waf',
+          reference: refMatch ? refMatch[1] : null,
+          clientIp: ipMatch ? ipMatch[1].trim() : null,
+          message: 'Unable to Process Request !! (Akamai WAF blocked request)'
+        };
+      }
+    }
+
+    return null;
+  },
+
   scheduleScan() {
     if (this._scanTimer) return;
     this._scanTimer = setTimeout(() => {

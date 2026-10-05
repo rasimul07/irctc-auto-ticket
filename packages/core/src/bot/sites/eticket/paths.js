@@ -23,7 +23,9 @@ IRCTCExt.EticketPaths = {
   },
 
   isErrorPage(path = location.pathname) {
-    return path.includes(IRCTCExt.EticketConfig.errorPagePath);
+    if (path.includes(IRCTCExt.EticketConfig.errorPagePath)) return true;
+    if (IRCTCExt.Modals?.detectWafOrServerError?.()) return true;
+    return false;
   },
 
   isTrainListPath(path = location.pathname) {

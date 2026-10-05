@@ -109,7 +109,26 @@
       );
     },
 
+    isPageProcessing() {
+      const blockers = document.querySelectorAll(
+        '.ui-blockui, .ui-blockui-document, .p-blockui, .p-blockui-document, .ui-widget-overlay'
+      );
+      for (const el of blockers) {
+        if (IRCTCExt.Wait.isVisible(el)) return true;
+      }
+
+      const dialogs = document.querySelectorAll('[role="dialog"], .ui-dialog, .p-dialog');
+      for (const dialog of dialogs) {
+        if (!IRCTCExt.Wait.isVisible(dialog)) continue;
+        const text = (dialog.textContent || '').replace(/\s+/g, ' ').trim();
+        if (/please\s*wait/i.test(text)) return true;
+      }
+
+      return false;
+    },
+
     isContinueEnabled(btn) {
+      if (IRCTCExt.NgetPsgnPreferencesFlow.isPageProcessing()) return false;
       if (!btn || !IRCTCExt.Wait.isVisible(btn)) return false;
       if (btn.disabled) return false;
       if (btn.classList.contains('disabled')) return false;
@@ -130,6 +149,8 @@
 
       const btn = await IRCTCExt.Wait.poll(
         () => {
+          const waf = IRCTCExt.Modals?.detectWafOrServerError?.();
+          if (waf) return 'waf_blocked';
           const candidate = IRCTCExt.NgetPsgnPreferencesFlow.findContinueButton();
           return candidate && IRCTCExt.NgetPsgnPreferencesFlow.isContinueEnabled(candidate)
             ? candidate
@@ -137,21 +158,72 @@
         },
         { timeout: 20000, interval: 250 }
       );
+      if (btn === 'waf_blocked') {
+        const waf = IRCTCExt.Modals?.detectWafOrServerError?.();
+        throw new Error(`Akamai WAF block: ${waf?.message || 'Unable to Process Request !!'}`);
+      }
       if (!btn) throw new Error('Continue button not found or still disabled');
+
+      // Anti-bot pacing: Dwell time before submitting fare check avoids Akamai sub-second flag
+      overlay.setStatus('Pacing before submit to avoid bot detection...');
+      await IRCTCExt.Wait.delay(1200 + Math.floor(Math.random() * 600));
 
       overlay.setStatus('Clicking Continue...');
       sharedPrefs().clickTarget(btn);
+      await IRCTCExt.Storage.updateState({ psgnPaymentContinueClicked: true });
       await IRCTCExt.Wait.delay(800);
 
       const navigated = await IRCTCExt.Wait.poll(
-        () => (IRCTCExt.NgetPsgnPreferencesFlow.hasLeftPsgninput() ? true : null),
+        () => {
+          const waf = IRCTCExt.Modals?.detectWafOrServerError?.();
+          if (waf) return 'waf_blocked';
+          return IRCTCExt.NgetPsgnPreferencesFlow.hasLeftPsgninput() ? true : null;
+        },
         { timeout: 30000, interval: 300 }
       );
+      if (navigated === 'waf_blocked') {
+        const waf = IRCTCExt.Modals?.detectWafOrServerError?.();
+        throw new Error(`Akamai WAF block: ${waf?.message || 'Unable to Process Request !!'}`);
+      }
       if (!navigated) throw new Error('Did not leave passenger page after clicking Continue');
+      await IRCTCExt.Storage.updateState({ psgnPaymentContinueClicked: false });
+      return true;
+    },
+
+    async waitAfterContinueClick(overlay, timeout = 90000) {
+      overlay.setStatus('IRCTC is processing — please wait...');
+      const reached = await IRCTCExt.Wait.poll(
+        () => {
+          const waf = IRCTCExt.Modals?.detectWafOrServerError?.();
+          if (waf) return 'waf_blocked';
+          if (IRCTCExt.NgetPsgnPreferencesFlow.hasLeftPsgninput()) return true;
+          if (IRCTCExt.NgetPaths.isReviewPath(location.pathname)) return true;
+          if (IRCTCExt.NgetPaths.isPaymentPath(location.pathname)) return true;
+          if (IRCTCExt.NgetPsgnPreferencesFlow.isPageProcessing()) return null;
+          return null;
+        },
+        { timeout, interval: 400 }
+      );
+      if (reached === 'waf_blocked') {
+        const waf = IRCTCExt.Modals?.detectWafOrServerError?.();
+        throw new Error(`Akamai WAF block: ${waf?.message || 'Unable to Process Request !!'}`);
+      }
+      if (!reached) {
+        throw new Error('Timed out waiting for IRCTC after Continue on payment mode');
+      }
+      await IRCTCExt.Storage.updateState({ psgnPaymentContinueClicked: false });
       return true;
     },
 
     async configure(config, overlay) {
+      const stored = await IRCTCExt.Storage.get();
+      if (
+        stored.state?.psgnPaymentContinueClicked ||
+        IRCTCExt.NgetPsgnPreferencesFlow.isPageProcessing()
+      ) {
+        return IRCTCExt.NgetPsgnPreferencesFlow.waitAfterContinueClick(overlay);
+      }
+
       overlay.setStep('Review');
       await IRCTCExt.Wait.delay(600);
 
@@ -159,7 +231,7 @@
       await IRCTCExt.Wait.delay(400);
 
       await IRCTCExt.NgetPsgnPreferencesFlow.selectPaymentMethod(config, overlay);
-      await IRCTCExt.Wait.delay(400);
+      await IRCTCExt.Wait.delay(1000 + Math.floor(Math.random() * 500));
 
       await IRCTCExt.NgetPsgnPreferencesFlow.clickContinue(overlay);
       overlay.setStatus('Passenger review complete — continuing...');

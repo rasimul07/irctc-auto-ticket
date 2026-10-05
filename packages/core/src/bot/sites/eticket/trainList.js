@@ -397,8 +397,8 @@ IRCTCExt.EticketTrainList = {
     throw new Error('Booking stopped');
   },
 
-  async loadAvailability(card, overlay, travelClass, maxAttempts = 3) {
-    if (IRCTCExt.EticketTrainList.hasClassCards(card)) {
+  async loadAvailability(card, overlay, travelClass, maxAttempts = 3, forceRefresh = false) {
+    if (!forceRefresh && IRCTCExt.EticketTrainList.hasClassCards(card)) {
       IRCTCExt.EticketTrainList.setStatus(
         overlay,
         `Availability already loaded — selecting class ${travelClass}...`
@@ -408,8 +408,25 @@ IRCTCExt.EticketTrainList = {
 
     IRCTCExt.EticketTrainList.scrollIntoViewIfNeeded(card);
 
+    if (forceRefresh && IRCTCExt.EticketTrainList.hasClassCards(card)) {
+      const classCard = IRCTCExt.EticketTrainList.findClassCard(card, travelClass);
+      const refreshControl =
+        IRCTCExt.EticketTrainList.findAvailabilityRefreshControl(card, classCard) ||
+        IRCTCExt.EticketTrainList.findRefreshAvailabilityButton(card);
+
+      if (refreshControl) {
+        IRCTCExt.EticketTrainList.setStatus(
+          overlay,
+          `Tatkal window open — refreshing availability for class ${travelClass}...`
+        );
+        IRCTCExt.Events.click(refreshControl);
+        await IRCTCExt.Wait.delay(500);
+        return true;
+      }
+    }
+
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-      if (IRCTCExt.EticketTrainList.hasClassCards(card)) {
+      if (!forceRefresh && IRCTCExt.EticketTrainList.hasClassCards(card)) {
         IRCTCExt.EticketTrainList.setStatus(
           overlay,
           `Availability loaded — selecting class ${travelClass}...`
@@ -417,7 +434,9 @@ IRCTCExt.EticketTrainList = {
         return true;
       }
 
-      const btn = IRCTCExt.EticketTrainList.findAvailabilityButton(card);
+      const btn =
+        IRCTCExt.EticketTrainList.findRefreshAvailabilityButton(card) ||
+        IRCTCExt.EticketTrainList.findAvailabilityButton(card);
       if (!btn) {
         if (IRCTCExt.EticketTrainList.hasClassCards(card)) return true;
         throw new Error('Check Availability button not found');
@@ -426,8 +445,8 @@ IRCTCExt.EticketTrainList = {
       IRCTCExt.EticketTrainList.setStatus(
         overlay,
         attempt === 0
-          ? 'Clicking Check Availability...'
-          : `Retrying Check Availability (${attempt + 1}/${maxAttempts})...`
+          ? 'Clicking Check/Refresh Availability...'
+          : `Retrying Check/Refresh Availability (${attempt + 1}/${maxAttempts})...`
       );
 
       IRCTCExt.Events.click(btn);
@@ -464,6 +483,37 @@ IRCTCExt.EticketTrainList = {
     return IRCTCExt.EticketTrainList.findClassCard(card, travelClass);
   },
 
+  async waitForTatkalWindowIfNeeded(config, overlay) {
+    const isTatkal =
+      IRCTCExt.Stations?.isTatkalQuota?.(config.journey?.quota) || !!config.schedule?.enabled;
+    if (!isTatkal) return false;
+
+    const info = IRCTCExt.Stations?.getTatkalOpeningTime?.(config);
+    if (!info || !info.isPending || info.remainingMs <= 0) return false;
+
+    overlay?.setStep('Waiting for Tatkal');
+
+    while (Date.now() < info.targetMs) {
+      if (await IRCTCExt.Bot.wasStopped()) return false;
+
+      const remainingMs = info.targetMs - Date.now();
+      if (remainingMs <= 0) break;
+
+      const remainingSec = Math.max(0, Math.ceil(remainingMs / 1000));
+      overlay?.setStatus(
+        `Train found! Tatkal window opens at ${info.targetTimeStr} IST. Refreshing availability in ${remainingSec}s...`
+      );
+
+      const pollInterval = remainingMs < 1000 ? 50 : remainingMs < 5000 ? 150 : 350;
+      await IRCTCExt.Wait.delay(pollInterval);
+    }
+
+    overlay?.setStatus('Tatkal window open! Refreshing availability now...');
+    overlay?.setStep('Train List');
+    await IRCTCExt.Wait.delay(200);
+    return true;
+  },
+
   async bookTrain(config, overlay) {
     const { journey } = config;
 
@@ -487,7 +537,18 @@ IRCTCExt.EticketTrainList = {
           : `Found train ${trainNum}`;
     IRCTCExt.EticketTrainList.setStatus(overlay, foundLabel);
 
-    await IRCTCExt.EticketTrainList.loadAvailability(card, overlay, travelClass);
+    const wasTatkalPending = await IRCTCExt.EticketTrainList.waitForTatkalWindowIfNeeded(
+      config,
+      overlay
+    );
+
+    await IRCTCExt.EticketTrainList.loadAvailability(
+      card,
+      overlay,
+      travelClass,
+      3,
+      wasTatkalPending
+    );
 
     const classCard = await IRCTCExt.EticketTrainList.findClassCardWithScroll(card, travelClass, overlay);
     if (!classCard) throw new Error(`Class ${travelClass} not found for train ${trainNum}`);

@@ -54,6 +54,83 @@ IRCTCExt.Stations = {
     return String(quota || '').trim().toUpperCase();
   },
 
+  isTatkalQuota(quota) {
+    const key = IRCTCExt.Stations.normalizeQuota(quota);
+    return key === 'TATKAL' || key === 'PREMIUM TATKAL' || key === 'PREMIUM_TATKAL';
+  },
+
+  isAcClass(travelClass) {
+    const c = String(travelClass || '').toUpperCase().trim();
+    return IRCTCExt.Stations.AC_CLASSES.includes(c);
+  },
+
+  getTatkalOpeningTime(config = {}) {
+    const journey = config.journey || {};
+    const schedule = config.schedule || {};
+    const isAc =
+      schedule.type === 'ac' ||
+      (schedule.type !== 'non-ac' && IRCTCExt.Stations.isAcClass(journey.travelClass));
+
+    const targetHour = isAc ? 10 : 11;
+    const targetMinute = 0;
+
+    let year = 0;
+    let month = 0;
+    let day = 0;
+    let hour = 0;
+    let minute = 0;
+    let second = 0;
+
+    try {
+      const istParts = new Intl.DateTimeFormat('en-GB', {
+        timeZone: 'Asia/Kolkata',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+      }).formatToParts(new Date());
+
+      const get = (type) => Number(istParts.find((p) => p.type === type)?.value || 0);
+      year = get('year');
+      month = get('month');
+      day = get('day');
+      hour = get('hour') % 24;
+      minute = get('minute');
+      second = get('second');
+    } catch (_) {
+      const now = new Date();
+      year = now.getFullYear();
+      month = now.getMonth() + 1;
+      day = now.getDate();
+      hour = now.getHours();
+      minute = now.getMinutes();
+      second = now.getSeconds();
+    }
+
+    const pad = (n) => String(n).padStart(2, '0');
+    const targetMs = new Date(
+      `${year}-${pad(month)}-${pad(day)}T${pad(targetHour)}:${pad(targetMinute)}:00+05:30`
+    ).getTime();
+
+    const nowSeconds = hour * 3600 + minute * 60 + second;
+    const targetSeconds = targetHour * 3600 + targetMinute * 60;
+    const diffSeconds = targetSeconds - nowSeconds;
+    const isPending = diffSeconds > 0 && diffSeconds <= 15 * 60;
+
+    return {
+      isAc,
+      targetHour,
+      targetMinute,
+      targetTimeStr: `${pad(targetHour)}:${pad(targetMinute)}:00 AM`,
+      targetMs,
+      isPending,
+      remainingMs: targetMs - Date.now()
+    };
+  },
+
   quotaOptionText(quota) {
     const key = IRCTCExt.Stations.normalizeQuota(quota);
     if (key === 'TATKAL') return 'TATKAL';

@@ -5,24 +5,41 @@ IRCTCExt.Events = {
     if (!el) return;
     el.scrollIntoView({ block: 'center', inline: 'nearest' });
 
-    // Native click avoids IRCTC pointer-lock handlers triggered by synthetic PointerEvents.
+    const rect = el.getBoundingClientRect();
+    const jitterX = rect.width > 6 ? (Math.random() - 0.5) * (rect.width * 0.4) : 0;
+    const jitterY = rect.height > 6 ? (Math.random() - 0.5) * (rect.height * 0.4) : 0;
+    const clientX = Math.round(rect.left + rect.width / 2 + jitterX);
+    const clientY = Math.round(rect.top + rect.height / 2 + jitterY);
+    const screenX = (window.screenX || 0) + clientX;
+    const screenY = (window.screenY || 0) + clientY;
+    const opts = {
+      bubbles: true,
+      cancelable: true,
+      view: window,
+      clientX,
+      clientY,
+      screenX,
+      screenY,
+      buttons: 1
+    };
+
+    try {
+      window.dispatchEvent(new MouseEvent('mousemove', opts));
+      el.dispatchEvent(new MouseEvent('mousemove', opts));
+      el.dispatchEvent(new MouseEvent('mouseover', opts));
+      el.dispatchEvent(new MouseEvent('mousedown', opts));
+      el.dispatchEvent(new MouseEvent('mouseup', { ...opts, buttons: 0 }));
+    } catch (_) {}
+
+    // Native click triggers Angular/PrimeNG bindings
     if (typeof el.click === 'function') {
       el.click();
       return;
     }
 
-    const rect = el.getBoundingClientRect();
-    const opts = {
-      bubbles: true,
-      cancelable: true,
-      view: window,
-      clientX: rect.left + Math.min(24, Math.max(8, rect.width / 5)),
-      clientY: rect.top + rect.height / 2,
-      buttons: 1
-    };
-    el.dispatchEvent(new MouseEvent('mousedown', opts));
-    el.dispatchEvent(new MouseEvent('mouseup', opts));
-    el.dispatchEvent(new MouseEvent('click', opts));
+    try {
+      el.dispatchEvent(new MouseEvent('click', { ...opts, buttons: 0 }));
+    } catch (_) {}
   },
 
   setNativeValue(el, value) {
