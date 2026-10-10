@@ -10,7 +10,7 @@
 <body>
   <header class="header">
     <div class="header-top">
-      <h1>IRCTC Tatkal Bot</h1>
+      <h1>IRCTC Tatkal Assistant</h1>
       <button type="button" id="toggleMinimizeBtn" class="icon-btn" title="Minimize" aria-label="Minimize popup">−</button>
     </div>
     <p id="statusBadge" class="badge">Idle</p>
@@ -43,6 +43,35 @@
         </div>
       </dl>
 
+      <section class="access-breakdown" aria-label="Feature access breakdown">
+        <h3 class="access-breakdown__title">What is Free vs What Requires Access</h3>
+
+        <div class="access-breakdown__card access-breakdown__card--free">
+          <div class="access-breakdown__header">
+            <span class="access-badge access-badge--free">✓ 100% Free for Everyone</span>
+            <span class="access-breakdown__sub">No subscription needed</span>
+          </div>
+          <ul class="access-breakdown__list">
+            <li><strong>Auto-Booking Journey:</strong> Unlimited automated login, Tatkal train search &amp; timing scheduler.</li>
+            <li><strong>Train &amp; Quota Selection:</strong> Automatic Tatkal / General quota &amp; train choice.</li>
+            <li><strong>Passenger Autofill:</strong> Auto-fills all passenger details, age, berths &amp; food preferences.</li>
+            <li><strong>Booking Review:</strong> Auto-navigates through review booking screen up to payment.</li>
+            <li><strong>Manual Payment Review:</strong> Instant payment review overlay on <code>bkgPaymentOptions</code> / <code>payment</code> to complete payment with any UPI / Cards / Netbanking.</li>
+          </ul>
+        </div>
+
+        <div class="access-breakdown__card access-breakdown__card--paid">
+          <div class="access-breakdown__header">
+            <span class="access-badge access-badge--paid">☕ Requires Buy Me a Coffee Access</span>
+            <span class="access-breakdown__sub">Optional convenience feature</span>
+          </div>
+          <ul class="access-breakdown__list">
+            <li><strong>Auto Pay on Payment Page:</strong> Automated selection of payment provider on <code>bkgPaymentOptions</code> / <code>payment</code>.</li>
+            <li><strong>Bank Gateway Autofill:</strong> Automated Debit/Credit card filling and submission directly to the bank OTP page.</li>
+          </ul>
+        </div>
+      </section>
+
       <section class="access-privacy-notice" aria-label="Local data privacy">
         <p><strong>Your data stays on this device.</strong></p>
         <p>Login, journey, passenger, and payment details are saved only in this browser on your local machine. They are not uploaded or stored on any remote server.</p>
@@ -50,20 +79,28 @@
       </section>
 
       <section class="access-plans" aria-label="Subscription plans">
-        <h3 class="access-plans__title">Subscription plans</h3>
+        <h3 class="access-plans__title">Auto Pay Plans</h3>
         <p class="access-plans__priority">Plan priority: Pro &gt; Basic &gt; Coffee &gt; Trial</p>
         <table class="access-plans__table">
           <thead>
             <tr>
               <th scope="col">Plan</th>
-              <th scope="col">Extension</th>
+              <th scope="col">Auto Pay Automation</th>
               <th scope="col">Mobile</th>
             </tr>
           </thead>
           <tbody>
             <tr>
+              <td><strong>Free</strong></td>
+              <td>Manual payment on IRCTC</td>
+              <td>—</td>
+            </tr>
+            <tr class="access-plan-row--detail">
+              <td colspan="3">Complete journey automation free up to payment page; pay manually on IRCTC</td>
+            </tr>
+            <tr>
               <td><strong>Trial</strong></td>
-              <td>Unlimited</td>
+              <td>Unlimited Auto Pay</td>
               <td>Blocked</td>
             </tr>
             <tr class="access-plan-row--detail">
@@ -71,7 +108,7 @@
             </tr>
             <tr>
               <td><strong>Coffee</strong></td>
-              <td>Token-based</td>
+              <td>Token-based Auto Pay</td>
               <td>Blocked</td>
             </tr>
             <tr class="access-plan-row--detail">
@@ -79,19 +116,19 @@
             </tr>
             <tr>
               <td><strong>Basic</strong></td>
-              <td>Unlimited</td>
+              <td>Unlimited Auto Pay</td>
               <td>Blocked</td>
             </tr>
             <tr class="access-plan-row--detail">
-              <td colspan="3">BMC Basic membership — unlimited extension bookings</td>
+              <td colspan="3">BMC Basic membership — unlimited extension Auto Pay bookings</td>
             </tr>
             <tr>
               <td><strong>Pro</strong></td>
-              <td>Unlimited</td>
+              <td>Unlimited Auto Pay</td>
               <td>Allowed</td>
             </tr>
             <tr class="access-plan-row--detail">
-              <td colspan="3">BMC Pro membership — extension + future mobile apps</td>
+              <td colspan="3">BMC Pro membership — extension Auto Pay + future mobile apps</td>
             </tr>
           </tbody>
         </table>
@@ -262,8 +299,9 @@
       </label>
 
       <label class="checkbox-row">
-        <input type="checkbox" id="autoPayEnabled"> Enable auto pay
+        <input type="checkbox" id="autoPayEnabled"> Enable auto pay <span class="badge" style="display: inline-block; font-size: 10px; font-weight: 600; padding: 2px 6px; border-radius: 4px; background: #fee2e2; color: #b91c1c; margin-left: 6px; text-transform: uppercase;">BMC Access</span>
       </label>
+      <p style="font-size: 11px; color: #64748b; margin: -4px 0 8px 24px;">The extension is free to use. Auto Pay requires a Buy Me a Coffee access/subscription.</p>
 
       <div id="cardsPaymentFields" class="payment-subpanel payment-subpanel--hidden">
         <label>Payment Provider

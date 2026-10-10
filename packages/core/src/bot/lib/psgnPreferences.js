@@ -323,8 +323,8 @@ IRCTCExt.PsgnPreferences = {
     if (!btn) throw new Error('Calculate Fare button not found or still disabled');
 
     // Anti-bot pacing: satisfy Akamai minimum dwell time threshold
-    overlay.setStatus('Pacing before fare calculation to avoid bot detection...');
-    await IRCTCExt.Wait.delay(1200 + Math.floor(Math.random() * 600));
+    overlay.setStatus('Pacing before fare calculation (anti-bot delay)...');
+    await IRCTCExt.Wait.delay(2500 + Math.floor(Math.random() * 1000));
 
     overlay.setStatus('Clicking Calculate Fare...');
     this.clickTarget(btn);
@@ -383,8 +383,8 @@ IRCTCExt.PsgnPreferences = {
     if (!btn) throw new Error('Continue To Payment button not found or still disabled');
 
     // Anti-bot pacing
-    overlay.setStatus('Pacing before payment transition...');
-    await IRCTCExt.Wait.delay(1000 + Math.floor(Math.random() * 500));
+    overlay.setStatus('Pacing before Continue to payment (anti-bot delay)...');
+    await IRCTCExt.Wait.delay(2500 + Math.floor(Math.random() * 1000));
 
     overlay.setStatus('Clicking Continue To Payment...');
     this.clickTarget(btn);

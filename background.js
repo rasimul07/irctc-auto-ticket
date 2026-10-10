@@ -121,7 +121,7 @@ async function waitForContentScriptReady(tabId, maxAttempts = 40) {
 }
 
 async function ensureContentScripts(tabId, scriptFiles = CONTENT_SCRIPT_FILES, cssFiles = CONTENT_CSS_FILES) {
-  if (await waitForContentScriptReady(tabId, 6)) return true;
+  if (await waitForContentScriptReady(tabId, 16)) return true;
 
   try {
     await chrome.scripting.executeScript({
@@ -139,7 +139,7 @@ async function ensureContentScripts(tabId, scriptFiles = CONTENT_SCRIPT_FILES, c
     return false;
   }
 
-  return waitForContentScriptReady(tabId, 20);
+  return waitForContentScriptReady(tabId, 25);
 }
 
 function shouldResumeGateway(config) {
@@ -217,13 +217,7 @@ async function waitForTabReady(tabId) {
 }
 
 async function ensureBookingAccess() {
-  try {
-    const status = await IRCTCExt.AccessApi.ensureAccess({ forceRefresh: true });
-    return IRCTCExt.AccessApi.isStatusAllowed(status);
-  } catch (err) {
-    console.warn('[IRCTC-Bot] Access check failed:', err);
-    return false;
-  }
+  return true; // Extension is free to use up to the payment page
 }
 
 async function resetRunningState() {
@@ -244,17 +238,18 @@ async function stopAllBooking() {
     autoRestartCount: 0
   });
 
-  const tabs = await chrome.tabs.query({
-    url: [
-      'https://www.irctc.co.in/*',
-      'https://www.irctcipay.com/*',
-      'https://pg.irctcpayments.com/*',
-      'https://mercury-t2.phonepe.com/*',
-      'https://mercury.phonepe.com/*'
-    ]
+  const allTabs = await chrome.tabs.query({}).catch(() => []);
+  const irctcTabs = allTabs.filter((tab) => {
+    const url = tab.url || '';
+    return (
+      url.includes('irctc.co.in') ||
+      url.includes('irctcipay.com') ||
+      url.includes('pg.irctcpayments.com') ||
+      url.includes('phonepe.com')
+    );
   });
 
-  for (const tab of tabs) {
+  for (const tab of irctcTabs) {
     if (!tab.id) continue;
     try {
       await chrome.tabs.sendMessage(tab.id, { type: 'STOP_BOOKING' });
@@ -297,12 +292,23 @@ async function openIrctcTab({ skipAccessCheck = false, bookingSite = null } = {}
       tabId = existingTab.id;
       const alreadyOnTrainSearch = existingTab.url?.includes(site.trainSearchPath);
       await chrome.tabs.update(tabId, { active: true });
-      if (alreadyOnTrainSearch) {
-        await chrome.tabs.reload(tabId);
+      if (!alreadyOnTrainSearch) {
+        let targetUrl = site.trainSearchUrl;
+        try {
+          const origin = new URL(existingTab.url).origin;
+          if (origin.includes('irctc.co.in')) {
+            targetUrl = `${origin}${site.trainSearchPath}`;
+          }
+        } catch (_) {}
+        await chrome.tabs.update(tabId, { url: targetUrl });
+        await waitForTabReady(tabId);
       } else {
-        await chrome.tabs.update(tabId, { url: site.trainSearchUrl });
+        const isReady = await pingContentScript(tabId);
+        if (!isReady) {
+          await chrome.tabs.reload(tabId);
+          await waitForTabReady(tabId);
+        }
       }
-      await waitForTabReady(tabId);
     } else {
       const tab = await chrome.tabs.create({ url: site.trainSearchUrl, active: true });
       tabId = tab.id;
@@ -314,7 +320,13 @@ async function openIrctcTab({ skipAccessCheck = false, bookingSite = null } = {}
     return { ok: false, error: 'tab_open_failed', message: err.message || 'Could not open IRCTC tab.' };
   }
 
-  return { ok: true, tabId, siteId: site.id, siteLabel: site.label || site.id, url: site.trainSearchUrl };
+  return {
+    ok: true,
+    tabId,
+    siteId: site.id,
+    siteLabel: site.label || site.id,
+    url: existingTab?.url || site.trainSearchUrl
+  };
 }
 
 async function openIrctcAndStart({ skipAccessCheck = false } = {}) {
@@ -430,29 +442,43 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     return true;
   }
   if (msg.type === 'CHECK_ACCESS') {
-    IRCTCExt.AccessApi.ensureAccess({ forceRefresh: !!msg.forceRefresh })
-      .then((status) => sendResponse({ ok: true, ...status, allowed: IRCTCExt.AccessApi.isStatusAllowed(status) }))
-      .catch((err) =>
-        sendResponse({
-          ok: false,
-          allowed: false,
-          message: IRCTCExt.Network.toUserNetworkMessage(err),
-          code: err.code
-        })
-      );
+    (async () => {
+      const config = await getActiveConfig();
+      if (!config?.preferences?.autoPayEnabled) {
+        sendResponse({ ok: true, allowed: true, tier: 'free', message: 'Free access' });
+        return;
+      }
+      IRCTCExt.AccessApi.ensureAccess({ forceRefresh: !!msg.forceRefresh })
+        .then((status) => sendResponse({ ok: true, ...status, allowed: IRCTCExt.AccessApi.isStatusAllowed(status) }))
+        .catch((err) =>
+          sendResponse({
+            ok: false,
+            allowed: false,
+            message: IRCTCExt.Network.toUserNetworkMessage(err),
+            code: err.code
+          })
+        );
+    })();
     return true;
   }
   if (msg.type === 'CONSUME_TOKEN') {
-    IRCTCExt.AccessApi.consumeToken(msg.usageKey)
-      .then((status) => sendResponse({ ok: true, ...status, allowed: IRCTCExt.AccessApi.isStatusAllowed(status) }))
-      .catch((err) =>
-        sendResponse({
-          ok: false,
-          allowed: false,
-          message: IRCTCExt.Network.toUserNetworkMessage(err),
-          code: err.code
-        })
-      );
+    (async () => {
+      const config = await getActiveConfig();
+      if (!config?.preferences?.autoPayEnabled) {
+        sendResponse({ ok: true, allowed: true });
+        return;
+      }
+      IRCTCExt.AccessApi.consumeToken(msg.usageKey)
+        .then((status) => sendResponse({ ok: true, ...status, allowed: IRCTCExt.AccessApi.isStatusAllowed(status) }))
+        .catch((err) =>
+          sendResponse({
+            ok: false,
+            allowed: false,
+            message: IRCTCExt.Network.toUserNetworkMessage(err),
+            code: err.code
+          })
+        );
+    })();
     return true;
   }
   if (msg.type === 'RESCHEDULE_ALARMS') {

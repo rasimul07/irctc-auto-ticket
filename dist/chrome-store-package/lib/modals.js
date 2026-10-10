@@ -121,8 +121,65 @@ IRCTCExt.Modals = {
     return dismissed;
   },
 
+  dismissTour(root = document) {
+    if (!root) return 0;
+    let dismissed = 0;
+
+    const skipBtn = root.querySelector(
+      '.home-tour-actions .home-tour-skip, button.home-tour-skip, .home-tour-skip'
+    );
+    if (skipBtn && !skipBtn.dataset?.tourDismissed) {
+      skipBtn.dataset.tourDismissed = '1';
+      try {
+        if (IRCTCExt.Events?.click) {
+          IRCTCExt.Events.click(skipBtn);
+        } else {
+          skipBtn.click();
+        }
+      } catch (_) {
+        skipBtn.click?.();
+      }
+      dismissed += 1;
+    }
+
+    if (!dismissed) {
+      const actionContainers = root.querySelectorAll('.home-tour-actions, .home-tour');
+      for (const container of actionContainers) {
+        const buttons = container.querySelectorAll('button');
+        for (const btn of buttons) {
+          if (/skip\s*tour/i.test(btn.textContent || '') && !btn.dataset?.tourDismissed) {
+            btn.dataset.tourDismissed = '1';
+            try {
+              if (IRCTCExt.Events?.click) {
+                IRCTCExt.Events.click(btn);
+              } else {
+                btn.click();
+              }
+            } catch (_) {
+              btn.click?.();
+            }
+            dismissed += 1;
+            break;
+          }
+        }
+        if (dismissed) break;
+      }
+    }
+
+    // Forcefully hide tour elements and backdrop so they never block form controls
+    const tourElements = root.querySelectorAll(
+      '.home-tour-actions, .home-tour, .home-tour-overlay, app-home-tour'
+    );
+    for (const el of tourElements) {
+      if (this.forceHide(el)) dismissed += 1;
+    }
+
+    return dismissed;
+  },
+
   dismissInterruptModals(root = document) {
     let dismissed = 0;
+    dismissed += this.dismissTour(root);
     dismissed += this.dismissSessionRestore(root);
     dismissed += this.dismissBookNowConfirmation(root);
     return dismissed;

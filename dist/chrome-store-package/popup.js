@@ -297,7 +297,12 @@ function setAccessDetailValues(tier, validUntil, active) {
 function updateAccessUi(status, errorMessage = '', options = {}) {
   if (!els.accessStatusText) return;
 
-  els.accessStatusText.classList.remove('access-status--ok', 'access-status--warn', 'access-status--error');
+  els.accessStatusText.classList.remove(
+    'access-status--ok',
+    'access-status--warn',
+    'access-status--error',
+    'access-status--free'
+  );
 
   if (options.loading) {
     els.accessStatusText.textContent = 'Checking access...';
@@ -324,14 +329,16 @@ function updateAccessUi(status, errorMessage = '', options = {}) {
     els.accessStatusText.classList.add(
       status.tier === 'pro' || status.tier === 'basic' ? 'access-status--ok' : 'access-status--warn'
     );
+  } else if (status.tier === 'none') {
+    els.accessStatusText.classList.add('access-status--free');
   } else {
     els.accessStatusText.classList.add('access-status--error');
   }
 
   setAccessDetailValues(
-    AccessApi?.formatTier(status) || '—',
-    AccessApi?.formatValidUntil(status) || '—',
-    AccessApi?.formatActive(status) || '—'
+    AccessApi?.formatTier(status) || (status.tier === 'none' ? 'Free' : '—'),
+    AccessApi?.formatValidUntil(status) || (status.tier === 'none' ? 'Lifetime' : '—'),
+    status.tier === 'none' ? 'Active (Free mode)' : (AccessApi?.formatActive(status) || '—')
   );
 }
 
@@ -447,6 +454,10 @@ function toggleAutoPayFields() {
   els.creditCardFields.classList.toggle('payment-subsection--active', creditActive);
   els.debitCardFields.classList.toggle('payment-subsection--muted', qrSelected || (cardsAutoPayOn && type === 'credit'));
   els.creditCardFields.classList.toggle('payment-subsection--muted', qrSelected || (cardsAutoPayOn && type === 'debit'));
+}
+
+function handleAutoPayToggle() {
+  toggleAutoPayFields();
 }
 
 function togglePaymentFields() {
@@ -730,7 +741,14 @@ async function armScheduleIfEnabled(schedule) {
 }
 
 function isBookingActive(config) {
-  return !!config?.state?.running && config.state.status !== 'stopped';
+  const status = config?.state?.status;
+  return (
+    config?.state?.running === true &&
+    status !== 'stopped' &&
+    status !== 'idle' &&
+    status !== 'error' &&
+    status !== 'done'
+  );
 }
 
 function updateRunControls(active) {
@@ -944,15 +962,6 @@ async function startBooking() {
     return;
   }
 
-  const accessStatus = await refreshAccess();
-  if (!AccessApi?.isStatusAllowed(accessStatus)) {
-    showToast(
-      'Access not active. Start a free trial or buy a coffee on Buy Me a Coffee, then link your email on the Access tab.',
-      true
-    );
-    switchTab('access', 'accessEmail');
-    return;
-  }
 
   await save();
   const bookingSite = form.preferences?.bookingSite || 'eticket';
@@ -1015,10 +1024,29 @@ async function startBooking() {
 async function stopBooking() {
   if (els.stopBtn) els.stopBtn.disabled = true;
   try {
-    const response = await chrome.runtime.sendMessage({ type: 'STOP_FROM_POPUP' });
+    // 1. Immediately toggle UI controls back to Start
+    updateRunControls(false);
+    updateStatusBadge('stopped', activeSetName);
+
+    // 2. Persist stopped state into storage immediately to avoid polling race conditions
+    await Storage.updateState({
+      running: false,
+      paused: false,
+      status: 'stopped',
+      currentStep: 'init',
+      awaitingGateway: false,
+      paymentPhase: null,
+      paymentGateway: null,
+      passengersDone: false,
+      paymentDone: false
+    }).catch(() => null);
+
+    // 3. Request background to stop all tabs & alarms
+    const response = await chrome.runtime.sendMessage({ type: 'STOP_FROM_POPUP' }).catch(() => null);
     if (response?.ok === false) {
-      throw new Error(response.error || 'Could not stop booking.');
+      console.warn('[IRCTC] STOP_FROM_POPUP response:', response.error);
     }
+
     const latest = await Storage.get();
     activeSetName = latest.activeSetName || activeSetName;
     updateStatusBadge(latest.state?.status || 'stopped', activeSetName);
@@ -1027,7 +1055,15 @@ async function stopBooking() {
   } catch (err) {
     showToast(err.message || 'Could not stop booking.', true);
   } finally {
-    if (els.stopBtn) els.stopBtn.disabled = false;
+    updateRunControls(false);
+    if (els.stopBtn) {
+      els.stopBtn.disabled = false;
+      els.stopBtn.hidden = true;
+    }
+    if (els.startBtn) {
+      els.startBtn.hidden = false;
+      els.startBtn.disabled = false;
+    }
   }
 }
 
@@ -1071,7 +1107,7 @@ els.bookingSite?.addEventListener('change', () => {
   syncCardsProviderOptions(bookingSite);
   Storage.update({ preferences: { bookingSite } }).catch(() => null);
 });
-els.autoPayEnabled.addEventListener('change', toggleAutoPayFields);
+els.autoPayEnabled.addEventListener('change', handleAutoPayToggle);
 document.querySelectorAll('input[name="autoPayType"]').forEach((radio) => {
   radio.addEventListener('change', toggleAutoPayFields);
 });

@@ -99,6 +99,10 @@
       );
       if (!btn) throw new Error('Continue button not found or still disabled');
 
+      // Anti-bot pacing: dwell time before clicking Continue
+      overlay.setStatus('Pacing before Continue (anti-bot delay)...');
+      await IRCTCExt.Wait.delay(2000 + Math.floor(Math.random() * 1000));
+
       overlay.setStatus('Clicking Continue...');
       sharedPrefs().clickTarget(btn);
       await IRCTCExt.Wait.delay(800);

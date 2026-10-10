@@ -598,6 +598,96 @@ button {
   background: rgba(198, 40, 40, 0.18);
 }
 
+.access-status--free {
+  background: #e8f4fd;
+  border: 1px solid #b6d4fe;
+  color: #084298;
+}
+
+.access-breakdown {
+  margin-bottom: 14px;
+}
+
+.access-breakdown__title {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--rt-primary);
+}
+
+.access-breakdown__card {
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  border-radius: var(--rt-radius-lg);
+  border: 1px solid var(--rt-border);
+  background: var(--rt-surface);
+}
+
+.access-breakdown__card--free {
+  border-color: #badbcc;
+  background: #f4faf6;
+}
+
+.access-breakdown__card--paid {
+  border-color: #ffe082;
+  background: #fffcf0;
+}
+
+.access-breakdown__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.access-badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 12px;
+}
+
+.access-badge--free {
+  background: #d1e7dd;
+  color: #0f5132;
+}
+
+.access-badge--paid {
+  background: #fff3cd;
+  color: #664d03;
+}
+
+.access-breakdown__sub {
+  font-size: 10px;
+  color: var(--rt-text-muted-alt);
+}
+
+.access-breakdown__list {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--rt-text);
+}
+
+.access-breakdown__list li {
+  margin-bottom: 4px;
+}
+
+.access-breakdown__list li:last-child {
+  margin-bottom: 0;
+}
+
+.access-breakdown__list code {
+  font-size: 10px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.06);
+}
+
 .access-details {
   margin: 0 0 14px;
   padding: 10px 12px;
