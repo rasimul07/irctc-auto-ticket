@@ -326,8 +326,20 @@ IRCTCExt.Bot = {
     }
 
     if (site.isTrainListPath(path)) {
+      IRCTCExt.Modals?.dismissTour?.();
       overlay.setStatus('Train list loaded — starting booking...');
       await site.TrainList.bookTrain(config, overlay);
+      return 'continue';
+    }
+
+    if (step === 'login') {
+      await site.flows.LoginFlow.runWithRetry(config, overlay);
+      if (site.isTrainSearchPath(location.pathname)) {
+        await site.flows.SearchFlow.run(config, overlay);
+        if (site.isTrainListPath(location.pathname)) return 'continue';
+        overlay.setStatus('Waiting for train list...');
+        return 'wait';
+      }
       return 'continue';
     }
 

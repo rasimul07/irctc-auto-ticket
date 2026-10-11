@@ -11,14 +11,51 @@ IRCTCExt.EticketLoginFlow = {
   },
 
   isLoginModalOpen() {
-    const modal = IRCTCExt.Wait.queryVisibleOne(IRCTCExt.SELECTORS.loginModal);
-    return !!modal;
+    if (IRCTCExt.Wait.queryVisibleOne(IRCTCExt.SELECTORS.loginModal)) return true;
+    const directForm = IRCTCExt.Wait.queryVisibleOne([
+      '.login-wrapper',
+      '.login-slider-viewport',
+      '.login-slider',
+      '.login-panel:not(.login-panel--inactive)',
+      '.login-form:not(.agent-panel)',
+      '#username',
+      'input[formcontrolname="userid"]'
+    ]);
+    return !!directForm;
+  },
+
+  hasLoggedInMarker() {
+    return !!IRCTCExt.Wait.queryVisibleOne(IRCTCExt.SELECTORS.loggedInProfile);
+  },
+
+  needsLogin() {
+    if (IRCTCExt.EticketLoginFlow.isLoginModalOpen()) return true;
+    if (IRCTCExt.EticketLoginFlow.hasLoggedInMarker()) return false;
+    if (IRCTCExt.EticketLoginFlow.headerLoginButton()) return true;
+    return false;
   },
 
   getActiveLoginPanel() {
-    const panels = Array.from(document.querySelectorAll('.login-panel'));
-    const visiblePanel = panels.find((p) => IRCTCExt.Wait.isVisible(p));
-    return visiblePanel || document.querySelector('.login-wrapper') || document;
+    const panels = Array.from(document.querySelectorAll('.login-panel:not(.login-panel--inactive):not([inert])'));
+    const visiblePanel = panels.find((p) => IRCTCExt.Wait.isVisible(p) && p.getAttribute('aria-hidden') !== 'true');
+    return (
+      visiblePanel ||
+      document.querySelector('.login-form:not(.agent-panel):not(.login-panel--inactive)') ||
+      document.querySelector('.login-wrapper') ||
+      document
+    );
+  },
+
+  ensureUserTabActive() {
+    const tabs = Array.from(document.querySelectorAll('.login-tab'));
+    const userTab = tabs.find((tab) => (tab.textContent || '').toUpperCase().includes('USER'));
+    if (userTab && !userTab.classList.contains('active')) {
+      try {
+        IRCTCExt.Events?.click ? IRCTCExt.Events.click(userTab) : userTab.click();
+      } catch (_) {
+        userTab.click?.();
+      }
+    }
   },
 
   hasChallenge() {
@@ -33,19 +70,12 @@ IRCTCExt.EticketLoginFlow = {
   },
 
   async isLoggedIn() {
-    if (IRCTCExt.Wait.queryVisibleOne(IRCTCExt.SELECTORS.loggedInProfile)) return true;
     if (IRCTCExt.EticketLoginFlow.isLoginModalOpen()) return false;
-    const openForm = IRCTCExt.Wait.queryVisibleOne([
-      '#newLogin .login-form',
-      '.login-dialog .login-form',
-      '.login-wrapper .login-form',
-      '.login-slider'
-    ]);
-    if (openForm) return false;
+    if (IRCTCExt.EticketLoginFlow.hasLoggedInMarker()) return true;
     if (IRCTCExt.EticketLoginFlow.headerLoginButton()) return false;
     const oldLogin = document.querySelector('a.search_btn.loginText');
     if (oldLogin && oldLogin.textContent.toUpperCase().includes('LOGIN')) return false;
-    return !IRCTCExt.EticketLoginFlow.headerLoginButton();
+    return false;
   },
 
   async dismissTour() {
@@ -87,38 +117,59 @@ IRCTCExt.EticketLoginFlow = {
       }
     }
     await IRCTCExt.Wait.waitFor(IRCTCExt.SELECTORS.loginModal, { timeout: 8000, visible: true });
-
-    const tabs = Array.from(document.querySelectorAll('.login-tab'));
-    const userTab = tabs.find((tab) => (tab.textContent || '').toUpperCase().includes('USER'));
-    if (userTab && !userTab.classList.contains('active')) {
-      IRCTCExt.Events.click(userTab);
-      await IRCTCExt.Wait.delay(300);
-    }
+    IRCTCExt.EticketLoginFlow.ensureUserTabActive();
   },
 
   async fillCredential(input, value) {
     if (!input || !value) return;
     input.focus();
-    IRCTCExt.Events.setInputValue(input, value, { blur: true });
-    await IRCTCExt.Wait.delay(100);
+    IRCTCExt.Events.setInputValue(input, value, { blur: false });
+    await IRCTCExt.Wait.delay(50);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    IRCTCExt.Events.keyEvent?.(input, 'keyup', 'Enter');
+    input.blur();
+    input.dispatchEvent(new Event('blur', { bubbles: true }));
+    await IRCTCExt.Wait.delay(50);
     if (!input.value) {
       await IRCTCExt.Events.typeSlowly(input, value, 40);
     }
   },
 
+  getLoginSubmit(panel) {
+    const active = panel || IRCTCExt.EticketLoginFlow.getActiveLoginPanel() || document;
+    let submit = IRCTCExt.Wait.queryVisibleOne(IRCTCExt.SELECTORS.loginSubmit, active);
+    if (!submit && active !== document) {
+      submit = IRCTCExt.Wait.queryVisibleOne(IRCTCExt.SELECTORS.loginSubmit, document);
+    }
+    return submit;
+  },
+
   async waitForEnabledSubmit(panel) {
     const root = panel || document;
-    return IRCTCExt.Wait.poll(
+    let submit = await IRCTCExt.Wait.poll(
       () => {
-        const submit = IRCTCExt.Wait.queryVisibleOne(IRCTCExt.SELECTORS.loginSubmit, root);
-        if (!submit) return null;
-        if (submit.classList.contains('disabled-state') || submit.disabled || submit.getAttribute('disabled') !== null) {
-          return null;
-        }
-        return submit;
+        const btn = IRCTCExt.EticketLoginFlow.getLoginSubmit(root);
+        if (!btn) return null;
+        const isDisabled =
+          btn.classList.contains('disabled-state') ||
+          btn.disabled ||
+          btn.getAttribute('disabled') !== null;
+        if (!isDisabled) return btn;
+        return null;
       },
-      { timeout: 8000, interval: 150 }
+      { timeout: 3000, interval: 100 }
     );
+
+    if (!submit) {
+      const btn = IRCTCExt.EticketLoginFlow.getLoginSubmit(root);
+      if (btn) {
+        btn.classList.remove('disabled-state');
+        btn.removeAttribute('disabled');
+        submit = btn;
+      }
+    }
+    return submit;
   },
 
   async waitForCaptchaContinue(overlay, panel) {
@@ -126,7 +177,7 @@ IRCTCExt.EticketLoginFlow = {
     await IRCTCExt.Storage.updateState({ currentStep: 'login-captcha', paused: true });
     await new Promise((resolve) => {
       overlay.showPause('Complete CAPTCHA or OTP in the login form, then click Continue.', async () => {
-        const submit = IRCTCExt.Wait.queryVisibleOne(IRCTCExt.SELECTORS.loginSubmit, panel || document);
+        const submit = IRCTCExt.EticketLoginFlow.getLoginSubmit(panel);
         if (submit && !submit.classList.contains('disabled-state') && !submit.disabled) {
           IRCTCExt.Events.click(submit);
         }
@@ -140,15 +191,18 @@ IRCTCExt.EticketLoginFlow = {
   async run(config, overlay) {
     await IRCTCExt.EticketLoginFlow.dismissTour();
 
-    await IRCTCExt.Wait.poll(
-      () =>
-        IRCTCExt.EticketLoginFlow.isLoginModalOpen() ||
-        IRCTCExt.EticketLoginFlow.headerLoginButton() ||
-        IRCTCExt.Wait.queryVisibleOne(IRCTCExt.SELECTORS.loggedInProfile) ||
-        document.querySelector('a.search_btn.loginText') ||
-        IRCTCExt.Wait.queryVisibleOne(IRCTCExt.SELECTORS.searchFrom),
-      { timeout: 12000, interval: 200 }
-    );
+    const alreadyOpen = IRCTCExt.EticketLoginFlow.isLoginModalOpen();
+    if (!alreadyOpen) {
+      await IRCTCExt.Wait.poll(
+        () =>
+          IRCTCExt.EticketLoginFlow.isLoginModalOpen() ||
+          IRCTCExt.EticketLoginFlow.headerLoginButton() ||
+          IRCTCExt.EticketLoginFlow.hasLoggedInMarker() ||
+          document.querySelector('a.search_btn.loginText') ||
+          IRCTCExt.Wait.queryVisibleOne(IRCTCExt.SELECTORS.searchFrom),
+        { timeout: 8000, interval: 150 }
+      );
+    }
 
     if (await IRCTCExt.EticketLoginFlow.isLoggedIn()) {
       overlay.setStatus('Already logged in');
@@ -163,34 +217,42 @@ IRCTCExt.EticketLoginFlow = {
       await IRCTCExt.EticketLoginFlow.openLoginModal();
     }
 
+    IRCTCExt.EticketLoginFlow.ensureUserTabActive();
+
     const activePanel = IRCTCExt.EticketLoginFlow.getActiveLoginPanel();
     const userInput =
       (await IRCTCExt.Wait.waitFor(IRCTCExt.SELECTORS.loginUsername, {
-        timeout: 10000,
+        timeout: 6000,
         visible: true,
         root: activePanel
       })) ||
       (await IRCTCExt.Wait.waitFor(IRCTCExt.SELECTORS.loginUsername, {
-        timeout: 4000,
+        timeout: 2000,
         visible: true
       }));
 
     const passInput =
       (await IRCTCExt.Wait.waitFor(IRCTCExt.SELECTORS.loginPassword, {
-        timeout: 10000,
+        timeout: 6000,
         visible: true,
         root: activePanel
       })) ||
       (await IRCTCExt.Wait.waitFor(IRCTCExt.SELECTORS.loginPassword, {
-        timeout: 4000,
+        timeout: 2000,
         visible: true
       }));
 
     if (!userInput || !passInput) throw new Error('Login form not found');
 
+    const username = config?.credentials?.username || '';
+    const password = config?.credentials?.password || '';
+    if (!username || !password) {
+      throw new Error('IRCTC credentials missing. Please save username and password in extension settings.');
+    }
+
     overlay.setStatus('Filling username and password...');
-    await IRCTCExt.EticketLoginFlow.fillCredential(userInput, config.credentials.username);
-    await IRCTCExt.EticketLoginFlow.fillCredential(passInput, config.credentials.password);
+    await IRCTCExt.EticketLoginFlow.fillCredential(userInput, username);
+    await IRCTCExt.EticketLoginFlow.fillCredential(passInput, password);
 
     if (IRCTCExt.EticketLoginFlow.hasChallenge()) {
       await IRCTCExt.EticketLoginFlow.waitForCaptchaContinue(overlay, activePanel);
@@ -199,6 +261,14 @@ IRCTCExt.EticketLoginFlow = {
       if (!submit) throw new Error('Login button stayed disabled');
       overlay.setStatus('Submitting login...');
       IRCTCExt.Events.click(submit);
+      const form = submit.closest('form');
+      if (form) {
+        try {
+          form.requestSubmit
+            ? form.requestSubmit(submit)
+            : form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+        } catch (_) {}
+      }
       await IRCTCExt.Wait.delay(1000);
 
       if (IRCTCExt.EticketLoginFlow.hasChallenge()) {
@@ -211,10 +281,21 @@ IRCTCExt.EticketLoginFlow = {
       async () => {
         if (await IRCTCExt.EticketLoginFlow.isLoggedIn()) return true;
         if (IRCTCExt.EticketLoginFlow.hasChallenge()) return 'challenge';
+        const errMsg = activePanel.querySelector(
+          '.ui-messages-error, .error-message, .alert-danger, .login-error, .ui-message-error'
+        );
+        if (errMsg && IRCTCExt.Wait.isVisible(errMsg)) return 'error';
         return null;
       },
       { timeout: 25000, interval: 400 }
     );
+
+    if (loggedIn === 'error') {
+      const errMsg = activePanel.querySelector(
+        '.ui-messages-error, .error-message, .alert-danger, .login-error, .ui-message-error'
+      );
+      throw new Error(errMsg?.textContent?.trim() || 'Login failed with server error');
+    }
 
     if (loggedIn === 'challenge') {
       await IRCTCExt.EticketLoginFlow.waitForCaptchaContinue(overlay, activePanel);

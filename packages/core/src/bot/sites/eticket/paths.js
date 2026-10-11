@@ -6,7 +6,14 @@ IRCTCExt.EticketPaths = {
     if (path.includes('reviewBooking')) return 'review';
     if (path.includes('psgninput')) return state.passengersDone ? 'review' : 'passengers';
     // Redirect to /eticket/booking/train-list confirms search was submitted.
-    if (IRCTCExt.EticketPaths.isTrainListPath(path)) return 'train-list';
+    if (IRCTCExt.EticketPaths.isTrainListPath(path)) {
+      IRCTCExt.Modals?.dismissTour?.();
+      return 'train-list';
+    }
+    // If login form is already open or login is needed, step is login.
+    if (IRCTCExt.EticketLoginFlow?.isLoginModalOpen?.() || IRCTCExt.EticketLoginFlow?.needsLogin?.()) {
+      return 'login';
+    }
     // Fill journey details on train-search, then click Search.
     if (IRCTCExt.EticketPaths.isTrainSearchPath(path)) return 'search';
     return 'init';
@@ -41,7 +48,13 @@ IRCTCExt.EticketPaths = {
   isTrainSearchPath(path = location.pathname) {
     if (IRCTCExt.EticketPaths.isTrainListPath(path)) return false;
     const searchPath = IRCTCExt.EticketConfig.trainSearchPath;
-    return path.includes(searchPath) || path.includes('train-search');
+    return (
+      path.includes(searchPath) ||
+      path.includes('train-search') ||
+      path === '/eticket' ||
+      path === '/eticket/' ||
+      path === '/eticket/home'
+    );
   },
 
   isPaymentPath(path = location.pathname) {
