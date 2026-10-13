@@ -25,6 +25,8 @@ export interface Passenger {
 }
 
 export interface Preferences {
+  bookingSite?: string;
+  bookOnlyIfCnf?: boolean;
   autoPayEnabled?: boolean;
   paymentMethod?: string;
   autoPayType?: string;

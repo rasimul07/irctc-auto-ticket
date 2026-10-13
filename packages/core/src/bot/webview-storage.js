@@ -21,6 +21,7 @@
     preferences: {
       bookingSite: 'eticket',
       loyaltyChoice: 'skip',
+      bookOnlyIfCnf: false,
       paymentMethod: 'cards',
       cardsProvider: 'PhonePe',
       upiProvider: 'IRCTC iPay',

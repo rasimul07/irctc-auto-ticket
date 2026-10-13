@@ -164,9 +164,9 @@
       }
       if (!btn) throw new Error('Continue button not found or still disabled');
 
-      // Anti-bot pacing: Dwell time before submitting fare check avoids Akamai sub-second flag
-      overlay.setStatus('Pacing before submit to avoid bot detection...');
-      await IRCTCExt.Wait.delay(1200 + Math.floor(Math.random() * 600));
+      // Anti-bot pacing: Dwell time before submitting avoids Akamai sub-second flag
+      overlay.setStatus('Pacing before Continue (anti-bot delay)...');
+      await IRCTCExt.Wait.delay(2500 + Math.floor(Math.random() * 1000));
 
       overlay.setStatus('Clicking Continue...');
       sharedPrefs().clickTarget(btn);

@@ -21,6 +21,8 @@ export interface Passenger {
     gender?: string;
 }
 export interface Preferences {
+    bookingSite?: string;
+    bookOnlyIfCnf?: boolean;
     autoPayEnabled?: boolean;
     paymentMethod?: string;
     autoPayType?: string;

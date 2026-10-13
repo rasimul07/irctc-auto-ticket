@@ -121,8 +121,80 @@ IRCTCExt.Modals = {
     return dismissed;
   },
 
+  dismissTour(root = document) {
+    if (!root) return 0;
+    let dismissed = 0;
+
+    const skipSelectors = [
+      '.track-train-tutorial-actions .track-train-tutorial-skip',
+      '.track-train-tutorial-popover button.track-train-tutorial-skip',
+      'button.track-train-tutorial-skip',
+      '.track-train-tutorial-skip',
+      '.home-tour-actions .home-tour-skip',
+      'button.home-tour-skip',
+      '.home-tour-skip'
+    ];
+
+    for (const sel of skipSelectors) {
+      const skipBtn = root.querySelector(sel);
+      if (skipBtn && !skipBtn.dataset?.tourDismissed) {
+        skipBtn.dataset.tourDismissed = '1';
+        try {
+          if (IRCTCExt.Events?.click) {
+            IRCTCExt.Events.click(skipBtn);
+          } else {
+            skipBtn.click();
+          }
+        } catch (_) {
+          skipBtn.click?.();
+        }
+        dismissed += 1;
+      }
+    }
+
+    if (!dismissed) {
+      const actionContainers = root.querySelectorAll(
+        '.track-train-tutorial-popover, .track-train-tutorial-actions, .home-tour-actions, .home-tour'
+      );
+      for (const container of actionContainers) {
+        const buttons = container.querySelectorAll('button');
+        for (const btn of buttons) {
+          const text = (btn.textContent || '').trim();
+          if (/^\s*skip\s*$/i.test(text) || /skip\s*tour/i.test(text)) {
+            if (!btn.dataset?.tourDismissed) {
+              btn.dataset.tourDismissed = '1';
+              try {
+                if (IRCTCExt.Events?.click) {
+                  IRCTCExt.Events.click(btn);
+                } else {
+                  btn.click();
+                }
+              } catch (_) {
+                btn.click?.();
+              }
+              dismissed += 1;
+              break;
+            }
+          }
+        }
+        if (dismissed) break;
+      }
+    }
+
+    // Forcefully hide tour elements and backdrop so they never block train list or form controls
+    const tourElements = root.querySelectorAll(
+      '.track-train-tutorial-popover, .home-tour-actions, .home-tour, .home-tour-overlay, app-home-tour'
+    );
+    for (const el of tourElements) {
+      if (this.forceHide(el)) dismissed += 1;
+    }
+
+    return dismissed;
+  },
+
   dismissInterruptModals(root = document) {
     let dismissed = 0;
+    dismissed += this.dismissTour(root);
     dismissed += this.dismissSessionRestore(root);
     dismissed += this.dismissBookNowConfirmation(root);
     return dismissed;

@@ -2,35 +2,66 @@ window.IRCTCExt = window.IRCTCExt || {};
 
 IRCTCExt.EticketSelectors = {
   loginHeaderBtn: [
+    'button.btn-login',
+    'button.btn-login.ng-star-inserted',
+    '.btn-login',
     'nav button.btn-login',
     '.navbar-actions button.btn-login',
     'header button.btn-login',
-    'button.btn-login'
+    '.header button.btn-login',
+    'button[aria-label*="Login" i]',
+    'a.btn-login',
+    'a.loginText'
   ],
   loginModal: [
     '#newLogin',
     '.login-dialog',
-    '.login-wrapper'
+    '.login-wrapper',
+    '.login-slider-viewport',
+    '.login-slider',
+    '.login-panel:not(.login-panel--inactive)',
+    '.login-form:not(.agent-panel)',
+    'form:has(.login-wrapper)',
+    'form:has(#username)',
+    'form:has(input[formcontrolname="userid"])'
   ],
   loginUserTab: [
     '.login-tab.active',
     '.login-tab'
   ],
   loginUsername: [
-    '.login-form .field-block .field-input',
-    '.login-form input[placeholder*="Username"]',
-    '.login-form input[placeholder*="username"]',
+    '#username',
     'input[formcontrolname="userid"]',
-    'input[placeholder*="User"]',
+    'input[autocomplete="username"]',
+    '.username-field input',
+    '#agentUsername',
+    'input[formcontrolname="agentUserid"]',
+    '.login-panel:not(.login-panel--inactive) input[formcontrolname*="userid" i]',
+    '.login-panel:not(.login-panel--inactive) input[placeholder*="User" i]',
+    '.login-panel:not(.login-panel--inactive) .username-field input',
+    '.login-form input[placeholder*="Username" i]',
+    '.login-form input[placeholder*="username" i]',
+    'input[placeholder*="User" i]',
     'input[name="userId"]'
   ],
   loginPassword: [
-    '.login-form .password-field .field-input',
-    '.login-form input[type="password"]',
+    '#password',
     'input[formcontrolname="password"]',
+    'input[autocomplete="current-password"]',
+    '.password-field input',
+    '#agentPassword',
+    'input[formcontrolname="agentPassword"]',
+    '.login-panel:not(.login-panel--inactive) input[formcontrolname*="password" i]',
+    '.login-panel:not(.login-panel--inactive) input[type="password"]',
+    '.login-panel:not(.login-panel--inactive) .password-field input',
+    '.login-form input[type="password"]',
     'input[type="password"]'
   ],
   loginCaptcha: [
+    '.login-panel:not(.login-panel--inactive) input[placeholder*="Captcha" i]',
+    '.login-panel:not(.login-panel--inactive) input[placeholder*="OTP" i]',
+    '.login-panel:not(.login-panel--inactive) input[formcontrolname*="captcha" i]',
+    '.login-panel:not(.login-panel--inactive) input[formcontrolname*="otp" i]',
     '.login-form input[placeholder*="Captcha"]',
     '.login-form input[placeholder*="CAPTCHA"]',
     'input[formcontrolname="captcha"]',
@@ -38,15 +69,48 @@ IRCTCExt.EticketSelectors = {
     'input[placeholder*="CAPTCHA"]'
   ],
   loginSubmit: [
-    '.login-form .btn-action.btn-login',
-    '.login-wrapper .btn-action.btn-login',
-    '#newLogin .btn-action.btn-login',
+    '.actions-row button[type="submit"]',
+    '.actions-row button.button-primary',
+    '.actions-row button',
+    'button.button-primary[type="submit"]',
+    'button.button-primary',
+    'button[type="submit"]',
+    '.login-panel:not(.login-panel--inactive) button.button-primary',
+    '.login-panel:not(.login-panel--inactive) button[type="submit"]',
+    '.login-panel:not(.login-panel--inactive) .actions-row button',
+    '.login-form button.button-primary',
+    '.login-form button[type="submit"]',
+    '.login-wrapper button.button-primary',
+    '.login-wrapper button[type="submit"]',
+    'button.agent-submit-btn',
+    '.agent-panel button.agent-submit-btn',
+    '.agent-panel button.btn-login',
     'button.search_btn',
     'button[type="submit"].search_btn',
     'a.search_btn.loginText'
   ],
   loggedInProfile: [
-    '.nav-link-1'
+    '.profile-name',
+    'span.profile-name',
+    '.profile-logo',
+    'img.profile-logo',
+    'img[alt="profile logo"]',
+    'img[alt*="profile logo" i]',
+    'img[src*="verified-user"]',
+    'button.nav-link-1 .profile-name',
+    'button.nav-link-1:has(.profile-name)',
+    'button.nav-link-1:has(.profile-logo)',
+    'button:has(.profile-name)',
+    'button:has(.profile-logo)',
+    'button.nav-link-1.nav-link--active',
+    'button.nav-link-1',
+    '.profile-menu-arrow-img',
+    'a[href*="logout" i]',
+    'button[aria-label*="Logout" i]',
+    '.user-profile',
+    '.profile-icon',
+    '.user-name',
+    '[aria-label*="user profile" i]'
   ],
   searchFrom: [
     'div.field-box[aria-label="From station"]',
@@ -253,6 +317,37 @@ IRCTCExt.EticketSelectors = {
     newPassengerCancelBtn: ['.ap-dialog-actions button.app-modal-button--cancel']
   },
   psgnPreferences: {
+    otherPreferencesHeader: [
+      'div.section-header[aria-controls="bookingPreferencesBody"]',
+      'div.section-header[role="button"][aria-controls="bookingPreferencesBody"]',
+      'div[role="button"][aria-controls="bookingPreferencesBody"]',
+      'div.section-header:has(.pref-collapse-button)',
+      'div.section-header:has([aria-controls="bookingPreferencesBody"])',
+      'div.section-header:has(.section-title)',
+      '.section-header:has(.pref-collapse-button)',
+      '.section-header'
+    ],
+    otherPreferencesToggle: [
+      'div.section-header[aria-controls="bookingPreferencesBody"]',
+      'div[role="button"][aria-controls="bookingPreferencesBody"]',
+      'div.section-header',
+      'button.pref-collapse-button',
+      'button[aria-controls="bookingPreferencesBody"]',
+      'button[aria-label*="Toggle Other Preferences" i]',
+      'button[aria-label*="Other Preferences" i]',
+      '.pref-collapse-button'
+    ],
+    otherPreferencesBody: [
+      '#bookingPreferencesBody',
+      '[id="bookingPreferencesBody"]',
+      '.pref-body',
+      'div[aria-labelledby*="bookingPreferences"]'
+    ],
+    bookOnlyIfCnfCheckbox: [
+      'p-checkbox[formcontrolname="bookOnlyIfCnf"]',
+      'p-checkbox[name="confirmBerth"]',
+      'input[name="confirmBerth"]'
+    ],
     loyaltySection: ['app-loyalty-selection'],
     loyaltySkip: ['#lo-3', 'label[for="lo-3"]', 'input[name="loyalityOperationType"][value="3"]'],
     paymentSection: ['app-booking-payment-preferences'],
@@ -271,7 +366,8 @@ IRCTCExt.EticketSelectors = {
     sessionRestoreOverlay: ['app-book-now-confirmation .bc-overlay', '.bc-overlay'],
     sessionRestoreCard: ['.bc-card', 'app-book-now-confirmation .bc-card'],
     sessionRestoreTitle: ['.bc-title'],
-    sessionRestoreMessage: ['.bc-section-label']
+    sessionRestoreMessage: ['.bc-section-label'],
+    tourSkipBtn: ['.home-tour-actions .home-tour-skip', 'button.home-tour-skip', '.home-tour-skip']
   },
   payment: {
     bookingReviewBlock: ['.booking-review-block'],

@@ -30,7 +30,7 @@ IRCTCExt.Overlay = {
     root.className = 'irctc-ext-overlay irctc-ext-overlay--hidden';
     root.innerHTML = `
       <div class="irctc-ext-overlay__header">
-        <span>IRCTC Tatkal Bot</span>
+        <span>IRCTC Tatkal Assistant</span>
         <div class="irctc-ext-overlay__header-right">
           <span id="irctc-ext-step">Idle</span>
           <button type="button" class="irctc-ext-overlay__icon-btn" id="irctc-ext-minimize" title="Minimize" aria-label="Minimize overlay">−</button>

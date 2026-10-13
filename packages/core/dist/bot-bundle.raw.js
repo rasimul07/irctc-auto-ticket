@@ -21,6 +21,7 @@
     preferences: {
       bookingSite: 'eticket',
       loyaltyChoice: 'skip',
+      bookOnlyIfCnf: false,
       paymentMethod: 'cards',
       cardsProvider: 'PhonePe',
       upiProvider: 'IRCTC iPay',
@@ -241,8 +242,8 @@
     trainSearchPath: '/eticket/train-search',
     trainListUrl: 'https://www.irctc.co.in/eticket/booking/train-list',
     trainListPath: '/eticket/booking/train-list',
-    urlPattern: 'https://www.irctc.co.in/eticket/*',
-    trainSearchUrlPattern: 'https://www.irctc.co.in/eticket/train-search*',
+    urlPattern: 'https://*.irctc.co.in/eticket/*',
+    trainSearchUrlPattern: 'https://*.irctc.co.in/eticket/train-search*',
     errorPagePath: '/eticket/error'
   };
 })(typeof globalThis !== 'undefined' ? globalThis : window);
@@ -256,9 +257,28 @@ IRCTCExt.EticketPaths = {
     if (path.includes('reviewBooking')) return 'review';
     if (path.includes('psgninput')) return state.passengersDone ? 'review' : 'passengers';
     // Redirect to /eticket/booking/train-list confirms search was submitted.
-    if (IRCTCExt.EticketPaths.isTrainListPath(path)) return 'train-list';
-    // Fill journey details on train-search, then click Search.
-    if (IRCTCExt.EticketPaths.isTrainSearchPath(path)) return 'search';
+    if (IRCTCExt.EticketPaths.isTrainListPath(path)) {
+      IRCTCExt.Modals?.dismissTour?.();
+      return 'train-list';
+    }
+    // At /eticket/train-search (or home): check if not logged in.
+    // If not logged in, login first (<button class="btn-login">LOGIN</button>).
+    // Once login is successful (<span class="profile-name">, <img class="profile-logo">), then search.
+    if (IRCTCExt.EticketPaths.isTrainSearchPath(path)) {
+      const isModalOpen = !!IRCTCExt.EticketLoginFlow?.isLoginModalOpen?.();
+      const hasProfile = !!IRCTCExt.EticketLoginFlow?.hasLoggedInMarker?.();
+      const hasLoginBtn = !!IRCTCExt.EticketLoginFlow?.headerLoginButton?.();
+
+      if (isModalOpen || hasLoginBtn || !hasProfile) {
+        return 'login';
+      }
+      return 'search';
+    }
+
+    // If login form is already open or login is needed, step is login.
+    if (IRCTCExt.EticketLoginFlow?.isLoginModalOpen?.() || IRCTCExt.EticketLoginFlow?.needsLogin?.()) {
+      return 'login';
+    }
     return 'init';
   },
 
@@ -291,7 +311,13 @@ IRCTCExt.EticketPaths = {
   isTrainSearchPath(path = location.pathname) {
     if (IRCTCExt.EticketPaths.isTrainListPath(path)) return false;
     const searchPath = IRCTCExt.EticketConfig.trainSearchPath;
-    return path.includes(searchPath) || path.includes('train-search');
+    return (
+      path.includes(searchPath) ||
+      path.includes('train-search') ||
+      path === '/eticket' ||
+      path === '/eticket/' ||
+      path === '/eticket/home'
+    );
   },
 
   isPaymentPath(path = location.pathname) {
@@ -312,35 +338,66 @@ window.IRCTCExt = window.IRCTCExt || {};
 
 IRCTCExt.EticketSelectors = {
   loginHeaderBtn: [
+    'button.btn-login',
+    'button.btn-login.ng-star-inserted',
+    '.btn-login',
     'nav button.btn-login',
     '.navbar-actions button.btn-login',
     'header button.btn-login',
-    'button.btn-login'
+    '.header button.btn-login',
+    'button[aria-label*="Login" i]',
+    'a.btn-login',
+    'a.loginText'
   ],
   loginModal: [
     '#newLogin',
     '.login-dialog',
-    '.login-wrapper'
+    '.login-wrapper',
+    '.login-slider-viewport',
+    '.login-slider',
+    '.login-panel:not(.login-panel--inactive)',
+    '.login-form:not(.agent-panel)',
+    'form:has(.login-wrapper)',
+    'form:has(#username)',
+    'form:has(input[formcontrolname="userid"])'
   ],
   loginUserTab: [
     '.login-tab.active',
     '.login-tab'
   ],
   loginUsername: [
-    '.login-form .field-block .field-input',
-    '.login-form input[placeholder*="Username"]',
-    '.login-form input[placeholder*="username"]',
+    '#username',
     'input[formcontrolname="userid"]',
-    'input[placeholder*="User"]',
+    'input[autocomplete="username"]',
+    '.username-field input',
+    '#agentUsername',
+    'input[formcontrolname="agentUserid"]',
+    '.login-panel:not(.login-panel--inactive) input[formcontrolname*="userid" i]',
+    '.login-panel:not(.login-panel--inactive) input[placeholder*="User" i]',
+    '.login-panel:not(.login-panel--inactive) .username-field input',
+    '.login-form input[placeholder*="Username" i]',
+    '.login-form input[placeholder*="username" i]',
+    'input[placeholder*="User" i]',
     'input[name="userId"]'
   ],
   loginPassword: [
-    '.login-form .password-field .field-input',
-    '.login-form input[type="password"]',
+    '#password',
     'input[formcontrolname="password"]',
+    'input[autocomplete="current-password"]',
+    '.password-field input',
+    '#agentPassword',
+    'input[formcontrolname="agentPassword"]',
+    '.login-panel:not(.login-panel--inactive) input[formcontrolname*="password" i]',
+    '.login-panel:not(.login-panel--inactive) input[type="password"]',
+    '.login-panel:not(.login-panel--inactive) .password-field input',
+    '.login-form input[type="password"]',
     'input[type="password"]'
   ],
   loginCaptcha: [
+    '.login-panel:not(.login-panel--inactive) input[placeholder*="Captcha" i]',
+    '.login-panel:not(.login-panel--inactive) input[placeholder*="OTP" i]',
+    '.login-panel:not(.login-panel--inactive) input[formcontrolname*="captcha" i]',
+    '.login-panel:not(.login-panel--inactive) input[formcontrolname*="otp" i]',
     '.login-form input[placeholder*="Captcha"]',
     '.login-form input[placeholder*="CAPTCHA"]',
     'input[formcontrolname="captcha"]',
@@ -348,15 +405,48 @@ IRCTCExt.EticketSelectors = {
     'input[placeholder*="CAPTCHA"]'
   ],
   loginSubmit: [
-    '.login-form .btn-action.btn-login',
-    '.login-wrapper .btn-action.btn-login',
-    '#newLogin .btn-action.btn-login',
+    '.actions-row button[type="submit"]',
+    '.actions-row button.button-primary',
+    '.actions-row button',
+    'button.button-primary[type="submit"]',
+    'button.button-primary',
+    'button[type="submit"]',
+    '.login-panel:not(.login-panel--inactive) button.button-primary',
+    '.login-panel:not(.login-panel--inactive) button[type="submit"]',
+    '.login-panel:not(.login-panel--inactive) .actions-row button',
+    '.login-form button.button-primary',
+    '.login-form button[type="submit"]',
+    '.login-wrapper button.button-primary',
+    '.login-wrapper button[type="submit"]',
+    'button.agent-submit-btn',
+    '.agent-panel button.agent-submit-btn',
+    '.agent-panel button.btn-login',
     'button.search_btn',
     'button[type="submit"].search_btn',
     'a.search_btn.loginText'
   ],
   loggedInProfile: [
-    '.nav-link-1'
+    '.profile-name',
+    'span.profile-name',
+    '.profile-logo',
+    'img.profile-logo',
+    'img[alt="profile logo"]',
+    'img[alt*="profile logo" i]',
+    'img[src*="verified-user"]',
+    'button.nav-link-1 .profile-name',
+    'button.nav-link-1:has(.profile-name)',
+    'button.nav-link-1:has(.profile-logo)',
+    'button:has(.profile-name)',
+    'button:has(.profile-logo)',
+    'button.nav-link-1.nav-link--active',
+    'button.nav-link-1',
+    '.profile-menu-arrow-img',
+    'a[href*="logout" i]',
+    'button[aria-label*="Logout" i]',
+    '.user-profile',
+    '.profile-icon',
+    '.user-name',
+    '[aria-label*="user profile" i]'
   ],
   searchFrom: [
     'div.field-box[aria-label="From station"]',
@@ -563,6 +653,37 @@ IRCTCExt.EticketSelectors = {
     newPassengerCancelBtn: ['.ap-dialog-actions button.app-modal-button--cancel']
   },
   psgnPreferences: {
+    otherPreferencesHeader: [
+      'div.section-header[aria-controls="bookingPreferencesBody"]',
+      'div.section-header[role="button"][aria-controls="bookingPreferencesBody"]',
+      'div[role="button"][aria-controls="bookingPreferencesBody"]',
+      'div.section-header:has(.pref-collapse-button)',
+      'div.section-header:has([aria-controls="bookingPreferencesBody"])',
+      'div.section-header:has(.section-title)',
+      '.section-header:has(.pref-collapse-button)',
+      '.section-header'
+    ],
+    otherPreferencesToggle: [
+      'div.section-header[aria-controls="bookingPreferencesBody"]',
+      'div[role="button"][aria-controls="bookingPreferencesBody"]',
+      'div.section-header',
+      'button.pref-collapse-button',
+      'button[aria-controls="bookingPreferencesBody"]',
+      'button[aria-label*="Toggle Other Preferences" i]',
+      'button[aria-label*="Other Preferences" i]',
+      '.pref-collapse-button'
+    ],
+    otherPreferencesBody: [
+      '#bookingPreferencesBody',
+      '[id="bookingPreferencesBody"]',
+      '.pref-body',
+      'div[aria-labelledby*="bookingPreferences"]'
+    ],
+    bookOnlyIfCnfCheckbox: [
+      'p-checkbox[formcontrolname="bookOnlyIfCnf"]',
+      'p-checkbox[name="confirmBerth"]',
+      'input[name="confirmBerth"]'
+    ],
     loyaltySection: ['app-loyalty-selection'],
     loyaltySkip: ['#lo-3', 'label[for="lo-3"]', 'input[name="loyalityOperationType"][value="3"]'],
     paymentSection: ['app-booking-payment-preferences'],
@@ -581,7 +702,8 @@ IRCTCExt.EticketSelectors = {
     sessionRestoreOverlay: ['app-book-now-confirmation .bc-overlay', '.bc-overlay'],
     sessionRestoreCard: ['.bc-card', 'app-book-now-confirmation .bc-card'],
     sessionRestoreTitle: ['.bc-title'],
-    sessionRestoreMessage: ['.bc-section-label']
+    sessionRestoreMessage: ['.bc-section-label'],
+    tourSkipBtn: ['.home-tour-actions .home-tour-skip', 'button.home-tour-skip', '.home-tour-skip']
   },
   payment: {
     bookingReviewBlock: ['.booking-review-block'],
@@ -825,11 +947,13 @@ IRCTCExt.EticketTrainList = {
   },
 
   async waitForTrainListReady(overlay) {
+    IRCTCExt.Modals?.dismissTour?.();
     IRCTCExt.EticketTrainList.setStatus(overlay, 'Waiting for train list...');
     const sel = IRCTCExt.SELECTORS.trainList;
 
     const ready = await IRCTCExt.Wait.poll(
       () => {
+        IRCTCExt.Modals?.dismissTour?.();
         if (IRCTCExt.EticketTrainList.getPopulatedTrainCards().length > 0) return true;
         const container = IRCTCExt.Wait.queryOne(sel.container);
         return container && IRCTCExt.Wait.isVisible(container) ? true : null;
@@ -837,20 +961,32 @@ IRCTCExt.EticketTrainList = {
       { timeout: 20000, interval: 100 }
     );
 
+    IRCTCExt.Modals?.dismissTour?.();
     if (!ready) throw new Error('Train list did not load');
   },
 
   async findTrainCardWithPoll(journey, searchLabel, overlay) {
+    IRCTCExt.Modals?.dismissTour?.();
     IRCTCExt.EticketTrainList.setStatus(overlay, `Searching train list for ${searchLabel}...`);
 
     let card = IRCTCExt.EticketTrainList.findTrainCard(journey);
-    if (card) return card;
+    if (card) {
+      IRCTCExt.Modals?.dismissTour?.();
+      return card;
+    }
 
-    card = await IRCTCExt.Wait.poll(() => IRCTCExt.EticketTrainList.findTrainCard(journey), {
-      timeout: 8000,
-      interval: 100
-    });
+    card = await IRCTCExt.Wait.poll(
+      () => {
+        IRCTCExt.Modals?.dismissTour?.();
+        return IRCTCExt.EticketTrainList.findTrainCard(journey);
+      },
+      {
+        timeout: 8000,
+        interval: 100
+      }
+    );
 
+    IRCTCExt.Modals?.dismissTour?.();
     if (!card && (journey.trainName || journey.trainNo)) {
       throw new Error(`Train ${searchLabel} not found in results`);
     }
@@ -1199,7 +1335,9 @@ IRCTCExt.EticketTrainList = {
     const { journey } = config;
 
     overlay?.setStep('Train List');
+    IRCTCExt.Modals?.dismissTour?.();
     await IRCTCExt.EticketTrainList.waitForTrainListReady(overlay);
+    IRCTCExt.Modals?.dismissTour?.();
 
     const trainName = String(journey.trainName || '').trim();
     const trainNo = String(journey.trainNo || '').trim();
@@ -1285,67 +1423,225 @@ window.IRCTCExt = window.IRCTCExt || {};
 
 IRCTCExt.EticketLoginFlow = {
   headerLoginButton() {
-    const buttons = IRCTCExt.Wait.queryAll(IRCTCExt.SELECTORS.loginHeaderBtn);
-    return buttons.find(
-      (btn) =>
-        !btn.closest('#newLogin, .login-dialog, .login-wrapper, .login-form') &&
-        (btn.textContent || '').toUpperCase().includes('LOGIN')
-    );
-  },
-
-  hasChallenge() {
-    const captcha = IRCTCExt.Wait.queryOne(IRCTCExt.SELECTORS.loginCaptcha);
-    if (captcha && IRCTCExt.Wait.isVisible(captcha)) return true;
-    const otp = document.querySelector(
-      'input[placeholder*="OTP"], input[placeholder*="otp"], input[formcontrolname*="otp"]'
-    );
-    return !!(otp && IRCTCExt.Wait.isVisible(otp));
-  },
-
-  async isLoggedIn() {
-    if (IRCTCExt.EticketLoginFlow.headerLoginButton()) return false;
-    if (IRCTCExt.Wait.queryOne(IRCTCExt.SELECTORS.loggedInProfile)) return true;
-    const oldLogin = document.querySelector('a.search_btn.loginText');
-    if (oldLogin && oldLogin.textContent.toUpperCase().includes('LOGIN')) return false;
-    if (IRCTCExt.Wait.queryOne(['#newLogin .login-form', '.login-dialog .login-form'])) return false;
-    return !IRCTCExt.EticketLoginFlow.headerLoginButton();
-  },
-
-  async openLoginModal() {
-    const loginBtn = IRCTCExt.EticketLoginFlow.headerLoginButton();
-    if (loginBtn) {
-      IRCTCExt.Events.click(loginBtn);
-      await IRCTCExt.Wait.delay(600);
+    for (const selector of IRCTCExt.SELECTORS.loginHeaderBtn || ['button.btn-login']) {
+      const elements = document.querySelectorAll(selector);
+      for (const btn of elements) {
+        if (!IRCTCExt.Wait.isVisible(btn)) continue;
+        if (btn.closest('#newLogin, .login-dialog, .login-wrapper, .login-form, .login-slider, .login-slider-viewport')) continue;
+        const text = (btn.textContent || '').trim().toUpperCase();
+        if (btn.classList.contains('btn-login') || text === 'LOGIN' || text.includes('LOGIN')) {
+          return btn;
+        }
+      }
     }
-    await IRCTCExt.Wait.waitFor(IRCTCExt.SELECTORS.loginModal, { timeout: 8000 });
 
+    const allButtons = Array.from(document.querySelectorAll('button.btn-login, .btn-login, header button, nav button, button, a.loginText'));
+    return allButtons.find(
+      (btn) =>
+        IRCTCExt.Wait.isVisible(btn) &&
+        !btn.closest('#newLogin, .login-dialog, .login-wrapper, .login-form, .login-slider, .login-slider-viewport') &&
+        (btn.classList.contains('btn-login') || (btn.textContent || '').trim().toUpperCase() === 'LOGIN')
+    );
+  },
+
+  isLoginModalOpen() {
+    if (IRCTCExt.Wait.queryVisibleOne(IRCTCExt.SELECTORS.loginModal)) return true;
+    const directForm = IRCTCExt.Wait.queryVisibleOne([
+      '.login-wrapper',
+      '.login-slider-viewport',
+      '.login-slider',
+      '.login-panel:not(.login-panel--inactive)',
+      '.login-form:not(.agent-panel)',
+      '#username',
+      'input[formcontrolname="userid"]'
+    ]);
+    return !!directForm;
+  },
+
+  hasLoggedInMarker() {
+    const profileEl = document.querySelector(
+      '.profile-name, span.profile-name, .profile-logo, img[alt="profile logo"], img[alt*="profile logo" i], img[src*="verified-user"], .profile-menu-arrow-img'
+    );
+    if (profileEl && IRCTCExt.Wait.isVisible(profileEl)) return true;
+
+    const marker = IRCTCExt.Wait.queryVisibleOne(IRCTCExt.SELECTORS.loggedInProfile);
+    if (marker) return true;
+
+    const navButtons = document.querySelectorAll('button.nav-link-1, button.nav-link--active, button');
+    for (const b of navButtons) {
+      if (b.querySelector('.profile-name, .profile-logo, img[alt*="profile" i], img[src*="verified-user"]') && IRCTCExt.Wait.isVisible(b)) {
+        return true;
+      }
+    }
+
+    return false;
+  },
+
+  getLoggedInUsername() {
+    const el = document.querySelector('.profile-name, span.profile-name, .user-name');
+    return el?.textContent?.trim() || '';
+  },
+
+  needsLogin() {
+    if (IRCTCExt.EticketLoginFlow.isLoginModalOpen()) return true;
+    if (IRCTCExt.EticketLoginFlow.hasLoggedInMarker()) return false;
+    if (IRCTCExt.EticketLoginFlow.headerLoginButton()) return true;
+    if (IRCTCExt.EticketPaths?.isTrainSearchPath?.(location.pathname)) {
+      return !IRCTCExt.EticketLoginFlow.hasLoggedInMarker();
+    }
+    return false;
+  },
+
+  getActiveLoginPanel() {
+    const panels = Array.from(document.querySelectorAll('.login-panel:not(.login-panel--inactive):not([inert])'));
+    const visiblePanel = panels.find((p) => IRCTCExt.Wait.isVisible(p) && p.getAttribute('aria-hidden') !== 'true');
+    return (
+      visiblePanel ||
+      document.querySelector('.login-form:not(.agent-panel):not(.login-panel--inactive)') ||
+      document.querySelector('.login-wrapper') ||
+      document
+    );
+  },
+
+  ensureUserTabActive() {
     const tabs = Array.from(document.querySelectorAll('.login-tab'));
     const userTab = tabs.find((tab) => (tab.textContent || '').toUpperCase().includes('USER'));
     if (userTab && !userTab.classList.contains('active')) {
-      IRCTCExt.Events.click(userTab);
-      await IRCTCExt.Wait.delay(300);
+      try {
+        IRCTCExt.Events?.click ? IRCTCExt.Events.click(userTab) : userTab.click();
+      } catch (_) {
+        userTab.click?.();
+      }
     }
   },
 
-  async waitForEnabledSubmit() {
-    return IRCTCExt.Wait.poll(
-      () => {
-        const submit = IRCTCExt.Wait.queryOne(IRCTCExt.SELECTORS.loginSubmit);
-        if (!submit) return null;
-        if (submit.classList.contains('disabled-state') || submit.disabled) return null;
-        return submit;
-      },
-      { timeout: 8000, interval: 150 }
-    );
+  hasChallenge() {
+    const captcha = IRCTCExt.Wait.queryVisibleOne(IRCTCExt.SELECTORS.loginCaptcha);
+    if (captcha) return true;
+    const otp = IRCTCExt.Wait.queryVisibleOne([
+      'input[placeholder*="OTP" i]',
+      'input[formcontrolname*="otp" i]',
+      'input[name*="otp" i]'
+    ]);
+    return !!otp;
   },
 
-  async waitForCaptchaContinue(overlay) {
+  async isLoggedIn() {
+    if (IRCTCExt.EticketLoginFlow.isLoginModalOpen()) return false;
+    if (IRCTCExt.EticketLoginFlow.hasLoggedInMarker()) return true;
+    if (IRCTCExt.EticketLoginFlow.headerLoginButton()) return false;
+    const oldLogin = document.querySelector('a.search_btn.loginText');
+    if (oldLogin && oldLogin.textContent.toUpperCase().includes('LOGIN')) return false;
+    return false;
+  },
+
+  async dismissTour() {
+    IRCTCExt.Modals?.dismissTour?.();
+    const skipBtn = document.querySelector('.home-tour-actions .home-tour-skip, button.home-tour-skip, .home-tour-skip');
+    if (skipBtn && !skipBtn.dataset?.tourDismissed) {
+      skipBtn.dataset.tourDismissed = '1';
+      try {
+        IRCTCExt.Events?.click ? IRCTCExt.Events.click(skipBtn) : skipBtn.click();
+      } catch (_) {
+        skipBtn.click?.();
+      }
+      await IRCTCExt.Wait.delay(300);
+      return true;
+    }
+    const buttons = Array.from(document.querySelectorAll('.home-tour-actions button, .home-tour button'));
+    const textSkip = buttons.find((btn) => /skip\s*tour/i.test(btn.textContent || '') && !btn.dataset?.tourDismissed);
+    if (textSkip) {
+      textSkip.dataset.tourDismissed = '1';
+      try {
+        IRCTCExt.Events?.click ? IRCTCExt.Events.click(textSkip) : textSkip.click();
+      } catch (_) {
+        textSkip.click?.();
+      }
+      await IRCTCExt.Wait.delay(300);
+      return true;
+    }
+    return false;
+  },
+
+  async openLoginModal() {
+    await IRCTCExt.EticketLoginFlow.dismissTour();
+
+    if (!IRCTCExt.EticketLoginFlow.isLoginModalOpen()) {
+      let loginBtn = IRCTCExt.EticketLoginFlow.headerLoginButton();
+      if (!loginBtn) {
+        loginBtn = await IRCTCExt.Wait.poll(
+          () => IRCTCExt.EticketLoginFlow.headerLoginButton(),
+          { timeout: 4000, interval: 200 }
+        );
+      }
+      if (loginBtn) {
+        IRCTCExt.Events.click(loginBtn);
+        await IRCTCExt.Wait.delay(600);
+      }
+    }
+    await IRCTCExt.Wait.waitFor(IRCTCExt.SELECTORS.loginModal, { timeout: 8000, visible: true });
+    IRCTCExt.EticketLoginFlow.ensureUserTabActive();
+  },
+
+  async fillCredential(input, value) {
+    if (!input || !value) return;
+    input.focus();
+    IRCTCExt.Events.setInputValue(input, value, { blur: false });
+    await IRCTCExt.Wait.delay(50);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    IRCTCExt.Events.keyEvent?.(input, 'keyup', 'Enter');
+    input.blur();
+    input.dispatchEvent(new Event('blur', { bubbles: true }));
+    await IRCTCExt.Wait.delay(50);
+    if (!input.value) {
+      await IRCTCExt.Events.typeSlowly(input, value, 40);
+    }
+  },
+
+  getLoginSubmit(panel) {
+    const active = panel || IRCTCExt.EticketLoginFlow.getActiveLoginPanel() || document;
+    let submit = IRCTCExt.Wait.queryVisibleOne(IRCTCExt.SELECTORS.loginSubmit, active);
+    if (!submit && active !== document) {
+      submit = IRCTCExt.Wait.queryVisibleOne(IRCTCExt.SELECTORS.loginSubmit, document);
+    }
+    return submit;
+  },
+
+  async waitForEnabledSubmit(panel) {
+    const root = panel || document;
+    let submit = await IRCTCExt.Wait.poll(
+      () => {
+        const btn = IRCTCExt.EticketLoginFlow.getLoginSubmit(root);
+        if (!btn) return null;
+        const isDisabled =
+          btn.classList.contains('disabled-state') ||
+          btn.disabled ||
+          btn.getAttribute('disabled') !== null;
+        if (!isDisabled) return btn;
+        return null;
+      },
+      { timeout: 3000, interval: 100 }
+    );
+
+    if (!submit) {
+      const btn = IRCTCExt.EticketLoginFlow.getLoginSubmit(root);
+      if (btn) {
+        btn.classList.remove('disabled-state');
+        btn.removeAttribute('disabled');
+        submit = btn;
+      }
+    }
+    return submit;
+  },
+
+  async waitForCaptchaContinue(overlay, panel) {
     overlay.setStatus('CAPTCHA or OTP required. Complete it, then click Continue.');
     await IRCTCExt.Storage.updateState({ currentStep: 'login-captcha', paused: true });
     await new Promise((resolve) => {
       overlay.showPause('Complete CAPTCHA or OTP in the login form, then click Continue.', async () => {
-        const submit = IRCTCExt.Wait.queryOne(IRCTCExt.SELECTORS.loginSubmit);
-        if (submit && !submit.classList.contains('disabled-state')) {
+        const submit = IRCTCExt.EticketLoginFlow.getLoginSubmit(panel);
+        if (submit && !submit.classList.contains('disabled-state') && !submit.disabled) {
           IRCTCExt.Events.click(submit);
         }
         await IRCTCExt.Storage.updateState({ paused: false });
@@ -1356,14 +1652,20 @@ IRCTCExt.EticketLoginFlow = {
   },
 
   async run(config, overlay) {
-    await IRCTCExt.Wait.poll(
-      () =>
-        IRCTCExt.EticketLoginFlow.headerLoginButton() ||
-        IRCTCExt.Wait.queryOne(IRCTCExt.SELECTORS.loggedInProfile) ||
-        document.querySelector('a.search_btn.loginText') ||
-        IRCTCExt.Wait.queryOne(IRCTCExt.SELECTORS.searchFrom),
-      { timeout: 12000, interval: 200 }
-    );
+    await IRCTCExt.EticketLoginFlow.dismissTour();
+
+    const alreadyOpen = IRCTCExt.EticketLoginFlow.isLoginModalOpen();
+    if (!alreadyOpen) {
+      await IRCTCExt.Wait.poll(
+        () =>
+          IRCTCExt.EticketLoginFlow.isLoginModalOpen() ||
+          IRCTCExt.EticketLoginFlow.headerLoginButton() ||
+          IRCTCExt.EticketLoginFlow.hasLoggedInMarker() ||
+          document.querySelector('a.search_btn.loginText') ||
+          IRCTCExt.Wait.queryVisibleOne(IRCTCExt.SELECTORS.searchFrom),
+        { timeout: 8000, interval: 150 }
+      );
+    }
 
     if (await IRCTCExt.EticketLoginFlow.isLoggedIn()) {
       overlay.setStatus('Already logged in');
@@ -1371,43 +1673,104 @@ IRCTCExt.EticketLoginFlow = {
     }
 
     overlay.setStep('Login');
-    overlay.setStatus('Opening login...');
-    await IRCTCExt.EticketLoginFlow.openLoginModal();
+    if (IRCTCExt.EticketLoginFlow.isLoginModalOpen()) {
+      overlay.setStatus('Login dialog open — filling credentials...');
+    } else {
+      overlay.setStatus('Opening login...');
+      await IRCTCExt.EticketLoginFlow.openLoginModal();
+    }
 
-    const userInput = await IRCTCExt.Wait.waitFor(IRCTCExt.SELECTORS.loginUsername, {
-      timeout: 10000,
-      visible: true
-    });
-    const passInput = await IRCTCExt.Wait.waitFor(IRCTCExt.SELECTORS.loginPassword, {
-      timeout: 10000,
-      visible: true
-    });
+    IRCTCExt.EticketLoginFlow.ensureUserTabActive();
+
+    const activePanel = IRCTCExt.EticketLoginFlow.getActiveLoginPanel();
+    const userInput =
+      (await IRCTCExt.Wait.waitFor(IRCTCExt.SELECTORS.loginUsername, {
+        timeout: 6000,
+        visible: true,
+        root: activePanel
+      })) ||
+      (await IRCTCExt.Wait.waitFor(IRCTCExt.SELECTORS.loginUsername, {
+        timeout: 2000,
+        visible: true
+      }));
+
+    const passInput =
+      (await IRCTCExt.Wait.waitFor(IRCTCExt.SELECTORS.loginPassword, {
+        timeout: 6000,
+        visible: true,
+        root: activePanel
+      })) ||
+      (await IRCTCExt.Wait.waitFor(IRCTCExt.SELECTORS.loginPassword, {
+        timeout: 2000,
+        visible: true
+      }));
+
     if (!userInput || !passInput) throw new Error('Login form not found');
 
+    const username = config?.credentials?.username || '';
+    const password = config?.credentials?.password || '';
+    if (!username || !password) {
+      throw new Error('IRCTC credentials missing. Please save username and password in extension settings.');
+    }
+
     overlay.setStatus('Filling username and password...');
-    IRCTCExt.Events.setInputValue(userInput, config.credentials.username);
-    IRCTCExt.Events.setInputValue(passInput, config.credentials.password);
+    await IRCTCExt.EticketLoginFlow.fillCredential(userInput, username);
+    await IRCTCExt.EticketLoginFlow.fillCredential(passInput, password);
 
     if (IRCTCExt.EticketLoginFlow.hasChallenge()) {
-      await IRCTCExt.EticketLoginFlow.waitForCaptchaContinue(overlay);
+      await IRCTCExt.EticketLoginFlow.waitForCaptchaContinue(overlay, activePanel);
     } else {
-      const submit = await IRCTCExt.EticketLoginFlow.waitForEnabledSubmit();
+      const submit = await IRCTCExt.EticketLoginFlow.waitForEnabledSubmit(activePanel);
       if (!submit) throw new Error('Login button stayed disabled');
       overlay.setStatus('Submitting login...');
       IRCTCExt.Events.click(submit);
-      await IRCTCExt.Wait.delay(800);
+      const form = submit.closest('form');
+      if (form) {
+        try {
+          form.requestSubmit
+            ? form.requestSubmit(submit)
+            : form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+        } catch (_) {}
+      }
+      await IRCTCExt.Wait.delay(1000);
 
       if (IRCTCExt.EticketLoginFlow.hasChallenge()) {
-        await IRCTCExt.EticketLoginFlow.waitForCaptchaContinue(overlay);
+        await IRCTCExt.EticketLoginFlow.waitForCaptchaContinue(overlay, activePanel);
       }
     }
 
-    await IRCTCExt.Wait.poll(() => IRCTCExt.EticketLoginFlow.isLoggedIn(), { timeout: 20000, interval: 400 });
+    overlay.setStatus('Verifying login...');
+    const loggedIn = await IRCTCExt.Wait.poll(
+      async () => {
+        if (await IRCTCExt.EticketLoginFlow.isLoggedIn()) return true;
+        if (IRCTCExt.EticketLoginFlow.hasChallenge()) return 'challenge';
+        const errMsg = activePanel.querySelector(
+          '.ui-messages-error, .error-message, .alert-danger, .login-error, .ui-message-error'
+        );
+        if (errMsg && IRCTCExt.Wait.isVisible(errMsg)) return 'error';
+        return null;
+      },
+      { timeout: 25000, interval: 400 }
+    );
+
+    if (loggedIn === 'error') {
+      const errMsg = activePanel.querySelector(
+        '.ui-messages-error, .error-message, .alert-danger, .login-error, .ui-message-error'
+      );
+      throw new Error(errMsg?.textContent?.trim() || 'Login failed with server error');
+    }
+
+    if (loggedIn === 'challenge') {
+      await IRCTCExt.EticketLoginFlow.waitForCaptchaContinue(overlay, activePanel);
+      await IRCTCExt.Wait.poll(() => IRCTCExt.EticketLoginFlow.isLoggedIn(), { timeout: 25000, interval: 400 });
+    }
+
     if (!(await IRCTCExt.EticketLoginFlow.isLoggedIn())) {
       throw new Error('Login failed or timed out');
     }
 
-    overlay.setStatus('Login successful');
+    const loggedInUser = IRCTCExt.EticketLoginFlow.getLoggedInUsername();
+    overlay.setStatus(loggedInUser ? `Login successful (${loggedInUser})` : 'Login successful');
     return true;
   },
 
@@ -1496,6 +1859,8 @@ IRCTCExt.EticketSearchFlow = {
     overlay.setStatus('Filling journey details...');
     await IRCTCExt.Storage.updateState({ currentStep: 'search' });
 
+    await IRCTCExt.EticketLoginFlow?.dismissTour?.();
+    IRCTCExt.Modals.dismissTour?.();
     IRCTCExt.Modals.dismissSessionRestore?.();
     await IRCTCExt.Wait.delay(300);
 
@@ -1661,8 +2026,8 @@ IRCTCExt.SiteRegistry?.register(IRCTCExt.EticketSite);
     homeUrl: 'https://www.irctc.co.in/nget',
     trainSearchUrl: 'https://www.irctc.co.in/nget/train-search',
     trainSearchPath: '/nget/train-search',
-    urlPattern: 'https://www.irctc.co.in/nget/*',
-    trainSearchUrlPattern: 'https://www.irctc.co.in/nget/train-search*',
+    urlPattern: 'https://*.irctc.co.in/nget/*',
+    trainSearchUrlPattern: 'https://*.irctc.co.in/nget/train-search*',
     gatewayUrl: 'https://pg.irctcpayments.com/',
     gatewayHost: 'pg.irctcpayments.com',
     gatewayUrlPattern: 'https://pg.irctcpayments.com/*',
@@ -3679,6 +4044,10 @@ IRCTCExt.NgetSelectors = {
       );
       if (!btn) throw new Error('Continue button not found or still disabled');
 
+      // Anti-bot pacing: dwell time before clicking Continue
+      overlay.setStatus('Pacing before Continue (anti-bot delay)...');
+      await IRCTCExt.Wait.delay(2000 + Math.floor(Math.random() * 1000));
+
       overlay.setStatus('Clicking Continue...');
       sharedPrefs().clickTarget(btn);
       await IRCTCExt.Wait.delay(800);
@@ -4232,7 +4601,8 @@ IRCTCExt.Wait = {
     }
   },
 
-  queryOne(selectors, root = document) {
+  queryOne(selectors, root = document, { visible = false } = {}) {
+    if (visible) return IRCTCExt.Wait.queryVisibleOne(selectors, root);
     const list = Array.isArray(selectors) ? selectors : [selectors];
     for (const selector of list) {
       const el = root.querySelector(selector);
@@ -4241,11 +4611,30 @@ IRCTCExt.Wait = {
     return null;
   },
 
-  queryAll(selectors, root = document) {
+  queryVisibleOne(selectors, root = document) {
     const list = Array.isArray(selectors) ? selectors : [selectors];
     for (const selector of list) {
       const nodes = root.querySelectorAll(selector);
-      if (nodes.length) return Array.from(nodes);
+      for (const node of nodes) {
+        if (IRCTCExt.Wait.isVisible(node)) return node;
+      }
+    }
+    return null;
+  },
+
+  queryAll(selectors, root = document, { visible = false } = {}) {
+    const list = Array.isArray(selectors) ? selectors : [selectors];
+    for (const selector of list) {
+      const nodes = root.querySelectorAll(selector);
+      if (nodes.length) {
+        const arr = Array.from(nodes);
+        if (visible) {
+          const vis = arr.filter((n) => IRCTCExt.Wait.isVisible(n));
+          if (vis.length) return vis;
+        } else {
+          return arr;
+        }
+      }
     }
     return [];
   },
@@ -4253,8 +4642,10 @@ IRCTCExt.Wait = {
   async waitFor(selectors, { timeout = 15000, root = document, visible = false } = {}) {
     const start = Date.now();
     while (Date.now() - start < timeout) {
-      const el = IRCTCExt.Wait.queryOne(selectors, root);
-      if (el && (!visible || IRCTCExt.Wait.isVisible(el))) return el;
+      const el = visible
+        ? IRCTCExt.Wait.queryVisibleOne(selectors, root)
+        : IRCTCExt.Wait.queryOne(selectors, root);
+      if (el) return el;
       await IRCTCExt.Wait.delay(100);
     }
     return null;
@@ -4262,6 +4653,9 @@ IRCTCExt.Wait = {
 
   isVisible(el) {
     if (!el) return false;
+    if (el.closest?.('.login-panel--inactive, [inert], .login-panel[aria-hidden="true"]')) {
+      return false;
+    }
     const style = window.getComputedStyle(el);
     if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0) {
       return false;
@@ -4452,8 +4846,80 @@ IRCTCExt.Modals = {
     return dismissed;
   },
 
+  dismissTour(root = document) {
+    if (!root) return 0;
+    let dismissed = 0;
+
+    const skipSelectors = [
+      '.track-train-tutorial-actions .track-train-tutorial-skip',
+      '.track-train-tutorial-popover button.track-train-tutorial-skip',
+      'button.track-train-tutorial-skip',
+      '.track-train-tutorial-skip',
+      '.home-tour-actions .home-tour-skip',
+      'button.home-tour-skip',
+      '.home-tour-skip'
+    ];
+
+    for (const sel of skipSelectors) {
+      const skipBtn = root.querySelector(sel);
+      if (skipBtn && !skipBtn.dataset?.tourDismissed) {
+        skipBtn.dataset.tourDismissed = '1';
+        try {
+          if (IRCTCExt.Events?.click) {
+            IRCTCExt.Events.click(skipBtn);
+          } else {
+            skipBtn.click();
+          }
+        } catch (_) {
+          skipBtn.click?.();
+        }
+        dismissed += 1;
+      }
+    }
+
+    if (!dismissed) {
+      const actionContainers = root.querySelectorAll(
+        '.track-train-tutorial-popover, .track-train-tutorial-actions, .home-tour-actions, .home-tour'
+      );
+      for (const container of actionContainers) {
+        const buttons = container.querySelectorAll('button');
+        for (const btn of buttons) {
+          const text = (btn.textContent || '').trim();
+          if (/^\s*skip\s*$/i.test(text) || /skip\s*tour/i.test(text)) {
+            if (!btn.dataset?.tourDismissed) {
+              btn.dataset.tourDismissed = '1';
+              try {
+                if (IRCTCExt.Events?.click) {
+                  IRCTCExt.Events.click(btn);
+                } else {
+                  btn.click();
+                }
+              } catch (_) {
+                btn.click?.();
+              }
+              dismissed += 1;
+              break;
+            }
+          }
+        }
+        if (dismissed) break;
+      }
+    }
+
+    // Forcefully hide tour elements and backdrop so they never block train list or form controls
+    const tourElements = root.querySelectorAll(
+      '.track-train-tutorial-popover, .home-tour-actions, .home-tour, .home-tour-overlay, app-home-tour'
+    );
+    for (const el of tourElements) {
+      if (this.forceHide(el)) dismissed += 1;
+    }
+
+    return dismissed;
+  },
+
   dismissInterruptModals(root = document) {
     let dismissed = 0;
+    dismissed += this.dismissTour(root);
     dismissed += this.dismissSessionRestore(root);
     dismissed += this.dismissBookNowConfirmation(root);
     return dismissed;
@@ -7975,9 +8441,9 @@ IRCTCExt.Passengers = {
       }
       if (!btn) throw new Error('Continue button not found or still disabled');
 
-      // Anti-bot pacing: Dwell time before submitting fare check avoids Akamai sub-second flag
-      overlay.setStatus('Pacing before submit to avoid bot detection...');
-      await IRCTCExt.Wait.delay(1200 + Math.floor(Math.random() * 600));
+      // Anti-bot pacing: Dwell time before submitting avoids Akamai sub-second flag
+      overlay.setStatus('Pacing before Continue (anti-bot delay)...');
+      await IRCTCExt.Wait.delay(2500 + Math.floor(Math.random() * 1000));
 
       overlay.setStatus('Clicking Continue...');
       sharedPrefs().clickTarget(btn);
@@ -8066,6 +8532,54 @@ IRCTCExt.PsgnPreferences = {
     return !!input?.checked;
   },
 
+  isCheckboxChecked(checkboxHost) {
+    if (!checkboxHost) return false;
+    const box = checkboxHost.querySelector?.('.ui-chkbox-box, [role="checkbox"]');
+    if (box && (box.classList.contains('ui-state-active') || box.getAttribute('aria-checked') === 'true')) {
+      return true;
+    }
+    const input = checkboxHost.matches?.('input[type="checkbox"]')
+      ? checkboxHost
+      : checkboxHost.querySelector?.('input[type="checkbox"]');
+    if (input?.checked) return true;
+    if (checkboxHost.classList?.contains('ui-state-active')) return true;
+    return false;
+  },
+
+  async setCheckboxChecked(checkboxHost, maxAttempts = 5) {
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      if (this.isCheckboxChecked(checkboxHost)) return true;
+
+      const box = checkboxHost.querySelector?.('.ui-chkbox-box, [role="checkbox"]');
+      const row = checkboxHost.closest?.('.pref-item, .pref-row') || checkboxHost.parentElement;
+      const label = row?.querySelector?.('.pref-label, label');
+      const input = checkboxHost.matches?.('input[type="checkbox"]')
+        ? checkboxHost
+        : checkboxHost.querySelector?.('input[type="checkbox"]');
+
+      const target = box || label || input || checkboxHost;
+      this.clickTarget(target);
+      await IRCTCExt.Wait.delay(300);
+
+      if (this.isCheckboxChecked(checkboxHost)) return true;
+
+      if (label && label !== target) {
+        this.clickTarget(label);
+        await IRCTCExt.Wait.delay(300);
+      }
+
+      if (this.isCheckboxChecked(checkboxHost)) return true;
+
+      if (input && !input.checked) {
+        input.checked = true;
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+      await IRCTCExt.Wait.delay(200);
+    }
+    return this.isCheckboxChecked(checkboxHost);
+  },
+
   findLoyaltySkipOption(section) {
     const options = section.querySelectorAll('.loyalty-option');
     for (const option of options) {
@@ -8110,10 +8624,55 @@ IRCTCExt.PsgnPreferences = {
     return inputEl.closest('.loyalty-option, .payment-option');
   },
 
+  triggerSingleClick(el) {
+    if (!el) return;
+    try {
+      el.scrollIntoView({ block: 'center', inline: 'nearest' });
+    } catch (_) {}
+
+    const rect = el.getBoundingClientRect();
+    const clientX = Math.round(rect.left + Math.max(1, rect.width / 2));
+    const clientY = Math.round(rect.top + Math.max(1, rect.height / 2));
+    const opts = {
+      bubbles: true,
+      cancelable: true,
+      composed: true,
+      view: window,
+      clientX,
+      clientY,
+      screenX: (window.screenX || 0) + clientX,
+      screenY: (window.screenY || 0) + clientY,
+      button: 0,
+      buttons: 1
+    };
+
+    if (typeof PointerEvent !== 'undefined') {
+      try {
+        el.dispatchEvent(new PointerEvent('pointerdown', { ...opts, pointerId: 1, pointerType: 'mouse', isPrimary: true }));
+        el.dispatchEvent(new PointerEvent('pointerup', { ...opts, pointerId: 1, pointerType: 'mouse', isPrimary: true, buttons: 0 }));
+      } catch (_) {}
+    }
+
+    try {
+      el.dispatchEvent(new MouseEvent('mousedown', opts));
+      el.dispatchEvent(new MouseEvent('mouseup', { ...opts, buttons: 0 }));
+    } catch (_) {}
+
+    if (typeof el.click === 'function') {
+      try {
+        el.click();
+        return;
+      } catch (_) {}
+    }
+
+    try {
+      el.dispatchEvent(new MouseEvent('click', { ...opts, buttons: 0 }));
+    } catch (_) {}
+  },
+
   clickTarget(el) {
     if (!el) return;
-    el.scrollIntoView({ block: 'center', inline: 'nearest' });
-    IRCTCExt.Events.click(el);
+    this.triggerSingleClick(el);
   },
 
   clickPrimeNgRadio(optionEl) {
@@ -8377,8 +8936,8 @@ IRCTCExt.PsgnPreferences = {
     if (!btn) throw new Error('Calculate Fare button not found or still disabled');
 
     // Anti-bot pacing: satisfy Akamai minimum dwell time threshold
-    overlay.setStatus('Pacing before fare calculation to avoid bot detection...');
-    await IRCTCExt.Wait.delay(1200 + Math.floor(Math.random() * 600));
+    overlay.setStatus('Pacing before fare calculation (anti-bot delay)...');
+    await IRCTCExt.Wait.delay(2500 + Math.floor(Math.random() * 1000));
 
     overlay.setStatus('Clicking Calculate Fare...');
     this.clickTarget(btn);
@@ -8437,8 +8996,8 @@ IRCTCExt.PsgnPreferences = {
     if (!btn) throw new Error('Continue To Payment button not found or still disabled');
 
     // Anti-bot pacing
-    overlay.setStatus('Pacing before payment transition...');
-    await IRCTCExt.Wait.delay(1000 + Math.floor(Math.random() * 500));
+    overlay.setStatus('Pacing before Continue to payment (anti-bot delay)...');
+    await IRCTCExt.Wait.delay(2500 + Math.floor(Math.random() * 1000));
 
     overlay.setStatus('Clicking Continue To Payment...');
     this.clickTarget(btn);
@@ -8469,9 +9028,216 @@ IRCTCExt.PsgnPreferences = {
     await this.waitForPaymentPage(overlay);
   },
 
+  findOtherPreferencesHeader() {
+    const sel = IRCTCExt.SELECTORS.psgnPreferences;
+    const direct = IRCTCExt.Wait.queryOne(sel.otherPreferencesHeader);
+    if (direct) return direct;
+
+    const byControls = document.querySelector(
+      'div.section-header[aria-controls="bookingPreferencesBody"], [aria-controls="bookingPreferencesBody"]'
+    );
+    if (byControls) {
+      return byControls.matches('.section-header')
+        ? byControls
+        : byControls.closest('.section-header') || byControls;
+    }
+
+    const btn = document.querySelector('button.pref-collapse-button, button[aria-label*="Other Preferences" i]');
+    if (btn) return btn.closest('.section-header') || btn;
+
+    const titles = Array.from(document.querySelectorAll('.section-title, .section-header'));
+    const targetTitle = titles.find((el) => /other preferences/i.test(el.textContent || ''));
+    if (targetTitle) return targetTitle.closest('.section-header') || targetTitle;
+
+    return null;
+  },
+
+  isOtherPreferencesExpanded() {
+    const sel = IRCTCExt.SELECTORS.psgnPreferences;
+
+    // 1. Check if the checkbox or label inside preferences is already visible
+    const chk = document.querySelector('p-checkbox[formcontrolname="bookOnlyIfCnf"], p-checkbox[name="confirmBerth"]');
+    if (chk && IRCTCExt.Wait.isVisible(chk)) {
+      return true;
+    }
+    const labels = Array.from(document.querySelectorAll('.pref-label, label'));
+    const confirmLabel = labels.find((l) => /confirm berths/i.test(l.textContent || ''));
+    if (confirmLabel && IRCTCExt.Wait.isVisible(confirmLabel)) {
+      return true;
+    }
+
+    // 2. Check aria-expanded="true" on header
+    const header = this.findOtherPreferencesHeader();
+    if (header) {
+      const attr = header.getAttribute('aria-expanded');
+      if (attr === 'true') return true;
+      if (header.classList.contains('expanded') || header.classList.contains('active')) return true;
+    }
+
+    // 3. Check aria-expanded="true" or angle-up icon on button
+    const btn =
+      header?.querySelector?.('.pref-collapse-button') ||
+      document.querySelector('button.pref-collapse-button, button[aria-controls="bookingPreferencesBody"]');
+    if (btn) {
+      const attr = btn.getAttribute('aria-expanded');
+      if (attr === 'true') return true;
+      if (btn.querySelector('.fa-angle-up, .fa-chevron-up')) return true;
+    }
+
+    // 4. Check if body element has .show / .in or is visible
+    const body =
+      document.getElementById('bookingPreferencesBody') ||
+      document.querySelector('#bookingPreferencesBody, .pref-body');
+    if (body) {
+      if (body.classList.contains('show') || body.classList.contains('in')) return true;
+      const style = window.getComputedStyle(body);
+      if (style.display !== 'none' && style.visibility !== 'hidden' && body.offsetHeight > 0) {
+        return true;
+      }
+    }
+
+    return false;
+  },
+
+  async expandOtherPreferences(overlay, maxAttempts = 6) {
+    if (this.isOtherPreferencesExpanded()) {
+      return true;
+    }
+
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      if (this.isOtherPreferencesExpanded()) {
+        return true;
+      }
+
+      const header = this.findOtherPreferencesHeader();
+      const button =
+        header?.querySelector?.('.pref-collapse-button') ||
+        document.querySelector('button.pref-collapse-button, button[aria-controls="bookingPreferencesBody"]');
+      const icon = button?.querySelector?.('i, .fa');
+      const title =
+        header?.querySelector?.('.section-title') ||
+        header?.querySelector?.('.section-title-group');
+
+      const targets = [
+        { name: 'header container', el: header },
+        { name: 'collapse button', el: button },
+        { name: 'button icon', el: icon },
+        { name: 'section title', el: title }
+      ].filter((t) => t.el != null);
+
+      if (!targets.length) {
+        await IRCTCExt.Wait.delay(300);
+        continue;
+      }
+
+      const target = targets[attempt % targets.length];
+      overlay.setStatus(`Expanding Other Preferences via ${target.name} (attempt ${attempt + 1})...`);
+
+      this.triggerSingleClick(target.el);
+
+      // Wait up to 1000ms polling for expanded state
+      const opened = await IRCTCExt.Wait.poll(
+        () => (this.isOtherPreferencesExpanded() ? true : null),
+        { timeout: 1000, interval: 150 }
+      );
+
+      if (opened) {
+        overlay.setStatus('Other Preferences accordion expanded.');
+        return true;
+      }
+
+      // If attempts 0-2 with single click didn't work, try Enter key on role="button" header as fallback
+      if (attempt >= 3 && header && header.getAttribute('role') === 'button') {
+        try {
+          header.focus?.();
+          header.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
+          header.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
+        } catch (_) {}
+
+        const openedKey = await IRCTCExt.Wait.poll(
+          () => (this.isOtherPreferencesExpanded() ? true : null),
+          { timeout: 800, interval: 150 }
+        );
+        if (openedKey) {
+          overlay.setStatus('Other Preferences accordion expanded.');
+          return true;
+        }
+      }
+
+      await IRCTCExt.Wait.delay(200);
+    }
+
+    return this.isOtherPreferencesExpanded();
+  },
+
+  async configureOtherPreferences(config, overlay) {
+    if (!config?.preferences?.bookOnlyIfCnf) {
+      return;
+    }
+
+    overlay.setStatus('Checking Other Preferences...');
+    const sel = IRCTCExt.SELECTORS.psgnPreferences;
+
+    // Wait up to 8s for the Other Preferences accordion header to appear on the page
+    const headerFound = await IRCTCExt.Wait.poll(
+      () => {
+        const h = this.findOtherPreferencesHeader();
+        return h && IRCTCExt.Wait.isVisible(h) ? h : null;
+      },
+      { timeout: 8000, interval: 200 }
+    );
+
+    if (!headerFound) {
+      console.warn('[IRCTC Bot] Other Preferences header not found on page');
+      return;
+    }
+
+    // Expand accordion if not already expanded
+    if (!this.isOtherPreferencesExpanded()) {
+      const expanded = await this.expandOtherPreferences(overlay);
+      if (!expanded) {
+        console.warn('[IRCTC Bot] Could not expand Other Preferences accordion after retries');
+      }
+      await IRCTCExt.Wait.delay(400);
+    }
+
+    // Locate the "Book only if confirm berths are allotted" checkbox
+    const checkboxHost = await IRCTCExt.Wait.poll(
+      () => {
+        const el = IRCTCExt.Wait.queryOne(sel.bookOnlyIfCnfCheckbox);
+        if (el && IRCTCExt.Wait.isVisible(el)) return el;
+        const labels = Array.from(document.querySelectorAll('.pref-label, label'));
+        const targetLabel = labels.find((l) => /confirm berths/i.test(l.textContent || ''));
+        if (targetLabel && IRCTCExt.Wait.isVisible(targetLabel)) {
+          const row = targetLabel.closest('.pref-item, .pref-row') || targetLabel.parentElement;
+          const chk = row?.querySelector('p-checkbox, input[type="checkbox"]');
+          if (chk) return chk;
+        }
+        return null;
+      },
+      { timeout: 8000, interval: 200 }
+    );
+
+    if (!checkboxHost) {
+      console.warn('[IRCTC Bot] "Book only if confirm berths are allotted" checkbox not found');
+      return;
+    }
+
+    if (!this.isCheckboxChecked(checkboxHost)) {
+      overlay.setStatus('Selecting: Book only if confirm berths are allotted...');
+      const checked = await this.setCheckboxChecked(checkboxHost);
+      if (checked) {
+        overlay.setStatus('Confirmed berths preference enabled.');
+      }
+      await IRCTCExt.Wait.delay(300);
+    }
+  },
+
   async configure(config, overlay) {
     overlay.setStep('Review');
     await IRCTCExt.Wait.delay(600);
+    await this.configureOtherPreferences(config, overlay);
+    await IRCTCExt.Wait.delay(400);
     await this.selectLoyaltySkip(overlay);
     await IRCTCExt.Wait.delay(400);
     await this.selectPaymentMethod(config, overlay);
@@ -8964,7 +9730,7 @@ IRCTCExt.Overlay = {
     root.className = 'irctc-ext-overlay irctc-ext-overlay--hidden';
     root.innerHTML = `
       <div class="irctc-ext-overlay__header">
-        <span>IRCTC Tatkal Bot</span>
+        <span>IRCTC Tatkal Assistant</span>
         <div class="irctc-ext-overlay__header-right">
           <span id="irctc-ext-step">Idle</span>
           <button type="button" class="irctc-ext-overlay__icon-btn" id="irctc-ext-minimize" title="Minimize" aria-label="Minimize overlay">−</button>
@@ -9365,6 +10131,7 @@ IRCTCExt.Bot = {
   },
 
   async ensureTokenForPayment(overlay, config) {
+    if (!config?.preferences?.autoPayEnabled) return true;
     if (config.state?.tokenConsumed) return true;
 
     const usageKey = config.state?.bookingSessionId || crypto.randomUUID();
@@ -9377,11 +10144,7 @@ IRCTCExt.Bot = {
       .sendMessage('CONSUME_TOKEN', { usageKey })
       .catch(() => null);
 
-    if (!result?.ok) {
-      overlay?.setError(result?.message || 'No booking tokens remaining.');
-      overlay?.setStatus('Booking blocked — no tokens left for payment step.');
-      overlay?.setStep('Access');
-      await IRCTCExt.Storage.updateState({ running: false, status: 'idle', currentStep: 'access' });
+    if (!result?.ok || !result?.allowed) {
       return false;
     }
 
@@ -9398,10 +10161,19 @@ IRCTCExt.Bot = {
     const autoPayEnabled = !!config.preferences?.autoPayEnabled;
     const canAutoPay = IRCTCExt.Bot.isAutoPayAvailable();
 
-    if (!autoPayEnabled || !canAutoPay) {
-      const reason = !autoPayEnabled
-        ? 'Auto pay disabled — complete payment manually.'
-        : 'Auto pay is not available in this host — complete payment manually.';
+    let autoPayAllowed = false;
+    if (autoPayEnabled && canAutoPay) {
+      const hasToken = await IRCTCExt.Bot.ensureTokenForPayment(overlay, config);
+      autoPayAllowed = !!hasToken;
+    }
+
+    if (!autoPayEnabled || !canAutoPay || !autoPayAllowed) {
+      let reason = 'Auto pay disabled — complete payment manually.';
+      if (!canAutoPay) {
+        reason = 'Auto pay is not available in this host — complete payment manually.';
+      } else if (autoPayEnabled && !autoPayAllowed) {
+        reason = 'Auto Pay requires active Buy Me a Coffee access — complete payment manually.';
+      }
       overlay.setStatus(reason);
       await IRCTCExt.Storage.updateState({ paymentDone: true });
       await site.flows.BookingFlow.showPaymentReview(overlay);
@@ -9469,8 +10241,6 @@ IRCTCExt.Bot = {
     IRCTCExt.PlatformBridge?.sendMessage('BOOKING_STATUS', { step, status: config.state.status });
 
     if (site.isPaymentPath(path)) {
-      const canPay = await IRCTCExt.Bot.ensureTokenForPayment(overlay, config);
-      if (!canPay) return 'done';
       return IRCTCExt.Bot.handlePaymentPage(overlay, config, site);
     }
 
@@ -9509,8 +10279,20 @@ IRCTCExt.Bot = {
     }
 
     if (site.isTrainListPath(path)) {
+      IRCTCExt.Modals?.dismissTour?.();
       overlay.setStatus('Train list loaded — starting booking...');
       await site.TrainList.bookTrain(config, overlay);
+      return 'continue';
+    }
+
+    if (step === 'login') {
+      await site.flows.LoginFlow.runWithRetry(config, overlay);
+      if (site.isTrainSearchPath(location.pathname)) {
+        await site.flows.SearchFlow.run(config, overlay);
+        if (site.isTrainListPath(location.pathname)) return 'continue';
+        overlay.setStatus('Waiting for train list...');
+        return 'wait';
+      }
       return 'continue';
     }
 
@@ -9540,22 +10322,6 @@ IRCTCExt.Bot = {
       await IRCTCExt.Bot.applyProgressFromPath();
     }
 
-    const access = await IRCTCExt.PlatformBridge
-      .sendMessage('CHECK_ACCESS', { forceRefresh: false })
-      .catch(() => null);
-
-    if (!access?.allowed) {
-      const overlay = await IRCTCExt.Overlay.show().catch(() => null);
-      const message =
-        access?.tier === 'none'
-          ? 'No access yet. Link your Buy Me a Coffee email in the app.'
-          : access?.message || 'Access expired. Link your Buy Me a Coffee email.';
-      overlay?.setError(message);
-      overlay?.setStatus('Booking blocked — access not active.');
-      overlay?.setStep('Access');
-      await IRCTCExt.Storage.updateState({ running: false, status: 'idle', currentStep: 'access' });
-      return;
-    }
 
     if (await IRCTCExt.Bot.wasStopped()) return;
 
@@ -9785,6 +10551,7 @@ IRCTCExt.Bot = {
       }
 
       if (msg.type === 'STOP_BOOKING') {
+        IRCTCExt.Bot.running = false;
         IRCTCExt.Bot.stop().catch((err) => console.error('[IRCTC-Bot] Stop failed:', err));
         sendResponse({ ok: true });
         return true;

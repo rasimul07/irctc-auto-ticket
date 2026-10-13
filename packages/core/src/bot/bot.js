@@ -178,6 +178,7 @@ IRCTCExt.Bot = {
   },
 
   async ensureTokenForPayment(overlay, config) {
+    if (!config?.preferences?.autoPayEnabled) return true;
     if (config.state?.tokenConsumed) return true;
 
     const usageKey = config.state?.bookingSessionId || crypto.randomUUID();
@@ -190,11 +191,7 @@ IRCTCExt.Bot = {
       .sendMessage('CONSUME_TOKEN', { usageKey })
       .catch(() => null);
 
-    if (!result?.ok) {
-      overlay?.setError(result?.message || 'No booking tokens remaining.');
-      overlay?.setStatus('Booking blocked — no tokens left for payment step.');
-      overlay?.setStep('Access');
-      await IRCTCExt.Storage.updateState({ running: false, status: 'idle', currentStep: 'access' });
+    if (!result?.ok || !result?.allowed) {
       return false;
     }
 
@@ -211,10 +208,19 @@ IRCTCExt.Bot = {
     const autoPayEnabled = !!config.preferences?.autoPayEnabled;
     const canAutoPay = IRCTCExt.Bot.isAutoPayAvailable();
 
-    if (!autoPayEnabled || !canAutoPay) {
-      const reason = !autoPayEnabled
-        ? 'Auto pay disabled — complete payment manually.'
-        : 'Auto pay is not available in this host — complete payment manually.';
+    let autoPayAllowed = false;
+    if (autoPayEnabled && canAutoPay) {
+      const hasToken = await IRCTCExt.Bot.ensureTokenForPayment(overlay, config);
+      autoPayAllowed = !!hasToken;
+    }
+
+    if (!autoPayEnabled || !canAutoPay || !autoPayAllowed) {
+      let reason = 'Auto pay disabled — complete payment manually.';
+      if (!canAutoPay) {
+        reason = 'Auto pay is not available in this host — complete payment manually.';
+      } else if (autoPayEnabled && !autoPayAllowed) {
+        reason = 'Auto Pay requires active Buy Me a Coffee access — complete payment manually.';
+      }
       overlay.setStatus(reason);
       await IRCTCExt.Storage.updateState({ paymentDone: true });
       await site.flows.BookingFlow.showPaymentReview(overlay);
@@ -282,8 +288,6 @@ IRCTCExt.Bot = {
     IRCTCExt.PlatformBridge?.sendMessage('BOOKING_STATUS', { step, status: config.state.status });
 
     if (site.isPaymentPath(path)) {
-      const canPay = await IRCTCExt.Bot.ensureTokenForPayment(overlay, config);
-      if (!canPay) return 'done';
       return IRCTCExt.Bot.handlePaymentPage(overlay, config, site);
     }
 
@@ -322,8 +326,20 @@ IRCTCExt.Bot = {
     }
 
     if (site.isTrainListPath(path)) {
+      IRCTCExt.Modals?.dismissTour?.();
       overlay.setStatus('Train list loaded — starting booking...');
       await site.TrainList.bookTrain(config, overlay);
+      return 'continue';
+    }
+
+    if (step === 'login') {
+      await site.flows.LoginFlow.runWithRetry(config, overlay);
+      if (site.isTrainSearchPath(location.pathname)) {
+        await site.flows.SearchFlow.run(config, overlay);
+        if (site.isTrainListPath(location.pathname)) return 'continue';
+        overlay.setStatus('Waiting for train list...');
+        return 'wait';
+      }
       return 'continue';
     }
 
@@ -353,22 +369,6 @@ IRCTCExt.Bot = {
       await IRCTCExt.Bot.applyProgressFromPath();
     }
 
-    const access = await IRCTCExt.PlatformBridge
-      .sendMessage('CHECK_ACCESS', { forceRefresh: false })
-      .catch(() => null);
-
-    if (!access?.allowed) {
-      const overlay = await IRCTCExt.Overlay.show().catch(() => null);
-      const message =
-        access?.tier === 'none'
-          ? 'No access yet. Link your Buy Me a Coffee email in the app.'
-          : access?.message || 'Access expired. Link your Buy Me a Coffee email.';
-      overlay?.setError(message);
-      overlay?.setStatus('Booking blocked — access not active.');
-      overlay?.setStep('Access');
-      await IRCTCExt.Storage.updateState({ running: false, status: 'idle', currentStep: 'access' });
-      return;
-    }
 
     if (await IRCTCExt.Bot.wasStopped()) return;
 
@@ -598,6 +598,7 @@ IRCTCExt.Bot = {
       }
 
       if (msg.type === 'STOP_BOOKING') {
+        IRCTCExt.Bot.running = false;
         IRCTCExt.Bot.stop().catch((err) => console.error('[IRCTC-Bot] Stop failed:', err));
         sendResponse({ ok: true });
         return true;

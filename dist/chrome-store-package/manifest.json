@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Rapid Tatkal - IRCTC Tatkal Auto Booking",
-  "version": "1.1.3",
-  "description": "Auto Tatkal ticket booking assistant for IRCTC with saved journey and passenger details.",
+  "name": "Rapid Tatkal - Free IRCTC Tatkal Auto Booking",
+  "version": "1.1.8",
+  "description": "Free auto Tatkal ticket booking assistant for IRCTC with saved journey & passenger autofill. 100% free up to payment.",
   "permissions": [
     "storage",
     "alarms",
@@ -10,7 +10,10 @@
     "scripting"
   ],
   "host_permissions": [
+    "https://*.irctc.co.in/*",
+    "https://*.ics.irctc.co.in/*",
     "https://www.irctc.co.in/*",
+    "https://www.ics.irctc.co.in/*",
     "https://www.irctcipay.com/*",
     "https://pg.irctcpayments.com/*",
     "https://mercury-t2.phonepe.com/*",
@@ -28,7 +31,7 @@
   },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "IRCTC Tatkal Auto Booking",
+    "default_title": "Free IRCTC Tatkal Auto Booking",
     "default_icon": {
       "16": "icons/icon16.png",
       "32": "icons/icon32.png",
@@ -39,8 +42,14 @@
   "content_scripts": [
     {
       "matches": [
+        "https://*.irctc.co.in/eticket/*",
+        "https://*.irctc.co.in/nget/*",
+        "https://*.ics.irctc.co.in/eticket/*",
+        "https://*.ics.irctc.co.in/nget/*",
         "https://www.irctc.co.in/eticket/*",
-        "https://www.irctc.co.in/nget/*"
+        "https://www.irctc.co.in/nget/*",
+        "https://www.ics.irctc.co.in/eticket/*",
+        "https://www.ics.irctc.co.in/nget/*"
       ],
       "js": [
         "sites/registry.js",
@@ -51,8 +60,14 @@
     },
     {
       "matches": [
+        "https://*.irctc.co.in/eticket/*",
+        "https://*.irctc.co.in/nget/*",
+        "https://*.ics.irctc.co.in/eticket/*",
+        "https://*.ics.irctc.co.in/nget/*",
         "https://www.irctc.co.in/eticket/*",
-        "https://www.irctc.co.in/nget/*"
+        "https://www.irctc.co.in/nget/*",
+        "https://www.ics.irctc.co.in/eticket/*",
+        "https://www.ics.irctc.co.in/nget/*"
       ],
       "js": [
         "packages/core/dist/chrome-core.iife.js",

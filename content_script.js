@@ -295,19 +295,6 @@ IRCTCExt.Bot = {
 
     await IRCTCExt.Bot.waitForSiteReady(config);
 
-    const access = await chrome.runtime.sendMessage({ type: 'CHECK_ACCESS', forceRefresh: false }).catch(() => null);
-    if (!access?.allowed) {
-      const overlay = await IRCTCExt.Overlay.show().catch(() => null);
-      const message =
-        access?.tier === 'none'
-          ? 'No access yet. Start a free trial or buy a coffee on Buy Me a Coffee, then link your email in the extension popup.'
-          : access?.message || 'Access expired. Link your Buy Me a Coffee email in the extension popup.';
-      overlay?.setError(message);
-      overlay?.setStatus('Booking blocked — access not active.');
-      overlay?.setStep('Access');
-      await IRCTCExt.Storage.updateState({ running: false, status: 'idle', currentStep: 'access' });
-      return;
-    }
 
     this.running = true;
 

@@ -239,7 +239,7 @@ export function createAccessApi({ storage, clientType, defaults = ACCESS_DEFAULT
         return `${tokens} booking token${tokens === 1 ? '' : 's'} left until ${expires}.`;
       }
       if (status.tier === 'none') {
-        return 'No access yet. Start a free trial or buy a coffee on Buy Me a Coffee, then link your email.';
+        return 'Free mode active: All booking steps up to payment are 100% free. Link Buy Me a Coffee email only for Auto Pay automation.';
       }
       if (status.tier === 'expired') {
         return 'Access expired. Renew on Buy Me a Coffee and link your email.';
@@ -253,7 +253,7 @@ export function createAccessApi({ storage, clientType, defaults = ACCESS_DEFAULT
       if (status.tier === 'basic') return 'Basic';
       if (status.tier === 'trial') return 'Trial';
       if (status.tier === 'coffee') return 'Coffee';
-      if (status.tier === 'none') return 'None';
+      if (status.tier === 'none') return 'Free';
       if (status.tier === 'expired') return 'Expired';
       return status.tier.charAt(0).toUpperCase() + status.tier.slice(1);
     },

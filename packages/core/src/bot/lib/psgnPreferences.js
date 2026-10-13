@@ -12,6 +12,54 @@ IRCTCExt.PsgnPreferences = {
     return !!input?.checked;
   },
 
+  isCheckboxChecked(checkboxHost) {
+    if (!checkboxHost) return false;
+    const box = checkboxHost.querySelector?.('.ui-chkbox-box, [role="checkbox"]');
+    if (box && (box.classList.contains('ui-state-active') || box.getAttribute('aria-checked') === 'true')) {
+      return true;
+    }
+    const input = checkboxHost.matches?.('input[type="checkbox"]')
+      ? checkboxHost
+      : checkboxHost.querySelector?.('input[type="checkbox"]');
+    if (input?.checked) return true;
+    if (checkboxHost.classList?.contains('ui-state-active')) return true;
+    return false;
+  },
+
+  async setCheckboxChecked(checkboxHost, maxAttempts = 5) {
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      if (this.isCheckboxChecked(checkboxHost)) return true;
+
+      const box = checkboxHost.querySelector?.('.ui-chkbox-box, [role="checkbox"]');
+      const row = checkboxHost.closest?.('.pref-item, .pref-row') || checkboxHost.parentElement;
+      const label = row?.querySelector?.('.pref-label, label');
+      const input = checkboxHost.matches?.('input[type="checkbox"]')
+        ? checkboxHost
+        : checkboxHost.querySelector?.('input[type="checkbox"]');
+
+      const target = box || label || input || checkboxHost;
+      this.clickTarget(target);
+      await IRCTCExt.Wait.delay(300);
+
+      if (this.isCheckboxChecked(checkboxHost)) return true;
+
+      if (label && label !== target) {
+        this.clickTarget(label);
+        await IRCTCExt.Wait.delay(300);
+      }
+
+      if (this.isCheckboxChecked(checkboxHost)) return true;
+
+      if (input && !input.checked) {
+        input.checked = true;
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+      await IRCTCExt.Wait.delay(200);
+    }
+    return this.isCheckboxChecked(checkboxHost);
+  },
+
   findLoyaltySkipOption(section) {
     const options = section.querySelectorAll('.loyalty-option');
     for (const option of options) {
@@ -56,10 +104,55 @@ IRCTCExt.PsgnPreferences = {
     return inputEl.closest('.loyalty-option, .payment-option');
   },
 
+  triggerSingleClick(el) {
+    if (!el) return;
+    try {
+      el.scrollIntoView({ block: 'center', inline: 'nearest' });
+    } catch (_) {}
+
+    const rect = el.getBoundingClientRect();
+    const clientX = Math.round(rect.left + Math.max(1, rect.width / 2));
+    const clientY = Math.round(rect.top + Math.max(1, rect.height / 2));
+    const opts = {
+      bubbles: true,
+      cancelable: true,
+      composed: true,
+      view: window,
+      clientX,
+      clientY,
+      screenX: (window.screenX || 0) + clientX,
+      screenY: (window.screenY || 0) + clientY,
+      button: 0,
+      buttons: 1
+    };
+
+    if (typeof PointerEvent !== 'undefined') {
+      try {
+        el.dispatchEvent(new PointerEvent('pointerdown', { ...opts, pointerId: 1, pointerType: 'mouse', isPrimary: true }));
+        el.dispatchEvent(new PointerEvent('pointerup', { ...opts, pointerId: 1, pointerType: 'mouse', isPrimary: true, buttons: 0 }));
+      } catch (_) {}
+    }
+
+    try {
+      el.dispatchEvent(new MouseEvent('mousedown', opts));
+      el.dispatchEvent(new MouseEvent('mouseup', { ...opts, buttons: 0 }));
+    } catch (_) {}
+
+    if (typeof el.click === 'function') {
+      try {
+        el.click();
+        return;
+      } catch (_) {}
+    }
+
+    try {
+      el.dispatchEvent(new MouseEvent('click', { ...opts, buttons: 0 }));
+    } catch (_) {}
+  },
+
   clickTarget(el) {
     if (!el) return;
-    el.scrollIntoView({ block: 'center', inline: 'nearest' });
-    IRCTCExt.Events.click(el);
+    this.triggerSingleClick(el);
   },
 
   clickPrimeNgRadio(optionEl) {
@@ -323,8 +416,8 @@ IRCTCExt.PsgnPreferences = {
     if (!btn) throw new Error('Calculate Fare button not found or still disabled');
 
     // Anti-bot pacing: satisfy Akamai minimum dwell time threshold
-    overlay.setStatus('Pacing before fare calculation to avoid bot detection...');
-    await IRCTCExt.Wait.delay(1200 + Math.floor(Math.random() * 600));
+    overlay.setStatus('Pacing before fare calculation (anti-bot delay)...');
+    await IRCTCExt.Wait.delay(2500 + Math.floor(Math.random() * 1000));
 
     overlay.setStatus('Clicking Calculate Fare...');
     this.clickTarget(btn);
@@ -383,8 +476,8 @@ IRCTCExt.PsgnPreferences = {
     if (!btn) throw new Error('Continue To Payment button not found or still disabled');
 
     // Anti-bot pacing
-    overlay.setStatus('Pacing before payment transition...');
-    await IRCTCExt.Wait.delay(1000 + Math.floor(Math.random() * 500));
+    overlay.setStatus('Pacing before Continue to payment (anti-bot delay)...');
+    await IRCTCExt.Wait.delay(2500 + Math.floor(Math.random() * 1000));
 
     overlay.setStatus('Clicking Continue To Payment...');
     this.clickTarget(btn);
@@ -415,9 +508,216 @@ IRCTCExt.PsgnPreferences = {
     await this.waitForPaymentPage(overlay);
   },
 
+  findOtherPreferencesHeader() {
+    const sel = IRCTCExt.SELECTORS.psgnPreferences;
+    const direct = IRCTCExt.Wait.queryOne(sel.otherPreferencesHeader);
+    if (direct) return direct;
+
+    const byControls = document.querySelector(
+      'div.section-header[aria-controls="bookingPreferencesBody"], [aria-controls="bookingPreferencesBody"]'
+    );
+    if (byControls) {
+      return byControls.matches('.section-header')
+        ? byControls
+        : byControls.closest('.section-header') || byControls;
+    }
+
+    const btn = document.querySelector('button.pref-collapse-button, button[aria-label*="Other Preferences" i]');
+    if (btn) return btn.closest('.section-header') || btn;
+
+    const titles = Array.from(document.querySelectorAll('.section-title, .section-header'));
+    const targetTitle = titles.find((el) => /other preferences/i.test(el.textContent || ''));
+    if (targetTitle) return targetTitle.closest('.section-header') || targetTitle;
+
+    return null;
+  },
+
+  isOtherPreferencesExpanded() {
+    const sel = IRCTCExt.SELECTORS.psgnPreferences;
+
+    // 1. Check if the checkbox or label inside preferences is already visible
+    const chk = document.querySelector('p-checkbox[formcontrolname="bookOnlyIfCnf"], p-checkbox[name="confirmBerth"]');
+    if (chk && IRCTCExt.Wait.isVisible(chk)) {
+      return true;
+    }
+    const labels = Array.from(document.querySelectorAll('.pref-label, label'));
+    const confirmLabel = labels.find((l) => /confirm berths/i.test(l.textContent || ''));
+    if (confirmLabel && IRCTCExt.Wait.isVisible(confirmLabel)) {
+      return true;
+    }
+
+    // 2. Check aria-expanded="true" on header
+    const header = this.findOtherPreferencesHeader();
+    if (header) {
+      const attr = header.getAttribute('aria-expanded');
+      if (attr === 'true') return true;
+      if (header.classList.contains('expanded') || header.classList.contains('active')) return true;
+    }
+
+    // 3. Check aria-expanded="true" or angle-up icon on button
+    const btn =
+      header?.querySelector?.('.pref-collapse-button') ||
+      document.querySelector('button.pref-collapse-button, button[aria-controls="bookingPreferencesBody"]');
+    if (btn) {
+      const attr = btn.getAttribute('aria-expanded');
+      if (attr === 'true') return true;
+      if (btn.querySelector('.fa-angle-up, .fa-chevron-up')) return true;
+    }
+
+    // 4. Check if body element has .show / .in or is visible
+    const body =
+      document.getElementById('bookingPreferencesBody') ||
+      document.querySelector('#bookingPreferencesBody, .pref-body');
+    if (body) {
+      if (body.classList.contains('show') || body.classList.contains('in')) return true;
+      const style = window.getComputedStyle(body);
+      if (style.display !== 'none' && style.visibility !== 'hidden' && body.offsetHeight > 0) {
+        return true;
+      }
+    }
+
+    return false;
+  },
+
+  async expandOtherPreferences(overlay, maxAttempts = 6) {
+    if (this.isOtherPreferencesExpanded()) {
+      return true;
+    }
+
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      if (this.isOtherPreferencesExpanded()) {
+        return true;
+      }
+
+      const header = this.findOtherPreferencesHeader();
+      const button =
+        header?.querySelector?.('.pref-collapse-button') ||
+        document.querySelector('button.pref-collapse-button, button[aria-controls="bookingPreferencesBody"]');
+      const icon = button?.querySelector?.('i, .fa');
+      const title =
+        header?.querySelector?.('.section-title') ||
+        header?.querySelector?.('.section-title-group');
+
+      const targets = [
+        { name: 'header container', el: header },
+        { name: 'collapse button', el: button },
+        { name: 'button icon', el: icon },
+        { name: 'section title', el: title }
+      ].filter((t) => t.el != null);
+
+      if (!targets.length) {
+        await IRCTCExt.Wait.delay(300);
+        continue;
+      }
+
+      const target = targets[attempt % targets.length];
+      overlay.setStatus(`Expanding Other Preferences via ${target.name} (attempt ${attempt + 1})...`);
+
+      this.triggerSingleClick(target.el);
+
+      // Wait up to 1000ms polling for expanded state
+      const opened = await IRCTCExt.Wait.poll(
+        () => (this.isOtherPreferencesExpanded() ? true : null),
+        { timeout: 1000, interval: 150 }
+      );
+
+      if (opened) {
+        overlay.setStatus('Other Preferences accordion expanded.');
+        return true;
+      }
+
+      // If attempts 0-2 with single click didn't work, try Enter key on role="button" header as fallback
+      if (attempt >= 3 && header && header.getAttribute('role') === 'button') {
+        try {
+          header.focus?.();
+          header.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
+          header.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
+        } catch (_) {}
+
+        const openedKey = await IRCTCExt.Wait.poll(
+          () => (this.isOtherPreferencesExpanded() ? true : null),
+          { timeout: 800, interval: 150 }
+        );
+        if (openedKey) {
+          overlay.setStatus('Other Preferences accordion expanded.');
+          return true;
+        }
+      }
+
+      await IRCTCExt.Wait.delay(200);
+    }
+
+    return this.isOtherPreferencesExpanded();
+  },
+
+  async configureOtherPreferences(config, overlay) {
+    if (!config?.preferences?.bookOnlyIfCnf) {
+      return;
+    }
+
+    overlay.setStatus('Checking Other Preferences...');
+    const sel = IRCTCExt.SELECTORS.psgnPreferences;
+
+    // Wait up to 8s for the Other Preferences accordion header to appear on the page
+    const headerFound = await IRCTCExt.Wait.poll(
+      () => {
+        const h = this.findOtherPreferencesHeader();
+        return h && IRCTCExt.Wait.isVisible(h) ? h : null;
+      },
+      { timeout: 8000, interval: 200 }
+    );
+
+    if (!headerFound) {
+      console.warn('[IRCTC Bot] Other Preferences header not found on page');
+      return;
+    }
+
+    // Expand accordion if not already expanded
+    if (!this.isOtherPreferencesExpanded()) {
+      const expanded = await this.expandOtherPreferences(overlay);
+      if (!expanded) {
+        console.warn('[IRCTC Bot] Could not expand Other Preferences accordion after retries');
+      }
+      await IRCTCExt.Wait.delay(400);
+    }
+
+    // Locate the "Book only if confirm berths are allotted" checkbox
+    const checkboxHost = await IRCTCExt.Wait.poll(
+      () => {
+        const el = IRCTCExt.Wait.queryOne(sel.bookOnlyIfCnfCheckbox);
+        if (el && IRCTCExt.Wait.isVisible(el)) return el;
+        const labels = Array.from(document.querySelectorAll('.pref-label, label'));
+        const targetLabel = labels.find((l) => /confirm berths/i.test(l.textContent || ''));
+        if (targetLabel && IRCTCExt.Wait.isVisible(targetLabel)) {
+          const row = targetLabel.closest('.pref-item, .pref-row') || targetLabel.parentElement;
+          const chk = row?.querySelector('p-checkbox, input[type="checkbox"]');
+          if (chk) return chk;
+        }
+        return null;
+      },
+      { timeout: 8000, interval: 200 }
+    );
+
+    if (!checkboxHost) {
+      console.warn('[IRCTC Bot] "Book only if confirm berths are allotted" checkbox not found');
+      return;
+    }
+
+    if (!this.isCheckboxChecked(checkboxHost)) {
+      overlay.setStatus('Selecting: Book only if confirm berths are allotted...');
+      const checked = await this.setCheckboxChecked(checkboxHost);
+      if (checked) {
+        overlay.setStatus('Confirmed berths preference enabled.');
+      }
+      await IRCTCExt.Wait.delay(300);
+    }
+  },
+
   async configure(config, overlay) {
     overlay.setStep('Review');
     await IRCTCExt.Wait.delay(600);
+    await this.configureOtherPreferences(config, overlay);
+    await IRCTCExt.Wait.delay(400);
     await this.selectLoyaltySkip(overlay);
     await IRCTCExt.Wait.delay(400);
     await this.selectPaymentMethod(config, overlay);

@@ -144,11 +144,13 @@ IRCTCExt.EticketTrainList = {
   },
 
   async waitForTrainListReady(overlay) {
+    IRCTCExt.Modals?.dismissTour?.();
     IRCTCExt.EticketTrainList.setStatus(overlay, 'Waiting for train list...');
     const sel = IRCTCExt.SELECTORS.trainList;
 
     const ready = await IRCTCExt.Wait.poll(
       () => {
+        IRCTCExt.Modals?.dismissTour?.();
         if (IRCTCExt.EticketTrainList.getPopulatedTrainCards().length > 0) return true;
         const container = IRCTCExt.Wait.queryOne(sel.container);
         return container && IRCTCExt.Wait.isVisible(container) ? true : null;
@@ -156,20 +158,32 @@ IRCTCExt.EticketTrainList = {
       { timeout: 20000, interval: 100 }
     );
 
+    IRCTCExt.Modals?.dismissTour?.();
     if (!ready) throw new Error('Train list did not load');
   },
 
   async findTrainCardWithPoll(journey, searchLabel, overlay) {
+    IRCTCExt.Modals?.dismissTour?.();
     IRCTCExt.EticketTrainList.setStatus(overlay, `Searching train list for ${searchLabel}...`);
 
     let card = IRCTCExt.EticketTrainList.findTrainCard(journey);
-    if (card) return card;
+    if (card) {
+      IRCTCExt.Modals?.dismissTour?.();
+      return card;
+    }
 
-    card = await IRCTCExt.Wait.poll(() => IRCTCExt.EticketTrainList.findTrainCard(journey), {
-      timeout: 8000,
-      interval: 100
-    });
+    card = await IRCTCExt.Wait.poll(
+      () => {
+        IRCTCExt.Modals?.dismissTour?.();
+        return IRCTCExt.EticketTrainList.findTrainCard(journey);
+      },
+      {
+        timeout: 8000,
+        interval: 100
+      }
+    );
 
+    IRCTCExt.Modals?.dismissTour?.();
     if (!card && (journey.trainName || journey.trainNo)) {
       throw new Error(`Train ${searchLabel} not found in results`);
     }
@@ -518,7 +532,9 @@ IRCTCExt.EticketTrainList = {
     const { journey } = config;
 
     overlay?.setStep('Train List');
+    IRCTCExt.Modals?.dismissTour?.();
     await IRCTCExt.EticketTrainList.waitForTrainListReady(overlay);
+    IRCTCExt.Modals?.dismissTour?.();
 
     const trainName = String(journey.trainName || '').trim();
     const trainNo = String(journey.trainNo || '').trim();

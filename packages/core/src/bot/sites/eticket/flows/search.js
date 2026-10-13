@@ -60,6 +60,8 @@ IRCTCExt.EticketSearchFlow = {
     overlay.setStatus('Filling journey details...');
     await IRCTCExt.Storage.updateState({ currentStep: 'search' });
 
+    await IRCTCExt.EticketLoginFlow?.dismissTour?.();
+    IRCTCExt.Modals.dismissTour?.();
     IRCTCExt.Modals.dismissSessionRestore?.();
     await IRCTCExt.Wait.delay(300);
 

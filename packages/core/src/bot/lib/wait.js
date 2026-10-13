@@ -27,7 +27,8 @@ IRCTCExt.Wait = {
     }
   },
 
-  queryOne(selectors, root = document) {
+  queryOne(selectors, root = document, { visible = false } = {}) {
+    if (visible) return IRCTCExt.Wait.queryVisibleOne(selectors, root);
     const list = Array.isArray(selectors) ? selectors : [selectors];
     for (const selector of list) {
       const el = root.querySelector(selector);
@@ -36,11 +37,30 @@ IRCTCExt.Wait = {
     return null;
   },
 
-  queryAll(selectors, root = document) {
+  queryVisibleOne(selectors, root = document) {
     const list = Array.isArray(selectors) ? selectors : [selectors];
     for (const selector of list) {
       const nodes = root.querySelectorAll(selector);
-      if (nodes.length) return Array.from(nodes);
+      for (const node of nodes) {
+        if (IRCTCExt.Wait.isVisible(node)) return node;
+      }
+    }
+    return null;
+  },
+
+  queryAll(selectors, root = document, { visible = false } = {}) {
+    const list = Array.isArray(selectors) ? selectors : [selectors];
+    for (const selector of list) {
+      const nodes = root.querySelectorAll(selector);
+      if (nodes.length) {
+        const arr = Array.from(nodes);
+        if (visible) {
+          const vis = arr.filter((n) => IRCTCExt.Wait.isVisible(n));
+          if (vis.length) return vis;
+        } else {
+          return arr;
+        }
+      }
     }
     return [];
   },
@@ -48,8 +68,10 @@ IRCTCExt.Wait = {
   async waitFor(selectors, { timeout = 15000, root = document, visible = false } = {}) {
     const start = Date.now();
     while (Date.now() - start < timeout) {
-      const el = IRCTCExt.Wait.queryOne(selectors, root);
-      if (el && (!visible || IRCTCExt.Wait.isVisible(el))) return el;
+      const el = visible
+        ? IRCTCExt.Wait.queryVisibleOne(selectors, root)
+        : IRCTCExt.Wait.queryOne(selectors, root);
+      if (el) return el;
       await IRCTCExt.Wait.delay(100);
     }
     return null;
@@ -57,6 +79,9 @@ IRCTCExt.Wait = {
 
   isVisible(el) {
     if (!el) return false;
+    if (el.closest?.('.login-panel--inactive, [inert], .login-panel[aria-hidden="true"]')) {
+      return false;
+    }
     const style = window.getComputedStyle(el);
     if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0) {
       return false;
