@@ -11,7 +11,10 @@
   <header class="header">
     <div class="header-top">
       <h1>IRCTC Tatkal Assistant</h1>
-      <button type="button" id="toggleMinimizeBtn" class="icon-btn" title="Minimize" aria-label="Minimize popup">−</button>
+      <div class="header-top__actions">
+        <a href="https://chromewebstore.google.com/detail/rapid-tatkal-free-irctc-t/efndhoajkoaiibcepdebfgdppkdaebnj/reviews" target="_blank" rel="noopener noreferrer" class="icon-btn icon-btn--review" id="headerReviewBtn" title="Rate & Review on Chrome Web Store" aria-label="Rate and review on Chrome Web Store">★</a>
+        <button type="button" id="toggleMinimizeBtn" class="icon-btn" title="Minimize" aria-label="Minimize popup">−</button>
+      </div>
     </div>
     <p id="statusBadge" class="badge">Idle</p>
   </header>
@@ -166,6 +169,15 @@
         </div>
       </label>
       <button type="button" id="linkAccessEmailBtn" class="btn-secondary">Link email &amp; refresh</button>
+
+      <section class="access-review" aria-label="Rate and review on Chrome Web Store">
+        <h3 class="access-review__title">Enjoying Rapid Tatkal?</h3>
+        <p class="access-review__text">If this extension helps you book tickets, please leave us a 5-star review! Your feedback helps us keep the tool updated and free.</p>
+        <a id="accessReviewLink" class="review-btn" href="https://chromewebstore.google.com/detail/rapid-tatkal-free-irctc-t/efndhoajkoaiibcepdebfgdppkdaebnj/reviews" target="_blank" rel="noopener noreferrer">
+          <span class="review-btn__stars" aria-hidden="true">★★★★★</span>
+          <span>Rate &amp; Review on Chrome Web Store</span>
+        </a>
+      </section>
     </section>
 
     <section id="sets" class="panel active">
@@ -270,6 +282,13 @@
           <option value="LADIES">LADIES</option>
         </select>
       </label>
+
+      <div class="pref-option-box">
+        <label class="checkbox-row">
+          <input type="checkbox" id="bookOnlyIfCnf"> Book only if confirm berths are allotted
+        </label>
+        <p class="journey-hint">On IRCTC passenger page, auto-expands Other Preferences and checks this option.</p>
+      </div>
           </div>
 
           <div id="passengers" class="set-subpanel">
@@ -440,6 +459,12 @@
       <button type="button" id="stopBtn" class="btn-danger btn-compact" title="Stop booking" hidden>Stop</button>
     </div>
     <button type="button" id="clearBtn" class="btn-danger btn-compact btn-compact--ghost">Clear all</button>
+    <div class="actions__footer-links">
+      <a href="https://chromewebstore.google.com/detail/rapid-tatkal-free-irctc-t/efndhoajkoaiibcepdebfgdppkdaebnj/reviews" target="_blank" rel="noopener noreferrer" class="review-link" id="reviewLink" title="Rate & Review on Chrome Web Store">
+        <span class="review-link__stars" aria-hidden="true">★★★★★</span>
+        <span>Review on Chrome Web Store</span>
+      </a>
+    </div>
   </footer>
   </div>
 

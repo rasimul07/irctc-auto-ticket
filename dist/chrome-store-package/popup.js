@@ -16,6 +16,9 @@ const els = {
   bookingSite: document.getElementById('bookingSite'),
   linkAccessEmailBtn: document.getElementById('linkAccessEmailBtn'),
   bmcLink: document.getElementById('bmcLink'),
+  reviewLink: document.getElementById('reviewLink'),
+  headerReviewBtn: document.getElementById('headerReviewBtn'),
+  accessReviewLink: document.getElementById('accessReviewLink'),
   username: document.getElementById('username'),
   toggleUsernameBtn: document.getElementById('toggleUsernameBtn'),
   password: document.getElementById('password'),
@@ -29,6 +32,7 @@ const els = {
   travelClass: document.getElementById('travelClass'),
   travelClassWarn: document.getElementById('travelClassWarn'),
   quota: document.getElementById('quota'),
+  bookOnlyIfCnf: document.getElementById('bookOnlyIfCnf'),
   paymentMethod: document.getElementById('paymentMethod'),
   cardsPaymentFields: document.getElementById('cardsPaymentFields'),
   upiPaymentFields: document.getElementById('upiPaymentFields'),
@@ -587,6 +591,7 @@ function readForm() {
     passengers: readPassengers(),
     preferences: {
       bookingSite: els.bookingSite?.value || 'eticket',
+      bookOnlyIfCnf: !!els.bookOnlyIfCnf?.checked,
       paymentMethod: els.paymentMethod.value,
       cardsProvider: els.cardsProvider.value,
       upiProvider: els.upiProvider.value,
@@ -626,6 +631,7 @@ function fillForm(config) {
   els.trainName.value = config.journey?.trainName || '';
   els.travelClass.value = config.journey?.travelClass || 'SL';
   els.quota.value = config.journey?.quota || 'TATKAL';
+  if (els.bookOnlyIfCnf) els.bookOnlyIfCnf.checked = !!config.preferences?.bookOnlyIfCnf;
   const bookingSite = config.preferences?.bookingSite || 'eticket';
   if (els.bookingSite) els.bookingSite.value = bookingSite;
   els.paymentMethod.value = config.preferences?.paymentMethod || 'cards';
@@ -1170,5 +1176,25 @@ els.togglePasswordBtn?.addEventListener('click', togglePasswordVisibility);
 els.toggleMinimizeBtn.addEventListener('click', () => {
   setMinimized(!document.body.classList.contains('popup-minimized'));
 });
+
+const CHROME_STORE_REVIEW_URL =
+  'https://chromewebstore.google.com/detail/rapid-tatkal-free-irctc-t/efndhoajkoaiibcepdebfgdppkdaebnj/reviews';
+
+function setupReviewLinks() {
+  const reviewTargets = [els.reviewLink, els.headerReviewBtn, els.accessReviewLink].filter(Boolean);
+  reviewTargets.forEach((target) => {
+    target.href = CHROME_STORE_REVIEW_URL;
+    target.addEventListener('click', (e) => {
+      e.preventDefault();
+      if (typeof chrome !== 'undefined' && chrome.tabs?.create) {
+        chrome.tabs.create({ url: CHROME_STORE_REVIEW_URL });
+      } else {
+        window.open(CHROME_STORE_REVIEW_URL, '_blank', 'noopener,noreferrer');
+      }
+    });
+  });
+}
+
+setupReviewLinks();
 
 load();

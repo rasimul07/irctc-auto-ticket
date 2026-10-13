@@ -10,12 +10,24 @@ IRCTCExt.EticketPaths = {
       IRCTCExt.Modals?.dismissTour?.();
       return 'train-list';
     }
+    // At /eticket/train-search (or home): check if not logged in.
+    // If not logged in, login first (<button class="btn-login">LOGIN</button>).
+    // Once login is successful (<span class="profile-name">, <img class="profile-logo">), then search.
+    if (IRCTCExt.EticketPaths.isTrainSearchPath(path)) {
+      const isModalOpen = !!IRCTCExt.EticketLoginFlow?.isLoginModalOpen?.();
+      const hasProfile = !!IRCTCExt.EticketLoginFlow?.hasLoggedInMarker?.();
+      const hasLoginBtn = !!IRCTCExt.EticketLoginFlow?.headerLoginButton?.();
+
+      if (isModalOpen || hasLoginBtn || !hasProfile) {
+        return 'login';
+      }
+      return 'search';
+    }
+
     // If login form is already open or login is needed, step is login.
     if (IRCTCExt.EticketLoginFlow?.isLoginModalOpen?.() || IRCTCExt.EticketLoginFlow?.needsLogin?.()) {
       return 'login';
     }
-    // Fill journey details on train-search, then click Search.
-    if (IRCTCExt.EticketPaths.isTrainSearchPath(path)) return 'search';
     return 'init';
   },
 

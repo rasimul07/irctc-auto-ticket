@@ -30,6 +30,7 @@ export namespace DEFAULT_CONFIG {
     namespace preferences {
         let bookingSite: string;
         let loyaltyChoice: string;
+        let bookOnlyIfCnf: boolean;
         let paymentMethod: string;
         let cardsProvider: string;
         let upiProvider: string;

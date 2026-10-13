@@ -2,11 +2,24 @@ window.IRCTCExt = window.IRCTCExt || {};
 
 IRCTCExt.EticketLoginFlow = {
   headerLoginButton() {
-    const buttons = IRCTCExt.Wait.queryAll(IRCTCExt.SELECTORS.loginHeaderBtn);
-    return buttons.find(
+    for (const selector of IRCTCExt.SELECTORS.loginHeaderBtn || ['button.btn-login']) {
+      const elements = document.querySelectorAll(selector);
+      for (const btn of elements) {
+        if (!IRCTCExt.Wait.isVisible(btn)) continue;
+        if (btn.closest('#newLogin, .login-dialog, .login-wrapper, .login-form, .login-slider, .login-slider-viewport')) continue;
+        const text = (btn.textContent || '').trim().toUpperCase();
+        if (btn.classList.contains('btn-login') || text === 'LOGIN' || text.includes('LOGIN')) {
+          return btn;
+        }
+      }
+    }
+
+    const allButtons = Array.from(document.querySelectorAll('button.btn-login, .btn-login, header button, nav button, button, a.loginText'));
+    return allButtons.find(
       (btn) =>
+        IRCTCExt.Wait.isVisible(btn) &&
         !btn.closest('#newLogin, .login-dialog, .login-wrapper, .login-form, .login-slider, .login-slider-viewport') &&
-        (btn.textContent || '').toUpperCase().includes('LOGIN')
+        (btn.classList.contains('btn-login') || (btn.textContent || '').trim().toUpperCase() === 'LOGIN')
     );
   },
 
@@ -25,13 +38,36 @@ IRCTCExt.EticketLoginFlow = {
   },
 
   hasLoggedInMarker() {
-    return !!IRCTCExt.Wait.queryVisibleOne(IRCTCExt.SELECTORS.loggedInProfile);
+    const profileEl = document.querySelector(
+      '.profile-name, span.profile-name, .profile-logo, img[alt="profile logo"], img[alt*="profile logo" i], img[src*="verified-user"], .profile-menu-arrow-img'
+    );
+    if (profileEl && IRCTCExt.Wait.isVisible(profileEl)) return true;
+
+    const marker = IRCTCExt.Wait.queryVisibleOne(IRCTCExt.SELECTORS.loggedInProfile);
+    if (marker) return true;
+
+    const navButtons = document.querySelectorAll('button.nav-link-1, button.nav-link--active, button');
+    for (const b of navButtons) {
+      if (b.querySelector('.profile-name, .profile-logo, img[alt*="profile" i], img[src*="verified-user"]') && IRCTCExt.Wait.isVisible(b)) {
+        return true;
+      }
+    }
+
+    return false;
+  },
+
+  getLoggedInUsername() {
+    const el = document.querySelector('.profile-name, span.profile-name, .user-name');
+    return el?.textContent?.trim() || '';
   },
 
   needsLogin() {
     if (IRCTCExt.EticketLoginFlow.isLoginModalOpen()) return true;
     if (IRCTCExt.EticketLoginFlow.hasLoggedInMarker()) return false;
     if (IRCTCExt.EticketLoginFlow.headerLoginButton()) return true;
+    if (IRCTCExt.EticketPaths?.isTrainSearchPath?.(location.pathname)) {
+      return !IRCTCExt.EticketLoginFlow.hasLoggedInMarker();
+    }
     return false;
   },
 
@@ -110,7 +146,13 @@ IRCTCExt.EticketLoginFlow = {
     await IRCTCExt.EticketLoginFlow.dismissTour();
 
     if (!IRCTCExt.EticketLoginFlow.isLoginModalOpen()) {
-      const loginBtn = IRCTCExt.EticketLoginFlow.headerLoginButton();
+      let loginBtn = IRCTCExt.EticketLoginFlow.headerLoginButton();
+      if (!loginBtn) {
+        loginBtn = await IRCTCExt.Wait.poll(
+          () => IRCTCExt.EticketLoginFlow.headerLoginButton(),
+          { timeout: 4000, interval: 200 }
+        );
+      }
       if (loginBtn) {
         IRCTCExt.Events.click(loginBtn);
         await IRCTCExt.Wait.delay(600);
@@ -306,7 +348,8 @@ IRCTCExt.EticketLoginFlow = {
       throw new Error('Login failed or timed out');
     }
 
-    overlay.setStatus('Login successful');
+    const loggedInUser = IRCTCExt.EticketLoginFlow.getLoggedInUsername();
+    overlay.setStatus(loggedInUser ? `Login successful (${loggedInUser})` : 'Login successful');
     return true;
   },
 

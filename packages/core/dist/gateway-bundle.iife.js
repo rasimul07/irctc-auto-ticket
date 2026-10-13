@@ -22,6 +22,7 @@
       preferences: {
         bookingSite: "eticket",
         loyaltyChoice: "skip",
+        bookOnlyIfCnf: false,
         paymentMethod: "cards",
         cardsProvider: "PhonePe",
         upiProvider: "IRCTC iPay",
@@ -261,10 +262,16 @@
   window.IRCTCExt = window.IRCTCExt || {};
   IRCTCExt.EticketSelectors = {
     loginHeaderBtn: [
+      "button.btn-login",
+      "button.btn-login.ng-star-inserted",
+      ".btn-login",
       "nav button.btn-login",
       ".navbar-actions button.btn-login",
       "header button.btn-login",
-      "button.btn-login"
+      ".header button.btn-login",
+      'button[aria-label*="Login" i]',
+      "a.btn-login",
+      "a.loginText"
     ],
     loginModal: [
       "#newLogin",
@@ -343,6 +350,21 @@
       "a.search_btn.loginText"
     ],
     loggedInProfile: [
+      ".profile-name",
+      "span.profile-name",
+      ".profile-logo",
+      "img.profile-logo",
+      'img[alt="profile logo"]',
+      'img[alt*="profile logo" i]',
+      'img[src*="verified-user"]',
+      "button.nav-link-1 .profile-name",
+      "button.nav-link-1:has(.profile-name)",
+      "button.nav-link-1:has(.profile-logo)",
+      "button:has(.profile-name)",
+      "button:has(.profile-logo)",
+      "button.nav-link-1.nav-link--active",
+      "button.nav-link-1",
+      ".profile-menu-arrow-img",
       'a[href*="logout" i]',
       'button[aria-label*="Logout" i]',
       ".user-profile",
@@ -555,6 +577,37 @@
       newPassengerCancelBtn: [".ap-dialog-actions button.app-modal-button--cancel"]
     },
     psgnPreferences: {
+      otherPreferencesHeader: [
+        'div.section-header[aria-controls="bookingPreferencesBody"]',
+        'div.section-header[role="button"][aria-controls="bookingPreferencesBody"]',
+        'div[role="button"][aria-controls="bookingPreferencesBody"]',
+        "div.section-header:has(.pref-collapse-button)",
+        'div.section-header:has([aria-controls="bookingPreferencesBody"])',
+        "div.section-header:has(.section-title)",
+        ".section-header:has(.pref-collapse-button)",
+        ".section-header"
+      ],
+      otherPreferencesToggle: [
+        'div.section-header[aria-controls="bookingPreferencesBody"]',
+        'div[role="button"][aria-controls="bookingPreferencesBody"]',
+        "div.section-header",
+        "button.pref-collapse-button",
+        'button[aria-controls="bookingPreferencesBody"]',
+        'button[aria-label*="Toggle Other Preferences" i]',
+        'button[aria-label*="Other Preferences" i]',
+        ".pref-collapse-button"
+      ],
+      otherPreferencesBody: [
+        "#bookingPreferencesBody",
+        '[id="bookingPreferencesBody"]',
+        ".pref-body",
+        'div[aria-labelledby*="bookingPreferences"]'
+      ],
+      bookOnlyIfCnfCheckbox: [
+        'p-checkbox[formcontrolname="bookOnlyIfCnf"]',
+        'p-checkbox[name="confirmBerth"]',
+        'input[name="confirmBerth"]'
+      ],
       loyaltySection: ["app-loyalty-selection"],
       loyaltySkip: ["#lo-3", 'label[for="lo-3"]', 'input[name="loyalityOperationType"][value="3"]'],
       paymentSection: ["app-booking-payment-preferences"],

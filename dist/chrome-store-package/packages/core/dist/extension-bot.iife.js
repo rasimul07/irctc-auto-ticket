@@ -60,10 +60,18 @@
         IRCTCExt.Modals?.dismissTour?.();
         return "train-list";
       }
+      if (IRCTCExt.EticketPaths.isTrainSearchPath(path)) {
+        const isModalOpen = !!IRCTCExt.EticketLoginFlow?.isLoginModalOpen?.();
+        const hasProfile = !!IRCTCExt.EticketLoginFlow?.hasLoggedInMarker?.();
+        const hasLoginBtn = !!IRCTCExt.EticketLoginFlow?.headerLoginButton?.();
+        if (isModalOpen || hasLoginBtn || !hasProfile) {
+          return "login";
+        }
+        return "search";
+      }
       if (IRCTCExt.EticketLoginFlow?.isLoginModalOpen?.() || IRCTCExt.EticketLoginFlow?.needsLogin?.()) {
         return "login";
       }
-      if (IRCTCExt.EticketPaths.isTrainSearchPath(path)) return "search";
       return "init";
     },
     syncProgressFromPath(path = location.pathname) {
@@ -104,10 +112,16 @@
   window.IRCTCExt = window.IRCTCExt || {};
   IRCTCExt.EticketSelectors = {
     loginHeaderBtn: [
+      "button.btn-login",
+      "button.btn-login.ng-star-inserted",
+      ".btn-login",
       "nav button.btn-login",
       ".navbar-actions button.btn-login",
       "header button.btn-login",
-      "button.btn-login"
+      ".header button.btn-login",
+      'button[aria-label*="Login" i]',
+      "a.btn-login",
+      "a.loginText"
     ],
     loginModal: [
       "#newLogin",
@@ -186,6 +200,21 @@
       "a.search_btn.loginText"
     ],
     loggedInProfile: [
+      ".profile-name",
+      "span.profile-name",
+      ".profile-logo",
+      "img.profile-logo",
+      'img[alt="profile logo"]',
+      'img[alt*="profile logo" i]',
+      'img[src*="verified-user"]',
+      "button.nav-link-1 .profile-name",
+      "button.nav-link-1:has(.profile-name)",
+      "button.nav-link-1:has(.profile-logo)",
+      "button:has(.profile-name)",
+      "button:has(.profile-logo)",
+      "button.nav-link-1.nav-link--active",
+      "button.nav-link-1",
+      ".profile-menu-arrow-img",
       'a[href*="logout" i]',
       'button[aria-label*="Logout" i]',
       ".user-profile",
@@ -398,6 +427,37 @@
       newPassengerCancelBtn: [".ap-dialog-actions button.app-modal-button--cancel"]
     },
     psgnPreferences: {
+      otherPreferencesHeader: [
+        'div.section-header[aria-controls="bookingPreferencesBody"]',
+        'div.section-header[role="button"][aria-controls="bookingPreferencesBody"]',
+        'div[role="button"][aria-controls="bookingPreferencesBody"]',
+        "div.section-header:has(.pref-collapse-button)",
+        'div.section-header:has([aria-controls="bookingPreferencesBody"])',
+        "div.section-header:has(.section-title)",
+        ".section-header:has(.pref-collapse-button)",
+        ".section-header"
+      ],
+      otherPreferencesToggle: [
+        'div.section-header[aria-controls="bookingPreferencesBody"]',
+        'div[role="button"][aria-controls="bookingPreferencesBody"]',
+        "div.section-header",
+        "button.pref-collapse-button",
+        'button[aria-controls="bookingPreferencesBody"]',
+        'button[aria-label*="Toggle Other Preferences" i]',
+        'button[aria-label*="Other Preferences" i]',
+        ".pref-collapse-button"
+      ],
+      otherPreferencesBody: [
+        "#bookingPreferencesBody",
+        '[id="bookingPreferencesBody"]',
+        ".pref-body",
+        'div[aria-labelledby*="bookingPreferences"]'
+      ],
+      bookOnlyIfCnfCheckbox: [
+        'p-checkbox[formcontrolname="bookOnlyIfCnf"]',
+        'p-checkbox[name="confirmBerth"]',
+        'input[name="confirmBerth"]'
+      ],
       loyaltySection: ["app-loyalty-selection"],
       loyaltySkip: ["#lo-3", 'label[for="lo-3"]', 'input[name="loyalityOperationType"][value="3"]'],
       paymentSection: ["app-booking-payment-preferences"],
@@ -994,9 +1054,20 @@
   window.IRCTCExt = window.IRCTCExt || {};
   IRCTCExt.EticketLoginFlow = {
     headerLoginButton() {
-      const buttons = IRCTCExt.Wait.queryAll(IRCTCExt.SELECTORS.loginHeaderBtn);
-      return buttons.find(
-        (btn) => !btn.closest("#newLogin, .login-dialog, .login-wrapper, .login-form, .login-slider, .login-slider-viewport") && (btn.textContent || "").toUpperCase().includes("LOGIN")
+      for (const selector of IRCTCExt.SELECTORS.loginHeaderBtn || ["button.btn-login"]) {
+        const elements = document.querySelectorAll(selector);
+        for (const btn of elements) {
+          if (!IRCTCExt.Wait.isVisible(btn)) continue;
+          if (btn.closest("#newLogin, .login-dialog, .login-wrapper, .login-form, .login-slider, .login-slider-viewport")) continue;
+          const text = (btn.textContent || "").trim().toUpperCase();
+          if (btn.classList.contains("btn-login") || text === "LOGIN" || text.includes("LOGIN")) {
+            return btn;
+          }
+        }
+      }
+      const allButtons = Array.from(document.querySelectorAll("button.btn-login, .btn-login, header button, nav button, button, a.loginText"));
+      return allButtons.find(
+        (btn) => IRCTCExt.Wait.isVisible(btn) && !btn.closest("#newLogin, .login-dialog, .login-wrapper, .login-form, .login-slider, .login-slider-viewport") && (btn.classList.contains("btn-login") || (btn.textContent || "").trim().toUpperCase() === "LOGIN")
       );
     },
     isLoginModalOpen() {
@@ -1013,12 +1084,31 @@
       return !!directForm;
     },
     hasLoggedInMarker() {
-      return !!IRCTCExt.Wait.queryVisibleOne(IRCTCExt.SELECTORS.loggedInProfile);
+      const profileEl = document.querySelector(
+        '.profile-name, span.profile-name, .profile-logo, img[alt="profile logo"], img[alt*="profile logo" i], img[src*="verified-user"], .profile-menu-arrow-img'
+      );
+      if (profileEl && IRCTCExt.Wait.isVisible(profileEl)) return true;
+      const marker = IRCTCExt.Wait.queryVisibleOne(IRCTCExt.SELECTORS.loggedInProfile);
+      if (marker) return true;
+      const navButtons = document.querySelectorAll("button.nav-link-1, button.nav-link--active, button");
+      for (const b of navButtons) {
+        if (b.querySelector('.profile-name, .profile-logo, img[alt*="profile" i], img[src*="verified-user"]') && IRCTCExt.Wait.isVisible(b)) {
+          return true;
+        }
+      }
+      return false;
+    },
+    getLoggedInUsername() {
+      const el = document.querySelector(".profile-name, span.profile-name, .user-name");
+      return el?.textContent?.trim() || "";
     },
     needsLogin() {
       if (IRCTCExt.EticketLoginFlow.isLoginModalOpen()) return true;
       if (IRCTCExt.EticketLoginFlow.hasLoggedInMarker()) return false;
       if (IRCTCExt.EticketLoginFlow.headerLoginButton()) return true;
+      if (IRCTCExt.EticketPaths?.isTrainSearchPath?.(location.pathname)) {
+        return !IRCTCExt.EticketLoginFlow.hasLoggedInMarker();
+      }
       return false;
     },
     getActiveLoginPanel() {
@@ -1085,7 +1175,13 @@
     async openLoginModal() {
       await IRCTCExt.EticketLoginFlow.dismissTour();
       if (!IRCTCExt.EticketLoginFlow.isLoginModalOpen()) {
-        const loginBtn = IRCTCExt.EticketLoginFlow.headerLoginButton();
+        let loginBtn = IRCTCExt.EticketLoginFlow.headerLoginButton();
+        if (!loginBtn) {
+          loginBtn = await IRCTCExt.Wait.poll(
+            () => IRCTCExt.EticketLoginFlow.headerLoginButton(),
+            { timeout: 4e3, interval: 200 }
+          );
+        }
         if (loginBtn) {
           IRCTCExt.Events.click(loginBtn);
           await IRCTCExt.Wait.delay(600);
@@ -1246,7 +1342,8 @@
       if (!await IRCTCExt.EticketLoginFlow.isLoggedIn()) {
         throw new Error("Login failed or timed out");
       }
-      overlay.setStatus("Login successful");
+      const loggedInUser = IRCTCExt.EticketLoginFlow.getLoggedInUsername();
+      overlay.setStatus(loggedInUser ? `Login successful (${loggedInUser})` : "Login successful");
       return true;
     },
     async runWithRetry(config, overlay, { maxAttempts = 3 } = {}) {
@@ -6671,6 +6768,42 @@
       const input = optionRow.querySelector('input[type="radio"]');
       return !!input?.checked;
     },
+    isCheckboxChecked(checkboxHost) {
+      if (!checkboxHost) return false;
+      const box = checkboxHost.querySelector?.('.ui-chkbox-box, [role="checkbox"]');
+      if (box && (box.classList.contains("ui-state-active") || box.getAttribute("aria-checked") === "true")) {
+        return true;
+      }
+      const input = checkboxHost.matches?.('input[type="checkbox"]') ? checkboxHost : checkboxHost.querySelector?.('input[type="checkbox"]');
+      if (input?.checked) return true;
+      if (checkboxHost.classList?.contains("ui-state-active")) return true;
+      return false;
+    },
+    async setCheckboxChecked(checkboxHost, maxAttempts = 5) {
+      for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+        if (this.isCheckboxChecked(checkboxHost)) return true;
+        const box = checkboxHost.querySelector?.('.ui-chkbox-box, [role="checkbox"]');
+        const row = checkboxHost.closest?.(".pref-item, .pref-row") || checkboxHost.parentElement;
+        const label = row?.querySelector?.(".pref-label, label");
+        const input = checkboxHost.matches?.('input[type="checkbox"]') ? checkboxHost : checkboxHost.querySelector?.('input[type="checkbox"]');
+        const target = box || label || input || checkboxHost;
+        this.clickTarget(target);
+        await IRCTCExt.Wait.delay(300);
+        if (this.isCheckboxChecked(checkboxHost)) return true;
+        if (label && label !== target) {
+          this.clickTarget(label);
+          await IRCTCExt.Wait.delay(300);
+        }
+        if (this.isCheckboxChecked(checkboxHost)) return true;
+        if (input && !input.checked) {
+          input.checked = true;
+          input.dispatchEvent(new Event("input", { bubbles: true }));
+          input.dispatchEvent(new Event("change", { bubbles: true }));
+        }
+        await IRCTCExt.Wait.delay(200);
+      }
+      return this.isCheckboxChecked(checkboxHost);
+    },
     findLoyaltySkipOption(section) {
       const options = section.querySelectorAll(".loyalty-option");
       for (const option of options) {
@@ -6706,10 +6839,54 @@
       if (!inputEl) return null;
       return inputEl.closest(".loyalty-option, .payment-option");
     },
+    triggerSingleClick(el) {
+      if (!el) return;
+      try {
+        el.scrollIntoView({ block: "center", inline: "nearest" });
+      } catch (_) {
+      }
+      const rect = el.getBoundingClientRect();
+      const clientX = Math.round(rect.left + Math.max(1, rect.width / 2));
+      const clientY = Math.round(rect.top + Math.max(1, rect.height / 2));
+      const opts = {
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+        view: window,
+        clientX,
+        clientY,
+        screenX: (window.screenX || 0) + clientX,
+        screenY: (window.screenY || 0) + clientY,
+        button: 0,
+        buttons: 1
+      };
+      if (typeof PointerEvent !== "undefined") {
+        try {
+          el.dispatchEvent(new PointerEvent("pointerdown", { ...opts, pointerId: 1, pointerType: "mouse", isPrimary: true }));
+          el.dispatchEvent(new PointerEvent("pointerup", { ...opts, pointerId: 1, pointerType: "mouse", isPrimary: true, buttons: 0 }));
+        } catch (_) {
+        }
+      }
+      try {
+        el.dispatchEvent(new MouseEvent("mousedown", opts));
+        el.dispatchEvent(new MouseEvent("mouseup", { ...opts, buttons: 0 }));
+      } catch (_) {
+      }
+      if (typeof el.click === "function") {
+        try {
+          el.click();
+          return;
+        } catch (_) {
+        }
+      }
+      try {
+        el.dispatchEvent(new MouseEvent("click", { ...opts, buttons: 0 }));
+      } catch (_) {
+      }
+    },
     clickTarget(el) {
       if (!el) return;
-      el.scrollIntoView({ block: "center", inline: "nearest" });
-      IRCTCExt.Events.click(el);
+      this.triggerSingleClick(el);
     },
     clickPrimeNgRadio(optionEl) {
       if (!optionEl) return;
@@ -6995,9 +7172,166 @@
       await this.clickReviewConfirmContinue(overlay, afterClick);
       await this.waitForPaymentPage(overlay);
     },
+    findOtherPreferencesHeader() {
+      const sel = IRCTCExt.SELECTORS.psgnPreferences;
+      const direct = IRCTCExt.Wait.queryOne(sel.otherPreferencesHeader);
+      if (direct) return direct;
+      const byControls = document.querySelector(
+        'div.section-header[aria-controls="bookingPreferencesBody"], [aria-controls="bookingPreferencesBody"]'
+      );
+      if (byControls) {
+        return byControls.matches(".section-header") ? byControls : byControls.closest(".section-header") || byControls;
+      }
+      const btn = document.querySelector('button.pref-collapse-button, button[aria-label*="Other Preferences" i]');
+      if (btn) return btn.closest(".section-header") || btn;
+      const titles = Array.from(document.querySelectorAll(".section-title, .section-header"));
+      const targetTitle = titles.find((el) => /other preferences/i.test(el.textContent || ""));
+      if (targetTitle) return targetTitle.closest(".section-header") || targetTitle;
+      return null;
+    },
+    isOtherPreferencesExpanded() {
+      const sel = IRCTCExt.SELECTORS.psgnPreferences;
+      const chk = document.querySelector('p-checkbox[formcontrolname="bookOnlyIfCnf"], p-checkbox[name="confirmBerth"]');
+      if (chk && IRCTCExt.Wait.isVisible(chk)) {
+        return true;
+      }
+      const labels = Array.from(document.querySelectorAll(".pref-label, label"));
+      const confirmLabel = labels.find((l) => /confirm berths/i.test(l.textContent || ""));
+      if (confirmLabel && IRCTCExt.Wait.isVisible(confirmLabel)) {
+        return true;
+      }
+      const header = this.findOtherPreferencesHeader();
+      if (header) {
+        const attr = header.getAttribute("aria-expanded");
+        if (attr === "true") return true;
+        if (header.classList.contains("expanded") || header.classList.contains("active")) return true;
+      }
+      const btn = header?.querySelector?.(".pref-collapse-button") || document.querySelector('button.pref-collapse-button, button[aria-controls="bookingPreferencesBody"]');
+      if (btn) {
+        const attr = btn.getAttribute("aria-expanded");
+        if (attr === "true") return true;
+        if (btn.querySelector(".fa-angle-up, .fa-chevron-up")) return true;
+      }
+      const body = document.getElementById("bookingPreferencesBody") || document.querySelector("#bookingPreferencesBody, .pref-body");
+      if (body) {
+        if (body.classList.contains("show") || body.classList.contains("in")) return true;
+        const style = window.getComputedStyle(body);
+        if (style.display !== "none" && style.visibility !== "hidden" && body.offsetHeight > 0) {
+          return true;
+        }
+      }
+      return false;
+    },
+    async expandOtherPreferences(overlay, maxAttempts = 6) {
+      if (this.isOtherPreferencesExpanded()) {
+        return true;
+      }
+      for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+        if (this.isOtherPreferencesExpanded()) {
+          return true;
+        }
+        const header = this.findOtherPreferencesHeader();
+        const button = header?.querySelector?.(".pref-collapse-button") || document.querySelector('button.pref-collapse-button, button[aria-controls="bookingPreferencesBody"]');
+        const icon = button?.querySelector?.("i, .fa");
+        const title = header?.querySelector?.(".section-title") || header?.querySelector?.(".section-title-group");
+        const targets = [
+          { name: "header container", el: header },
+          { name: "collapse button", el: button },
+          { name: "button icon", el: icon },
+          { name: "section title", el: title }
+        ].filter((t) => t.el != null);
+        if (!targets.length) {
+          await IRCTCExt.Wait.delay(300);
+          continue;
+        }
+        const target = targets[attempt % targets.length];
+        overlay.setStatus(`Expanding Other Preferences via ${target.name} (attempt ${attempt + 1})...`);
+        this.triggerSingleClick(target.el);
+        const opened = await IRCTCExt.Wait.poll(
+          () => this.isOtherPreferencesExpanded() ? true : null,
+          { timeout: 1e3, interval: 150 }
+        );
+        if (opened) {
+          overlay.setStatus("Other Preferences accordion expanded.");
+          return true;
+        }
+        if (attempt >= 3 && header && header.getAttribute("role") === "button") {
+          try {
+            header.focus?.();
+            header.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true }));
+            header.dispatchEvent(new KeyboardEvent("keyup", { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true }));
+          } catch (_) {
+          }
+          const openedKey = await IRCTCExt.Wait.poll(
+            () => this.isOtherPreferencesExpanded() ? true : null,
+            { timeout: 800, interval: 150 }
+          );
+          if (openedKey) {
+            overlay.setStatus("Other Preferences accordion expanded.");
+            return true;
+          }
+        }
+        await IRCTCExt.Wait.delay(200);
+      }
+      return this.isOtherPreferencesExpanded();
+    },
+    async configureOtherPreferences(config, overlay) {
+      if (!config?.preferences?.bookOnlyIfCnf) {
+        return;
+      }
+      overlay.setStatus("Checking Other Preferences...");
+      const sel = IRCTCExt.SELECTORS.psgnPreferences;
+      const headerFound = await IRCTCExt.Wait.poll(
+        () => {
+          const h = this.findOtherPreferencesHeader();
+          return h && IRCTCExt.Wait.isVisible(h) ? h : null;
+        },
+        { timeout: 8e3, interval: 200 }
+      );
+      if (!headerFound) {
+        console.warn("[IRCTC Bot] Other Preferences header not found on page");
+        return;
+      }
+      if (!this.isOtherPreferencesExpanded()) {
+        const expanded = await this.expandOtherPreferences(overlay);
+        if (!expanded) {
+          console.warn("[IRCTC Bot] Could not expand Other Preferences accordion after retries");
+        }
+        await IRCTCExt.Wait.delay(400);
+      }
+      const checkboxHost = await IRCTCExt.Wait.poll(
+        () => {
+          const el = IRCTCExt.Wait.queryOne(sel.bookOnlyIfCnfCheckbox);
+          if (el && IRCTCExt.Wait.isVisible(el)) return el;
+          const labels = Array.from(document.querySelectorAll(".pref-label, label"));
+          const targetLabel = labels.find((l) => /confirm berths/i.test(l.textContent || ""));
+          if (targetLabel && IRCTCExt.Wait.isVisible(targetLabel)) {
+            const row = targetLabel.closest(".pref-item, .pref-row") || targetLabel.parentElement;
+            const chk = row?.querySelector('p-checkbox, input[type="checkbox"]');
+            if (chk) return chk;
+          }
+          return null;
+        },
+        { timeout: 8e3, interval: 200 }
+      );
+      if (!checkboxHost) {
+        console.warn('[IRCTC Bot] "Book only if confirm berths are allotted" checkbox not found');
+        return;
+      }
+      if (!this.isCheckboxChecked(checkboxHost)) {
+        overlay.setStatus("Selecting: Book only if confirm berths are allotted...");
+        const checked = await this.setCheckboxChecked(checkboxHost);
+        if (checked) {
+          overlay.setStatus("Confirmed berths preference enabled.");
+        }
+        await IRCTCExt.Wait.delay(300);
+      }
+    },
     async configure(config, overlay) {
       overlay.setStep("Review");
       await IRCTCExt.Wait.delay(600);
+      await this.configureOtherPreferences(config, overlay);
+      await IRCTCExt.Wait.delay(400);
       await this.selectLoyaltySkip(overlay);
       await IRCTCExt.Wait.delay(400);
       await this.selectPaymentMethod(config, overlay);
