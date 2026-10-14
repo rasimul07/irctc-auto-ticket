@@ -163,29 +163,7 @@ IRCTCExt.Bot = {
     }
   },
 
-  async ensureTokenForPayment(overlay, config) {
-    if (config.state?.tokenConsumed) return true;
-
-    const usageKey = config.state?.bookingSessionId || crypto.randomUUID();
-    if (!config.state?.bookingSessionId) {
-      await IRCTCExt.Storage.updateState({ bookingSessionId: usageKey });
-      config.state.bookingSessionId = usageKey;
-    }
-
-    const result = await chrome.runtime
-      .sendMessage({ type: 'CONSUME_TOKEN', usageKey })
-      .catch(() => null);
-
-    if (!result?.ok) {
-      overlay?.setError(result?.message || 'No booking tokens remaining. Buy a coffee on Buy Me a Coffee and link your email.');
-      overlay?.setStatus('Booking blocked — no tokens left for payment step.');
-      overlay?.setStep('Access');
-      await IRCTCExt.Storage.updateState({ running: false, status: 'idle', currentStep: 'access' });
-      return false;
-    }
-
-    await IRCTCExt.Storage.updateState({ tokenConsumed: true });
-    config.state.tokenConsumed = true;
+  async ensureTokenForPayment() {
     return true;
   },
 

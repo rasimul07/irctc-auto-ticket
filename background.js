@@ -217,7 +217,7 @@ async function waitForTabReady(tabId) {
 }
 
 async function ensureBookingAccess() {
-  return true; // Extension is free to use up to the payment page
+  return true;
 }
 
 async function resetRunningState() {
@@ -442,43 +442,11 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     return true;
   }
   if (msg.type === 'CHECK_ACCESS') {
-    (async () => {
-      const config = await getActiveConfig();
-      if (!config?.preferences?.autoPayEnabled) {
-        sendResponse({ ok: true, allowed: true, tier: 'free', message: 'Free access' });
-        return;
-      }
-      IRCTCExt.AccessApi.ensureAccess({ forceRefresh: !!msg.forceRefresh })
-        .then((status) => sendResponse({ ok: true, ...status, allowed: IRCTCExt.AccessApi.isStatusAllowed(status) }))
-        .catch((err) =>
-          sendResponse({
-            ok: false,
-            allowed: false,
-            message: IRCTCExt.Network.toUserNetworkMessage(err),
-            code: err.code
-          })
-        );
-    })();
+    sendResponse({ ok: true, allowed: true, tier: 'pro', unlimited: true, message: 'Free Unlimited Access' });
     return true;
   }
   if (msg.type === 'CONSUME_TOKEN') {
-    (async () => {
-      const config = await getActiveConfig();
-      if (!config?.preferences?.autoPayEnabled) {
-        sendResponse({ ok: true, allowed: true });
-        return;
-      }
-      IRCTCExt.AccessApi.consumeToken(msg.usageKey)
-        .then((status) => sendResponse({ ok: true, ...status, allowed: IRCTCExt.AccessApi.isStatusAllowed(status) }))
-        .catch((err) =>
-          sendResponse({
-            ok: false,
-            allowed: false,
-            message: IRCTCExt.Network.toUserNetworkMessage(err),
-            code: err.code
-          })
-        );
-    })();
+    sendResponse({ ok: true, allowed: true, tier: 'pro', unlimited: true });
     return true;
   }
   if (msg.type === 'RESCHEDULE_ALARMS') {

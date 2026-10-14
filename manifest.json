@@ -17,8 +17,7 @@
     "https://www.irctcipay.com/*",
     "https://pg.irctcpayments.com/*",
     "https://mercury-t2.phonepe.com/*",
-    "https://mercury.phonepe.com/*",
-    "https://api.railticket.tool.mridev.in/*"
+    "https://mercury.phonepe.com/*"
   ],
   "background": {
     "service_worker": "background.js"

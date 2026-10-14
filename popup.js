@@ -88,7 +88,7 @@ const POPUP_SET_SECTION_KEY = 'irctcPopupSetSection';
 const LINK_ACCESS_EMAIL_BTN_LABEL = 'Link email & refresh';
 const SET_SECTIONS = ['credentials', 'journey', 'passengers', 'payment', 'schedule'];
 const LEGACY_SECTION_TABS = new Set(SET_SECTIONS);
-const TOP_TABS = new Set(['access', 'sets']);
+const TOP_TABS = new Set(['sets']);
 const CARDS_PROVIDERS_BY_SITE = {
   eticket: [
     { value: 'IRCTC iPay', label: 'IRCTC iPay' },
@@ -347,58 +347,11 @@ function updateAccessUi(status, errorMessage = '', options = {}) {
 }
 
 async function refreshAccess() {
-  if (!AccessApi) {
-    updateAccessUi(null, 'Access API not loaded.');
-    return null;
-  }
-
-  const Network = IRCTCExt?.Network;
-  if (Network && !Network.isBrowserOnline()) {
-    updateAccessUi(null, Network.OFFLINE_MESSAGE);
-    if (els.linkAccessEmailBtn) els.linkAccessEmailBtn.disabled = true;
-    return null;
-  }
-
-  updateAccessUi(null, '', { loading: true });
-  setLinkAccessEmailLoading(true, 'Refreshing...');
-
-  try {
-    const status = await AccessApi.ensureAccess({ forceRefresh: true });
-    updateAccessUi(status);
-    return status;
-  } catch (err) {
-    const message = Network?.toUserNetworkMessage(err) || err.message || 'Could not reach access API. Start backend on localhost:3000.';
-    updateAccessUi(null, message);
-    return null;
-  } finally {
-    setLinkAccessEmailLoading(false);
-  }
+  return { allowed: true, tier: 'pro', unlimited: true };
 }
 
 async function linkAccessEmail() {
-  const email = els.accessEmail.value.trim();
-  if (!email) {
-    showToast('Enter your Buy Me a Coffee email.', true);
-    switchTab('access');
-    return;
-  }
-
-  setLinkAccessEmailLoading(true, 'Linking...');
-
-  try {
-    await AccessApi.ensureAccess();
-    const status = await AccessApi.linkEmail(email);
-    updateAccessUi(status);
-    showToast(
-      status.allowed
-        ? 'Access linked successfully.'
-        : 'Email linked, but no active license found yet. Start a trial or buy a coffee on Buy Me a Coffee first.'
-    );
-  } catch (err) {
-    showToast(err.message || 'Could not link email.', true);
-  } finally {
-    setLinkAccessEmailLoading(false);
-  }
+  return;
 }
 
 function switchSetSection(sectionId, focusTarget) {

@@ -10130,26 +10130,7 @@ IRCTCExt.Bot = {
     }
   },
 
-  async ensureTokenForPayment(overlay, config) {
-    if (!config?.preferences?.autoPayEnabled) return true;
-    if (config.state?.tokenConsumed) return true;
-
-    const usageKey = config.state?.bookingSessionId || crypto.randomUUID();
-    if (!config.state?.bookingSessionId) {
-      await IRCTCExt.Storage.updateState({ bookingSessionId: usageKey });
-      config.state.bookingSessionId = usageKey;
-    }
-
-    const result = await IRCTCExt.PlatformBridge
-      .sendMessage('CONSUME_TOKEN', { usageKey })
-      .catch(() => null);
-
-    if (!result?.ok || !result?.allowed) {
-      return false;
-    }
-
-    await IRCTCExt.Storage.updateState({ tokenConsumed: true });
-    config.state.tokenConsumed = true;
+  async ensureTokenForPayment() {
     return true;
   },
 
